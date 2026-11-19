@@ -1,8 +1,9 @@
-import { FileText, Home, Settings, SquareKanban, Tags, Users, type LucideIcon } from "lucide-react";
+import { FileText, Handshake, Home, Settings, SquareKanban, Tags, Users, type LucideIcon } from "lucide-react";
 
 /** `short` is used in the phone bottom bar where space is tight. */
 export const NAV: { href: string; label: string; short?: string; icon: LucideIcon }[] = [
   { href: "/", label: "Home", icon: Home },
+  { href: "/crm", label: "CRM", icon: Handshake },
   { href: "/customers", label: "Customers", icon: Users },
   { href: "/quotations", label: "Quotations", short: "Quotes", icon: FileText },
   { href: "/orders", label: "Orders & Billing", short: "Orders", icon: SquareKanban },
