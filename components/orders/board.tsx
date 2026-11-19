@@ -142,7 +142,13 @@ export function OrdersBoard({ tickets, customers, uploadEnv }: { tickets: BoardT
   // ---- phone tabs -------------------------------------------------------------------
   const [tab, setTab] = useState<BoardStage>(f.stage ?? "WAITING_PO");
 
-  const columnTotal = (s: BoardStage) => byStage(s).reduce((sum, t) => sum + t.totalPaise, 0);
+  // Payment follow-up shows what is still to collect (each invoice counted once); other columns show the services' value.
+  const columnTotal = (s: BoardStage) => {
+    if (s !== "PAYMENT") return byStage(s).reduce((sum, t) => sum + t.totalPaise, 0);
+    const left = new Map<string, number>();
+    for (const t of byStage(s)) if (t.invoice) left.set(t.invoice.id, t.invoice.leftPaise);
+    return [...left.values()].reduce((a, b) => a + b, 0);
+  };
 
   return (
     <>
@@ -368,7 +374,10 @@ function ColumnHeader({ stage, count, totalPaise }: { stage: BoardStage; count: 
         <h2 className="text-base font-semibold text-primary">
           {STAGE_INFO[stage].title} <span className="font-normal text-muted-foreground">({count})</span>
         </h2>
-        <span className="text-sm font-semibold tabular-nums">{formatINR(totalPaise).replace(/\.00$/, "")}</span>
+        <span className="text-sm font-semibold tabular-nums" title={stage === "PAYMENT" ? "Amount still to collect" : "Value of these services"}>
+          {formatINR(totalPaise).replace(/\.00$/, "")}
+          {stage === "PAYMENT" ? <span className="font-normal text-muted-foreground"> due</span> : null}
+        </span>
       </div>
       <p className="text-xs text-muted-foreground">{STAGE_INFO[stage].help}</p>
     </header>

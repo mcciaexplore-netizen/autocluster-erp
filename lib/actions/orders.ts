@@ -5,6 +5,10 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { db } from "@/db";
 import { addInvoice, findInvoice } from "@/db/invoice-writer";
+import { addFollowUp, FOLLOW_UP_METHODS, logReminder, PAYMENT_MODES, recordPayment } from "@/db/payment-writer";
+import { settings, tickets as ticketsTable } from "@/db/schema";
+import { buildReminder, type Reminder } from "@/lib/reminders";
+import { eq } from "drizzle-orm";
 import { addPurchaseOrder, DuplicatePoError, findPo, registerFile, type ExistingPo } from "@/db/po-writer";
 import { UserFacingError } from "@/db/quote-writer";
 import { cancelTicket, moveTicketBack } from "@/db/ticket-writer";
@@ -134,4 +138,70 @@ const addInvoiceInput = z.object({
 
 export async function addInvoiceAction(input: z.input<typeof addInvoiceInput>) {
   return run(() => addInvoice(db, addInvoiceInput.parse(input), todayInIndia()));
+}
+
+// ---- payment follow-up -----------------------------------------------------------------
+
+const optDate = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}$/, { message: "Please check the date." })
+  .nullable()
+  .optional();
+
+const paymentInput = z.object({
+  invoiceId: id,
+  amountPaise: z.number().int().min(0).max(100_000_000_000),
+  tdsPaise: z.number().int().min(0).max(100_000_000_000),
+  paidOn: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, { message: "Please enter the payment date." }),
+  mode: z.enum(Object.keys(PAYMENT_MODES) as [keyof typeof PAYMENT_MODES, ...(keyof typeof PAYMENT_MODES)[]], { message: "Please choose how the payment was made." }),
+  reference: z.string().trim().max(100).nullable().optional(),
+  notes: z.string().trim().max(500).nullable().optional(),
+});
+
+export async function recordPaymentAction(input: z.input<typeof paymentInput>) {
+  return run(() => recordPayment(db, paymentInput.parse(input), todayInIndia()));
+}
+
+const followUpInput = z.object({
+  invoiceId: id,
+  method: z.enum(Object.keys(FOLLOW_UP_METHODS) as [keyof typeof FOLLOW_UP_METHODS, ...(keyof typeof FOLLOW_UP_METHODS)[]], { message: "Please choose how you followed up." }),
+  note: z.string().trim().min(3, { message: "Please write a short note." }).max(1000),
+  promisedDate: optDate,
+  nextFollowUpDate: optDate,
+});
+
+export async function addFollowUpAction(input: z.input<typeof followUpInput>) {
+  return run(() => addFollowUp(db, followUpInput.parse(input)));
+}
+
+/** Ready-written reminder for this ticket's invoice, filled from the Settings templates. */
+export async function loadReminder(ticketId: string): Promise<Result<Reminder & { invoiceId: string }>> {
+  if (!(await isSignedIn())) return { ok: false, message: SIGNED_OUT_MESSAGE };
+  if (!id.safeParse(ticketId).success) return { ok: false, message: "This ticket could not be found." };
+  const detail = await getTicketDetail(ticketId);
+  if (!detail?.invoice) return { ok: false, message: "This service has no tax invoice yet." };
+  const [[s], [c]] = await Promise.all([
+    db.select().from(settings).where(eq(settings.id, 1)),
+    db.select({ customerId: ticketsTable.customerId }).from(ticketsTable).where(eq(ticketsTable.id, ticketId)),
+  ]);
+  const contact = await db.query.customers.findFirst({ where: (cu, { eq: e }) => e(cu.id, c.customerId) });
+  if (!s || !contact) return { ok: false, message: "We couldn't prepare the reminder. Please try again." };
+  const inv = detail.invoice;
+  const r = buildReminder({
+    templates: { whatsapp: s.whatsappTemplate, emailSubject: s.emailSubjectTemplate, emailBody: s.emailBodyTemplate },
+    company: contact.companyName,
+    contactName: contact.pocName,
+    phone: contact.pocPhone,
+    email: contact.pocEmail,
+    invoiceNo: inv.number,
+    invoiceDate: inv.date,
+    dueDate: inv.dueDate,
+    leftPaise: inv.leftPaise,
+    today: todayInIndia(),
+  });
+  return { ok: true, data: { ...r, invoiceId: inv.id } };
+}
+
+export async function logReminderAction(invoiceId: string, channel: "WHATSAPP" | "EMAIL") {
+  return run(() => logReminder(db, id.parse(invoiceId), channel === "EMAIL" ? "EMAIL" : "WHATSAPP"));
 }
