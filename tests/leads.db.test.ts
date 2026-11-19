@@ -32,7 +32,7 @@ describe.skipIf(skip)("enquiries (database)", () => {
     expect([...nos].sort()).toEqual(Array.from({ length: 10 }, (_, i) => `ACDRI/EN/2026-27/${String(i + 1).padStart(4, "0")}`));
   });
 
-  it("a new enquiry starts in the first open stage with the source 'Other' and a Created entry", async () => {
+  it("a new enquiry starts in the first open stage (source 'Other' if none given) with a Created entry", async () => {
     const l = await createLead(db, base);
     expect(l.stageId).toBe((await stage("New")).id);
     const [src] = await db.select().from(s.crmSources).where(eq(s.crmSources.id, l.sourceId));

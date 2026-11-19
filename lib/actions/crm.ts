@@ -20,6 +20,7 @@ import { isSignedIn } from "@/lib/auth-guard";
 import { SIGNED_OUT_MESSAGE } from "@/lib/auth-messages";
 import { canManagePipeline } from "@/lib/crm/permissions";
 import { parseRupees } from "@/lib/money-input";
+import { parseMobileOrEmail } from "@/lib/crm/contact";
 
 type Result<T> = { ok: true; data: T } | { ok: false; message: string };
 
@@ -42,19 +43,22 @@ async function run<T>(fn: () => Promise<T>): Promise<Result<T>> {
 
 const quickAdd = z.object({
   stageId: id,
+  sourceId: z.string().max(100),
   title: z.string().max(300),
   companyName: z.string().max(200),
   contactName: z.string().max(200),
-  phone: z.string().max(30),
+  mobileOrEmail: z.string().max(200),
   expectedValue: z.string().max(30),
 });
 export type QuickAddInput = z.input<typeof quickAdd>;
 
-/** Quick add from the top of a column. The source is set to "Other"; it can be changed in the full form. */
+/** Quick add from the top of a column. */
 export async function quickAddLeadAction(input: QuickAddInput) {
   return run(async () => {
     const v = quickAdd.parse(input);
-    if (!v.phone.trim()) throw new UserFacingError("Please enter the mobile number.");
+    if (!v.sourceId) throw new UserFacingError("Please choose where the enquiry came from (the source).");
+    const contact = parseMobileOrEmail(v.mobileOrEmail);
+    if (contact.problem) throw new UserFacingError(contact.problem);
     let value: number | null = null;
     if (v.expectedValue.trim()) {
       value = parseRupees(v.expectedValue);
@@ -62,10 +66,12 @@ export async function quickAddLeadAction(input: QuickAddInput) {
     }
     const lead = await createLead(db, {
       stageId: v.stageId,
+      sourceId: id.parse(v.sourceId),
       title: v.title,
       companyName: v.companyName,
       contactName: v.contactName,
-      phone: v.phone,
+      phone: contact.phone,
+      email: contact.email,
       expectedValuePaise: value,
     });
     return { id: lead.id, leadNo: lead.leadNo };

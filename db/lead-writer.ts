@@ -9,6 +9,7 @@
  * - Every change is written to the enquiry's history (lead_events).
  */
 import { and, asc, eq, inArray, isNull, sql } from "drizzle-orm";
+import { EMAIL_PROBLEM, EMAIL_RE, MOBILE_PROBLEM, normalizeMobile } from "@/lib/crm/contact";
 import { MOBILE_REGEX } from "@/lib/india";
 import { financialYear, formatQuoteNo } from "@/lib/pricing";
 import { todayInIndia } from "@/lib/tickets";
@@ -65,13 +66,8 @@ export interface LeadInput {
 
 // ---- small helpers -------------------------------------------------------------------
 
-/** "+91 98220 12345" -> "9822012345". Returns null when empty. */
-export function normalizeMobile(v: string | null | undefined): string | null {
-  const d = (v ?? "").replace(/\D/g, "").replace(/^(?:91|0)(?=\d{10}$)/, "");
-  return d || null;
-}
+export { normalizeMobile };
 
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 const clean = (v: string | null | undefined) => {
   const t = (v ?? "").trim().replace(/\s+/g, " ");
   return t || null;
@@ -105,9 +101,9 @@ async function cleanInput(tx: Tx, input: LeadInput) {
   const contactName = clean(input.contactName);
   if (!contactName) throw new UserFacingError("Please enter the contact person's name.");
   const phone = normalizeMobile(input.phone);
-  if (phone && !MOBILE_REGEX.test(phone)) throw new UserFacingError("The mobile number should have 10 digits, starting with 6, 7, 8 or 9.");
+  if (phone && !MOBILE_REGEX.test(phone)) throw new UserFacingError(MOBILE_PROBLEM);
   const email = clean(input.email)?.toLowerCase() ?? null;
-  if (email && !EMAIL_RE.test(email)) throw new UserFacingError("This email address doesn't look right, e.g. name@company.com.");
+  if (email && !EMAIL_RE.test(email)) throw new UserFacingError(EMAIL_PROBLEM);
   if (!phone && !email) throw new UserFacingError("Please enter a mobile number or an email address, so we can reach them.");
   const priority = input.priority ?? 0;
   if (!Number.isInteger(priority) || priority < 0 || priority > 3) throw new UserFacingError("Priority must be 0 to 3 stars.");

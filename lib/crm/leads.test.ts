@@ -78,3 +78,15 @@ describe("sorting", () => {
     expect(order("newest")).toBe("bca");
   });
 });
+
+import { parseMobileOrEmail } from "./contact";
+describe("one 'Mobile or email' box", () => {
+  it("treats text with @ as email and the rest as a mobile, checking whichever was typed", () => {
+    expect(parseMobileOrEmail("+91 98220 12345")).toEqual({ phone: "9822012345", email: null, problem: null });
+    expect(parseMobileOrEmail(" Neha@Kalyani.Example ")).toEqual({ phone: null, email: "neha@kalyani.example", problem: null });
+    expect(parseMobileOrEmail("98220").problem).toMatch(/10 digits/);
+    expect(parseMobileOrEmail("neha@kalyani").problem).toMatch(/email/);
+    expect(parseMobileOrEmail("neha kalyani").problem).toMatch(/mobile number or an email/);
+    expect(parseMobileOrEmail("  ").problem).toMatch(/Please enter/);
+  });
+});

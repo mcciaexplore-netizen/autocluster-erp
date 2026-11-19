@@ -150,6 +150,7 @@ export function CrmBoard({ stages, leads, pickers }: { stages: BoardStage[]; lea
     quickAdd === s.id ? (
       <QuickAdd
         stageId={s.id}
+        sources={pickers.sources}
         onCancel={() => setQuickAdd(null)}
         onDone={() => {
           setQuickAdd(null);

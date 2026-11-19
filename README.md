@@ -139,6 +139,20 @@ Copy-Item .env.local.localdb .env.local   # use the local database again
 - All database and PDF code runs on the Node.js runtime. The PDF fonts are bundled in `lib/pdf/fonts.generated.ts`, not read from disk.
 - Neon's free plan pauses the database when idle, so the first page after a quiet spell can take a second or two longer.
 
+### Database updates: switch to migration files before real use
+For the demo, table changes are applied with `npm run db:push`, which compares the code with the database and applies the difference straight away.
+
+**Known quirk:** on Neon, every `db:push` shows the primary keys of the link tables as changed, and drops and re-adds them with the same name and columns. These are `customer_services`, `customer_departments`, `lead_departments`, `lead_services` and `lead_tags`.
+- No data is affected; the key is put back within the same update.
+- The cause is in drizzle-kit 0.31.11: it reads the key's columns without a fixed order, and Neon returns them in a different order from the code. A local database doesn't show this.
+
+**If this goes into real use**, switch from `db:push` to migration files:
+1. Run `npx drizzle-kit generate` to write each change as an SQL file in `drizzle/`.
+2. Check the SQL file and commit it to Git.
+3. Apply it with `npx drizzle-kit migrate`.
+
+Each change is then reviewed before it reaches the live database, can be repeated exactly on another copy, and isn't affected by the key quirk above.
+
 ---
 
 ## Where things are
