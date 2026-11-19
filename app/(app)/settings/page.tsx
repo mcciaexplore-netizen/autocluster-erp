@@ -7,27 +7,37 @@ import { SettingsForm } from "@/components/settings/settings-form";
 import { TALLY_CONNECTION } from "@/lib/tally";
 import { Plug } from "lucide-react";
 import { getSettings } from "@/lib/data";
+import { getCrmLists, getCrmStages } from "@/lib/crm-data";
+import { CrmListsSection } from "@/components/crm/crm-lists-section";
 
 export const metadata: Metadata = { title: "Settings" };
 
 export default function SettingsPage() {
   return (
     <div className="mx-auto max-w-4xl">
-      <PageHeader title="Settings" description="Organisation details, discounts, tax, quotation and billing defaults." />
+      <PageHeader title="Settings" description="Organisation details, discounts, tax, quotations, billing and CRM." />
       <Suspense fallback={<FormSkeleton />}>
         <Form />
       </Suspense>
-      <div className="mt-8">
+      <div className="mt-8 flex flex-col gap-6">
+        <Suspense fallback={<FormSkeleton />}>
+          <CrmLists />
+        </Suspense>
         <TallySection />
       </div>
     </div>
   );
 }
 
+async function CrmLists() {
+  return <CrmListsSection lists={await getCrmLists()} />;
+}
+
 async function Form() {
-  const s = await getSettings();
+  const [s, stages] = await Promise.all([getSettings(), getCrmStages()]);
   return (
     <SettingsForm
+      stages={stages.map((st) => ({ id: st.id, name: st.name, type: st.type }))}
       initial={{
         orgName: s.orgName,
         orgAddress: s.orgAddress,
@@ -46,6 +56,11 @@ async function Form() {
         emailSubjectTemplate: s.emailSubjectTemplate,
         emailBodyTemplate: s.emailBodyTemplate,
         defaultTerms: s.defaultTerms,
+        leadPrefix: s.leadPrefix,
+        leadWhatsappTemplate: s.leadWhatsappTemplate,
+        leadEmailSubjectTemplate: s.leadEmailSubjectTemplate,
+        leadEmailBodyTemplate: s.leadEmailBodyTemplate,
+        quoteCreatedMoveToStageId: s.quoteCreatedMoveToStageId ?? "",
       }}
     />
   );

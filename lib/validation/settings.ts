@@ -29,5 +29,17 @@ export const settingsSchema = z.object({
   whatsappTemplate: z.string().trim().min(10, { message: "Please write the WhatsApp message." }).max(1000, { message: "Please keep the message under 1,000 characters." }),
   emailSubjectTemplate: z.string().trim().min(3, { message: "Please write the email subject." }).max(200, { message: "Please keep the subject under 200 characters." }),
   emailBodyTemplate: z.string().trim().min(10, { message: "Please write the email message." }).max(4000, { message: "Please keep the message under 4,000 characters." }),
+  // CRM
+  leadPrefix: z
+    .string()
+    .trim()
+    .min(1, { message: "Please enter a prefix, e.g. ACDRI/EN." })
+    .max(30, { message: "Keep the prefix short, e.g. ACDRI/EN." })
+    .regex(/^[A-Za-z0-9/_-]+$/, { message: "Use letters, numbers, / - or _ only, e.g. ACDRI/EN." }),
+  leadWhatsappTemplate: z.string().trim().min(10, { message: "Please write the WhatsApp message." }).max(1000, { message: "Please keep the message under 1,000 characters." }),
+  leadEmailSubjectTemplate: z.string().trim().min(3, { message: "Please write the email subject." }).max(200, { message: "Please keep the subject under 200 characters." }),
+  leadEmailBodyTemplate: z.string().trim().min(10, { message: "Please write the email message." }).max(4000, { message: "Please keep the message under 4,000 characters." }),
+  /** A stage id, or "" for "Don't move". */
+  quoteCreatedMoveToStageId: z.union([z.literal(""), z.string().uuid({ message: "Please choose a stage." })]),
 });
 export type SettingsInput = z.input<typeof settingsSchema>;

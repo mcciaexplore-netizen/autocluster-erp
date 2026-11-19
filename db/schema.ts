@@ -1,5 +1,7 @@
 import { sql } from "drizzle-orm";
+import type { AnyPgColumn } from "drizzle-orm/pg-core";
 import {
+  bigint,
   boolean,
   date,
   index,
@@ -11,6 +13,7 @@ import {
   primaryKey,
   serial,
   text,
+  time,
   timestamp,
   uniqueIndex,
   uuid,
@@ -20,6 +23,11 @@ import {
   DEFAULT_EMAIL_SUBJECT_TEMPLATE,
   DEFAULT_WHATSAPP_TEMPLATE,
 } from "../lib/reminder-templates";
+import {
+  DEFAULT_LEAD_EMAIL_BODY_TEMPLATE,
+  DEFAULT_LEAD_EMAIL_SUBJECT_TEMPLATE,
+  DEFAULT_LEAD_WHATSAPP_TEMPLATE,
+} from "../lib/crm/templates";
 
 export const categoryEnum = pgEnum("company_category", ["OEM", "TIER1", "TIER2", "MSME"]);
 export const unitTypeEnum = pgEnum("unit_type", ["PER_CC", "PER_HOUR", "PER_SAMPLE", "PER_HOUR_3_SAMPLES"]);
@@ -30,6 +38,8 @@ export const fileKindEnum = pgEnum("file_kind", ["PO", "INVOICE"]);
 export const paymentModeEnum = pgEnum("payment_mode", ["BANK", "UPI", "CHEQUE", "CASH"]);
 export const followUpMethodEnum = pgEnum("follow_up_method", ["CALL", "WHATSAPP", "EMAIL", "VISIT", "OTHER"]);
 export const exportMethodEnum = pgEnum("export_method", ["EXCEL_MANUAL", "TALLY"]);
+export const crmStageTypeEnum = pgEnum("crm_stage_type", ["OPEN", "WON", "LOST"]);
+export const crmActivityTypeEnum = pgEnum("crm_activity_type", ["CALL", "MEETING", "EMAIL", "WHATSAPP", "SITE_VISIT", "FOLLOW_UP"]);
 
 const money = (name: string) => numeric(name, { precision: 14, scale: 2 });
 const timestamps = {
@@ -174,11 +184,14 @@ export const quotations = pgTable(
     status: quotationStatusEnum("status").notNull().default("DRAFT"),
     notes: text("notes"),
     terms: text("terms").notNull(),
+    /** The CRM enquiry this quotation was made from (Module 4). */
+    leadId: uuid("lead_id").references((): AnyPgColumn => leads.id),
     deletedAt: timestamp("deleted_at", { withTimezone: true }),
     ...timestamps,
   },
   (t) => [
     uniqueIndex("quotations_quote_no_idx").on(t.quoteNo),
+    index("quotations_lead_idx").on(t.leadId),
     uniqueIndex("quotations_fy_seq_idx").on(t.fy, t.seq),
     index("quotations_customer_idx").on(t.customerId),
     index("quotations_date_idx").on(t.quoteDate),
@@ -241,6 +254,13 @@ export const settings = pgTable("settings", {
   whatsappTemplate: text("whatsapp_template").notNull().default(DEFAULT_WHATSAPP_TEMPLATE),
   emailSubjectTemplate: text("email_subject_template").notNull().default(DEFAULT_EMAIL_SUBJECT_TEMPLATE),
   emailBodyTemplate: text("email_body_template").notNull().default(DEFAULT_EMAIL_BODY_TEMPLATE),
+  // Module 4: CRM
+  leadPrefix: text("lead_prefix").notNull().default("ACDRI/EN"),
+  leadWhatsappTemplate: text("lead_whatsapp_template").notNull().default(DEFAULT_LEAD_WHATSAPP_TEMPLATE),
+  leadEmailSubjectTemplate: text("lead_email_subject_template").notNull().default(DEFAULT_LEAD_EMAIL_SUBJECT_TEMPLATE),
+  leadEmailBodyTemplate: text("lead_email_body_template").notNull().default(DEFAULT_LEAD_EMAIL_BODY_TEMPLATE),
+  /** Stage an enquiry moves to when a quotation is created from it. Empty = don't move. */
+  quoteCreatedMoveToStageId: uuid("quote_created_move_to_stage_id"),
   updatedAt: timestamp("updated_at", { withTimezone: true })
     .notNull()
     .default(sql`now()`)
@@ -426,6 +446,193 @@ export const billingExports = pgTable("billing_exports", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
+// ---------------------------------------------------------------------------
+// Module 4: CRM (enquiries pipeline)
+// ---------------------------------------------------------------------------
+
+export const crmStages = pgTable(
+  "crm_stages",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    name: text("name").notNull(),
+    /** One of the preset colour keys in lib/crm/stages.ts, e.g. "blue". */
+    color: text("color").notNull().default("grey"),
+    sortOrder: integer("sort_order").notNull().default(0),
+    type: crmStageTypeEnum("type").notNull().default("OPEN"),
+    probability: integer("probability").notNull().default(10),
+    isFolded: boolean("is_folded").notNull().default(false),
+    ...timestamps,
+  },
+  (t) => [index("crm_stages_sort_idx").on(t.sortOrder)],
+);
+
+/** Who changed the pipeline stages, what and when. */
+export const crmStageChanges = pgTable("crm_stage_changes", {
+  id: serial("id").primaryKey(),
+  action: text("action").notNull(),
+  details: jsonb("details").$type<Record<string, unknown>>(),
+  createdBy: text("created_by").notNull().default("Demo User"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const crmSources = pgTable("crm_sources", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  name: text("name").notNull(),
+  sortOrder: integer("sort_order").notNull().default(0),
+  isActive: boolean("is_active").notNull().default(true),
+});
+
+export const crmLostReasons = pgTable("crm_lost_reasons", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  name: text("name").notNull(),
+  sortOrder: integer("sort_order").notNull().default(0),
+  isActive: boolean("is_active").notNull().default(true),
+});
+
+export const crmTags = pgTable("crm_tags", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  name: text("name").notNull(),
+  sortOrder: integer("sort_order").notNull().default(0),
+  isActive: boolean("is_active").notNull().default(true),
+});
+
+/** People enquiries can be assigned to. Names only, not sign-in accounts. */
+export const teamMembers = pgTable("team_members", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  name: text("name").notNull(),
+  phone: text("phone"),
+  email: text("email"),
+  sortOrder: integer("sort_order").notNull().default(0),
+  isActive: boolean("is_active").notNull().default(true),
+});
+
+/** Running enquiry number per financial year. Never goes backwards, so numbers are never reused. */
+export const leadCounters = pgTable("lead_counters", {
+  fy: text("fy").primaryKey(),
+  lastSeq: integer("last_seq").notNull().default(0),
+});
+
+export const leads = pgTable(
+  "leads",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    leadNo: text("lead_no").notNull(),
+    fy: text("fy").notNull(),
+    seq: integer("seq").notNull(),
+    title: text("title").notNull(),
+    customerId: uuid("customer_id").references(() => customers.id),
+    companyName: text("company_name").notNull(),
+    contactName: text("contact_name").notNull(),
+    designation: text("designation"),
+    phone: text("phone"),
+    email: text("email"),
+    city: text("city"),
+    category: categoryEnum("category"),
+    isMcciaMember: boolean("is_mccia_member"),
+    mcciaMembershipId: text("mccia_membership_id"),
+    sourceId: uuid("source_id")
+      .notNull()
+      .references(() => crmSources.id),
+    stageId: uuid("stage_id")
+      .notNull()
+      .references(() => crmStages.id),
+    priority: integer("priority").notNull().default(0),
+    /** Expected value in paise. */
+    expectedValue: bigint("expected_value", { mode: "number" }),
+    expectedCloseDate: date("expected_close_date"),
+    assignedTo: uuid("assigned_to").references(() => teamMembers.id),
+    notes: text("notes"),
+    lostReasonId: uuid("lost_reason_id").references(() => crmLostReasons.id),
+    lostNote: text("lost_note"),
+    wonAt: timestamp("won_at", { withTimezone: true }),
+    lostAt: timestamp("lost_at", { withTimezone: true }),
+    stageChangedAt: timestamp("stage_changed_at", { withTimezone: true }).notNull().defaultNow(),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
+    ...timestamps,
+  },
+  (t) => [
+    uniqueIndex("leads_lead_no_idx").on(t.leadNo),
+    uniqueIndex("leads_fy_seq_idx").on(t.fy, t.seq),
+    index("leads_stage_idx").on(t.stageId),
+    index("leads_customer_idx").on(t.customerId),
+    index("leads_assigned_idx").on(t.assignedTo),
+  ],
+);
+
+export const leadDepartments = pgTable(
+  "lead_departments",
+  {
+    leadId: uuid("lead_id")
+      .notNull()
+      .references(() => leads.id, { onDelete: "cascade" }),
+    deptCode: text("dept_code")
+      .notNull()
+      .references(() => departments.code),
+  },
+  (t) => [primaryKey({ columns: [t.leadId, t.deptCode] })],
+);
+
+export const leadServices = pgTable(
+  "lead_services",
+  {
+    leadId: uuid("lead_id")
+      .notNull()
+      .references(() => leads.id, { onDelete: "cascade" }),
+    serviceId: integer("service_id")
+      .notNull()
+      .references(() => services.id),
+  },
+  (t) => [primaryKey({ columns: [t.leadId, t.serviceId] })],
+);
+
+export const leadTags = pgTable(
+  "lead_tags",
+  {
+    leadId: uuid("lead_id")
+      .notNull()
+      .references(() => leads.id, { onDelete: "cascade" }),
+    tagId: uuid("tag_id")
+      .notNull()
+      .references(() => crmTags.id),
+  },
+  (t) => [primaryKey({ columns: [t.leadId, t.tagId] })],
+);
+
+export const crmActivities = pgTable(
+  "crm_activities",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    leadId: uuid("lead_id")
+      .notNull()
+      .references(() => leads.id, { onDelete: "cascade" }),
+    type: crmActivityTypeEnum("type").notNull(),
+    dueDate: date("due_date").notNull(),
+    dueTime: time("due_time"),
+    note: text("note"),
+    assignedTo: uuid("assigned_to").references(() => teamMembers.id),
+    doneAt: timestamp("done_at", { withTimezone: true }),
+    outcome: text("outcome"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("crm_activities_lead_idx").on(t.leadId), index("crm_activities_due_idx").on(t.dueDate)],
+);
+
+export const leadEvents = pgTable(
+  "lead_events",
+  {
+    id: serial("id").primaryKey(),
+    leadId: uuid("lead_id")
+      .notNull()
+      .references(() => leads.id, { onDelete: "cascade" }),
+    type: text("type").notNull(),
+    message: text("message").notNull(),
+    data: jsonb("data").$type<Record<string, unknown>>(),
+    createdBy: text("created_by").notNull().default("Demo User"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("lead_events_lead_idx").on(t.leadId, t.createdAt)],
+);
+
 export type Department = typeof departments.$inferSelect;
 export type Service = typeof services.$inferSelect;
 export type Customer = typeof customers.$inferSelect;
@@ -440,3 +647,10 @@ export type Payment = typeof payments.$inferSelect;
 export type FollowUp = typeof followUps.$inferSelect;
 export type FileRow = typeof files.$inferSelect;
 export type TicketEvent = typeof ticketEvents.$inferSelect;
+export type CrmStage = typeof crmStages.$inferSelect;
+export type CrmStageType = (typeof crmStageTypeEnum.enumValues)[number];
+export type CrmActivityType = (typeof crmActivityTypeEnum.enumValues)[number];
+export type Lead = typeof leads.$inferSelect;
+export type CrmActivity = typeof crmActivities.$inferSelect;
+export type LeadEvent = typeof leadEvents.$inferSelect;
+export type TeamMember = typeof teamMembers.$inferSelect;

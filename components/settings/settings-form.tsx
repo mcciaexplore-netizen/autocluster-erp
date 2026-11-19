@@ -1,7 +1,7 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import { BellRing, Building2, FileText, ImageIcon, Loader2, Percent, Save, SquareKanban } from "lucide-react";
+import { BellRing, Building2, Handshake, FileText, ImageIcon, Loader2, Percent, Save, SquareKanban } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useTransition } from "react";
 import { Controller, useForm, useWatch } from "react-hook-form";
@@ -25,6 +25,16 @@ import {
   type TemplateValues,
 } from "@/lib/reminder-templates";
 import { DEFAULT_TERMS } from "@/lib/settings-shared";
+import {
+  DEFAULT_LEAD_EMAIL_BODY_TEMPLATE,
+  DEFAULT_LEAD_EMAIL_SUBJECT_TEMPLATE,
+  DEFAULT_LEAD_WHATSAPP_TEMPLATE,
+  fillLeadTemplate,
+  LEAD_TEMPLATE_PLACEHOLDERS,
+} from "@/lib/crm/templates";
+
+const LEAD_SAMPLE = { contact_name: "Rohan Kulkarni", company: "Sahyadri Auto Components Pvt Ltd", enquiry_title: "3D printing of 20 prototype parts" };
+const DONT_MOVE = "none";
 
 const SAMPLE_VALUES: TemplateValues = {
   company: "Sahyadri Auto Components Pvt Ltd",
@@ -37,7 +47,7 @@ const SAMPLE_VALUES: TemplateValues = {
 };
 import { settingsSchema, type SettingsInput } from "@/lib/validation/settings";
 
-export function SettingsForm({ initial }: { initial: SettingsInput }) {
+export function SettingsForm({ initial, stages }: { initial: SettingsInput; stages: { id: string; name: string; type: "OPEN" | "WON" | "LOST" }[] }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const form = useForm<SettingsInput>({ resolver: zodResolver(settingsSchema), defaultValues: initial, mode: "onTouched" });
@@ -62,6 +72,9 @@ export function SettingsForm({ initial }: { initial: SettingsInput }) {
   const prefix = useWatch({ control, name: "quotePrefix" }) || "ACDRI/QT";
   const ticketPrefix = useWatch({ control, name: "ticketPrefix" }) || "ACDRI/TK";
   const whatsapp = useWatch({ control, name: "whatsappTemplate" });
+  const leadPrefix = useWatch({ control, name: "leadPrefix" }) || "ACDRI/EN";
+  const leadWhatsapp = useWatch({ control, name: "leadWhatsappTemplate" });
+  const wonStage = stages.find((st) => st.type === "WON")?.name ?? "Won";
   const pct = useWatch({ control, name: "memberDiscountPct" });
   const applyNonMsme = useWatch({ control, name: "applyDiscountToNonMsme" });
 
@@ -252,6 +265,95 @@ export function SettingsForm({ initial }: { initial: SettingsInput }) {
           >
             {(p) => <Textarea {...p} rows={10} {...register("emailBodyTemplate")} />}
           </Field>
+        </div>
+      </FormSection>
+
+      <FormSection title="CRM" description="Enquiry numbers, contact messages and automatic moves." icon={<Handshake className="size-5" />}>
+        <div className="flex flex-col gap-5">
+          <Field
+            label="Enquiry number prefix"
+            required
+            error={e.leadPrefix?.message}
+            helper={`New enquiries will look like ${formatQuoteNo(leadPrefix.toUpperCase(), financialYear(new Date()), 1)}. Existing enquiries keep their numbers.`}
+          >
+            {(p) => <Input {...p} className="uppercase md:max-w-sm" {...register("leadPrefix")} />}
+          </Field>
+          <p className="text-sm text-muted-foreground">
+            In the messages below, these words are filled in for you:{" "}
+            {LEAD_TEMPLATE_PLACEHOLDERS.map((ph) => (
+              <code key={ph} className="mr-1 rounded bg-muted px-1.5 py-0.5 text-xs text-foreground">
+                {ph}
+              </code>
+            ))}
+          </p>
+          <Field
+            label="WhatsApp message for enquiries"
+            required
+            error={e.leadWhatsappTemplate?.message}
+            helper={
+              <>
+                Preview: <span className="text-foreground">{fillLeadTemplate(leadWhatsapp ?? "", LEAD_SAMPLE)}</span>{" "}
+                <button type="button" className="font-medium text-primary underline-offset-4 hover:underline" onClick={() => setValue("leadWhatsappTemplate", DEFAULT_LEAD_WHATSAPP_TEMPLATE, { shouldDirty: true, shouldValidate: true })}>
+                  Use the standard wording
+                </button>
+              </>
+            }
+          >
+            {(p) => <Textarea {...p} rows={3} {...register("leadWhatsappTemplate")} />}
+          </Field>
+          <Field label="Email subject for enquiries" required error={e.leadEmailSubjectTemplate?.message}>
+            {(p) => <Input {...p} {...register("leadEmailSubjectTemplate")} />}
+          </Field>
+          <Field
+            label="Email message for enquiries"
+            required
+            error={e.leadEmailBodyTemplate?.message}
+            helper={
+              <button
+                type="button"
+                className="font-medium text-primary underline-offset-4 hover:underline"
+                onClick={() => {
+                  setValue("leadEmailSubjectTemplate", DEFAULT_LEAD_EMAIL_SUBJECT_TEMPLATE, { shouldDirty: true, shouldValidate: true });
+                  setValue("leadEmailBodyTemplate", DEFAULT_LEAD_EMAIL_BODY_TEMPLATE, { shouldDirty: true, shouldValidate: true });
+                }}
+              >
+                Use the standard email
+              </button>
+            }
+          >
+            {(p) => <Textarea {...p} rows={8} {...register("leadEmailBodyTemplate")} />}
+          </Field>
+          <div className="flex flex-col gap-3 rounded-xl border bg-muted/30 p-4">
+            <p className="font-medium">Automatic moves</p>
+            <Field label="When a quotation is created from an enquiry, move it to:" error={e.quoteCreatedMoveToStageId?.message}>
+              {(p) => (
+                <Controller
+                  control={control}
+                  name="quoteCreatedMoveToStageId"
+                  render={({ field }) => (
+                    <Select value={field.value || DONT_MOVE} onValueChange={(v) => field.onChange(v === DONT_MOVE ? "" : v)}>
+                      <SelectTrigger {...p} className="w-full md:max-w-sm">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value={DONT_MOVE}>Don&apos;t move</SelectItem>
+                        {stages
+                          .filter((st) => st.type === "OPEN")
+                          .map((st) => (
+                            <SelectItem key={st.id} value={st.id}>
+                              {st.name}
+                            </SelectItem>
+                          ))}
+                      </SelectContent>
+                    </Select>
+                  )}
+                />
+              )}
+            </Field>
+            <p className="text-sm text-muted-foreground">
+              When that quotation is <strong className="text-foreground">Accepted</strong>, the enquiry is always marked as <strong className="text-foreground">{wonStage}</strong>.
+            </p>
+          </div>
         </div>
       </FormSection>
 
