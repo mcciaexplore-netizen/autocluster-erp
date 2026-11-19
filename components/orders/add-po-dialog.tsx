@@ -5,7 +5,6 @@ import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { Field } from "@/components/forms/field";
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { InputGroup, InputGroupAddon, InputGroupInput, InputGroupText } from "@/components/ui/input-group";
@@ -15,16 +14,11 @@ import { addPoAction, checkPoNumber } from "@/lib/actions/orders";
 import type { BlobEnv, UploadedFile } from "@/lib/files";
 import { formatDate } from "@/lib/format";
 import type { BoardTicket } from "@/lib/orders-data";
-import { formatINR, toPaise } from "@/lib/pricing";
+import { parseRupees } from "@/lib/money-input";
+import { formatINR } from "@/lib/pricing";
 import { poAmountMatches, todayInIndia } from "@/lib/tickets";
 import { FileField } from "./file-field";
-
-/** Parses "1,25,000.50" or "₹ 8496" into paise; null when it isn't a valid amount. */
-export function parseRupees(text: string): number | null {
-  const s = text.replace(/[,₹\s]/g, "");
-  if (!/^\d+(\.\d{1,2})?$/.test(s)) return null;
-  return toPaise(s);
-}
+import { groupTickets, ServiceChecklist, useToggleSet } from "./service-checklist";
 
 export function AddPoDialog({
   ticket,
@@ -68,12 +62,10 @@ function AddPoForm({
     () => tickets.filter((t) => t.customerId === ticket.customerId && t.stage === "WAITING_PO"),
     [tickets, ticket.customerId],
   );
-  const groups = useMemo(() => {
-    const m = new Map<string, BoardTicket[]>();
-    for (const t of candidates) m.set(t.quoteNo, [...(m.get(t.quoteNo) ?? []), t]);
-    // the clicked ticket's quotation first
-    return [...m.entries()].sort(([a], [b]) => (a === ticket.quoteNo ? -1 : b === ticket.quoteNo ? 1 : a.localeCompare(b)));
-  }, [candidates, ticket.quoteNo]);
+  const groups = useMemo(
+    () => groupTickets(candidates, (t) => t.quotationId, (t) => `Quotation ${t.quoteNo}`, ticket.quotationId),
+    [candidates, ticket.quotationId],
+  );
 
   const [selected, setSelected] = useState<Set<string>>(
     () => new Set([ticket.id, ...candidates.filter((t) => t.quotationId === ticket.quotationId).map((t) => t.id)]),
@@ -123,13 +115,7 @@ function AddPoForm({
       };
   const hasErrors = Object.values(errors).some(Boolean);
 
-  const toggle = (id: string, on: boolean) =>
-    setSelected((prev) => {
-      const next = new Set(prev);
-      if (on) next.add(id);
-      else next.delete(id);
-      return next;
-    });
+  const toggle = useToggleSet(setSelected);
 
   async function save() {
     setTouched(true);
@@ -235,34 +221,7 @@ function AddPoForm({
         </>
       )}
 
-      <fieldset className="flex flex-col gap-3">
-        <legend className="mb-1 text-base font-medium">This PO also covers</legend>
-        {groups.map(([quoteNo, ts]) => (
-          <div key={quoteNo} className="rounded-xl border">
-            <p className="border-b bg-muted/40 px-3 py-2 text-sm font-medium">Quotation {quoteNo}</p>
-            <ul className="divide-y">
-              {ts.map((t) => {
-                const self = t.id === ticket.id;
-                return (
-                  <li key={t.id}>
-                    <label className="flex cursor-pointer items-start gap-3 px-3 py-2.5 text-sm has-[:disabled]:cursor-default">
-                      <Checkbox className="mt-0.5" checked={selected.has(t.id)} disabled={self} onCheckedChange={(v) => toggle(t.id, v === true)} />
-                      <span className="min-w-0 flex-1">
-                        <span className="block font-medium">{t.description}</span>
-                        <span className="block text-xs text-muted-foreground">
-                          {t.ticketNo}
-                          {self ? " · this card" : ""}
-                        </span>
-                      </span>
-                      <span className="shrink-0 text-right tabular-nums">{formatINR(t.totalPaise)}</span>
-                    </label>
-                  </li>
-                );
-              })}
-            </ul>
-          </div>
-        ))}
-      </fieldset>
+      <ServiceChecklist legend="This PO also covers" groups={groups} selected={selected} selfId={ticket.id} onToggle={toggle} />
 
       <div className="flex flex-col gap-2 rounded-xl bg-muted/50 p-3 text-sm" aria-live="polite">
         <p>

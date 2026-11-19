@@ -1,9 +1,11 @@
 /**
  * npm run db:reset
- * Wipes ALL data (customers, quotations, rate card, settings) and reloads clean demo data.
+ * Wipes ALL data (customers, quotations, tickets, rate card, settings) and reloads clean demo data.
+ * Also deletes the uploaded files listed in THIS database (never anything else in the store).
  * Asks you to type RESET first.
  */
 import { createInterface } from "node:readline/promises";
+import { deleteStoredFiles, storedFilePaths } from "./blob-files";
 import { loadDemoData, scriptDb, wipe } from "./demo-data";
 
 async function main() {
@@ -19,6 +21,8 @@ async function main() {
       process.exitCode = 1;
       return;
     }
+    // Note the files this database knows about before wiping it.
+    const oldFiles = await storedFilePaths(db);
     // One transaction: if anything fails, the old data stays as it was.
     await db.transaction(async (tx) => {
       console.log("Wiping data...");
@@ -26,6 +30,10 @@ async function main() {
       console.log("Loading demo data...");
       await loadDemoData(tx);
     });
+    // Only after the new data is safely saved: delete the old uploaded files.
+    const r = await deleteStoredFiles(oldFiles);
+    if (r.skipped) console.log(r.skipped);
+    else if (r.deleted) console.log(`Deleted ${r.deleted} old uploaded file(s) that belonged to this database.`);
     console.log("Done. The database now holds clean demo data.");
   } finally {
     await pool.end();

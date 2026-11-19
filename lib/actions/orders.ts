@@ -4,6 +4,7 @@ import { head } from "@vercel/blob";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { db } from "@/db";
+import { addInvoice, findInvoice } from "@/db/invoice-writer";
 import { addPurchaseOrder, DuplicatePoError, findPo, registerFile, type ExistingPo } from "@/db/po-writer";
 import { UserFacingError } from "@/db/quote-writer";
 import { cancelTicket, moveTicketBack } from "@/db/ticket-writer";
@@ -110,4 +111,27 @@ const addPoInput = z.union([
 
 export async function addPoAction(input: z.input<typeof addPoInput>) {
   return run(() => addPurchaseOrder(db, addPoInput.parse(input), todayInIndia()));
+}
+
+// ---- tax invoices ---------------------------------------------------------------------
+
+/** Live check while typing: is this invoice number already used? Returns a message or null. */
+export async function checkInvoiceNumber(invoiceNumber: string): Promise<Result<string | null>> {
+  if (!(await isSignedIn())) return { ok: false, message: SIGNED_OUT_MESSAGE };
+  const used = await findInvoice(db, invoiceNumber.slice(0, 100));
+  return { ok: true, data: used ? `Invoice number ${used.number} is already used (${used.company}). Please check the number.` : null };
+}
+
+const addInvoiceInput = z.object({
+  ticketIds: z.array(id).min(1, { message: "Please tick at least one service." }).max(100),
+  invoiceNumber: z.string().trim().min(1, { message: "Please enter the invoice number." }).max(60, { message: "Please keep the invoice number under 60 characters." }),
+  invoiceDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, { message: "Please enter the invoice date." }),
+  amountPaise: z.number().int().positive({ message: "Please enter the invoice amount." }).max(100_000_000_000),
+  creditDays: z.number().int().min(0).max(365, { message: "Credit period should be between 0 and 365 days." }),
+  dueDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, { message: "Please enter the due date." }),
+  fileId: id,
+});
+
+export async function addInvoiceAction(input: z.input<typeof addInvoiceInput>) {
+  return run(() => addInvoice(db, addInvoiceInput.parse(input), todayInIndia()));
 }

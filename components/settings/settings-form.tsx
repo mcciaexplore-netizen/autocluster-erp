@@ -48,7 +48,7 @@ export function SettingsForm({ initial }: { initial: SettingsInput }) {
   return (
     <form onSubmit={onSubmit} noValidate className="flex flex-col gap-6">
       <FormSection title="Organisation profile" description="Printed at the top of every quotation." icon={<Building2 className="size-5" />}>
-        <div className="grid gap-5 md:grid-cols-2">
+        <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
           <Field label="Organisation name" required error={e.orgName?.message} className="md:col-span-2">
             {(p) => <Input {...p} {...register("orgName")} />}
           </Field>
@@ -71,9 +71,9 @@ export function SettingsForm({ initial }: { initial: SettingsInput }) {
           <Field label="Email" required error={e.orgEmail?.message} className="md:col-span-2" helper="e.g. info@autocluster.org">
             {(p) => <Input {...p} type="email" {...register("orgEmail")} />}
           </Field>
-          <div className="flex items-center gap-4 rounded-xl border border-dashed p-4 md:col-span-2">
+          <div className="flex min-w-0 flex-wrap items-center gap-4 rounded-xl border border-dashed p-4 md:col-span-2">
             <span className="grid size-14 place-items-center rounded-xl bg-primary font-title text-xl text-primary-foreground">AC</span>
-            <div className="flex-1">
+            <div className="min-w-40 flex-1">
               <p className="font-medium">Logo</p>
               <p className="text-sm text-muted-foreground">A placeholder is used for the demo. Logo upload will come later.</p>
             </div>
@@ -85,7 +85,7 @@ export function SettingsForm({ initial }: { initial: SettingsInput }) {
       </FormSection>
 
       <FormSection title="Discounts and tax" description="Used to work out every price." icon={<Percent className="size-5" />}>
-        <div className="grid gap-5 md:grid-cols-2">
+        <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
           <Field label="MCCIA member discount (%)" required error={e.memberDiscountPct?.message} helper="Taken off the rate for MCCIA members, e.g. 10">
             {(p) => <Input {...p} type="number" min={0} max={100} step="any" inputMode="decimal" {...register("memberDiscountPct", num)} />}
           </Field>
@@ -134,7 +134,7 @@ export function SettingsForm({ initial }: { initial: SettingsInput }) {
       </FormSection>
 
       <FormSection title="Quotations" icon={<FileText className="size-5" />}>
-        <div className="grid gap-5 md:grid-cols-2">
+        <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
           <Field label="Valid for (days)" required error={e.quoteValidityDays?.message} helper="Sets the default “Valid until” date, e.g. 30">
             {(p) => <Input {...p} type="number" min={1} max={365} step={1} inputMode="numeric" {...register("quoteValidityDays", num)} />}
           </Field>

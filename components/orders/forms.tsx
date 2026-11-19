@@ -5,11 +5,10 @@ import { toast } from "sonner";
 import type { BlobEnv } from "@/lib/files";
 import type { BoardTicket } from "@/lib/orders-data";
 import { AddPoDialog } from "./add-po-dialog";
+import { ExportBillingDialog, InvoiceDialog } from "./billing-dialogs";
 import type { ActionKind } from "./types";
 
 const COMING: Partial<Record<ActionKind, string>> = {
-  invoice: "The tax invoice form",
-  exportBilling: "Billing details download",
   reminder: "Payment reminders",
   note: "Follow-up notes",
   payment: "Recording payments",
@@ -36,7 +35,12 @@ export function BoardForms({
       onClose();
     }
   }, [label, onClose]);
+  const pick = (k: ActionKind) => (action?.kind === k ? action.ticket : null);
   return (
-    <AddPoDialog ticket={action?.kind === "addPo" ? action.ticket : null} tickets={tickets} env={uploadEnv} onClose={onClose} onDone={onDone} />
+    <>
+      <AddPoDialog ticket={pick("addPo")} tickets={tickets} env={uploadEnv} onClose={onClose} onDone={onDone} />
+      <ExportBillingDialog ticket={pick("exportBilling")} tickets={tickets} onClose={onClose} onDone={onDone} />
+      <InvoiceDialog ticket={pick("invoice")} tickets={tickets} env={uploadEnv} onClose={onClose} onDone={onDone} />
+    </>
   );
 }
