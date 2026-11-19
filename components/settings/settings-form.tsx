@@ -1,0 +1,183 @@
+"use client";
+
+import { zodResolver } from "@hookform/resolvers/zod";
+import { Building2, FileText, ImageIcon, Loader2, Percent, Save } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { useTransition } from "react";
+import { Controller, useForm, useWatch } from "react-hook-form";
+import { toast } from "sonner";
+import { saveSettings } from "@/lib/actions/settings";
+import { Field, FormSection } from "@/components/forms/field";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
+import { Textarea } from "@/components/ui/textarea";
+import { useUnsavedChangesWarning } from "@/hooks/use-unsaved-changes";
+import { financialYear, formatQuoteNo } from "@/lib/pricing";
+import { INDIAN_STATES } from "@/lib/india";
+import { DEFAULT_TERMS } from "@/lib/settings-shared";
+import { settingsSchema, type SettingsInput } from "@/lib/validation/settings";
+
+export function SettingsForm({ initial }: { initial: SettingsInput }) {
+  const router = useRouter();
+  const [pending, startTransition] = useTransition();
+  const form = useForm<SettingsInput>({ resolver: zodResolver(settingsSchema), defaultValues: initial, mode: "onTouched" });
+  const { register, control, handleSubmit, formState, reset, setValue } = form;
+  const e = formState.errors;
+  useUnsavedChangesWarning(formState.isDirty);
+
+  const onSubmit = (ev: React.FormEvent<HTMLFormElement>) =>
+    handleSubmit(
+    (v) =>
+      startTransition(async () => {
+        const res = await saveSettings(v);
+        if (!res.ok) return void toast.error(res.message);
+        reset(v);
+        toast.success("Settings saved");
+        router.refresh();
+      }),
+    () => toast.error("Some settings need a second look. Please check the fields marked in red."),
+  )(ev);
+
+  const num = { valueAsNumber: true } as const;
+  const prefix = useWatch({ control, name: "quotePrefix" }) || "ACDRI/QT";
+  const pct = useWatch({ control, name: "memberDiscountPct" });
+  const applyNonMsme = useWatch({ control, name: "applyDiscountToNonMsme" });
+
+  return (
+    <form onSubmit={onSubmit} noValidate className="flex flex-col gap-6">
+      <FormSection title="Organisation profile" description="Printed at the top of every quotation." icon={<Building2 className="size-5" />}>
+        <div className="grid gap-5 md:grid-cols-2">
+          <Field label="Organisation name" required error={e.orgName?.message} className="md:col-span-2">
+            {(p) => <Input {...p} {...register("orgName")} />}
+          </Field>
+          <Field label="Address" required error={e.orgAddress?.message} className="md:col-span-2">
+            {(p) => <Textarea {...p} rows={2} {...register("orgAddress")} />}
+          </Field>
+          <Field label="GST number (GSTIN)" required error={e.orgGstin?.message} helper="15 characters, e.g. 27AABCU9603R1ZM">
+            {(p) => (
+              <Input
+                {...p}
+                className="font-mono uppercase"
+                maxLength={15}
+                {...register("orgGstin", { onChange: (ev) => setValue("orgGstin", ev.target.value.toUpperCase()) })}
+              />
+            )}
+          </Field>
+          <Field label="Phone" required error={e.orgPhone?.message} helper="e.g. 020 2712 0000">
+            {(p) => <Input {...p} type="tel" {...register("orgPhone")} />}
+          </Field>
+          <Field label="Email" required error={e.orgEmail?.message} className="md:col-span-2" helper="e.g. info@autocluster.org">
+            {(p) => <Input {...p} type="email" {...register("orgEmail")} />}
+          </Field>
+          <div className="flex items-center gap-4 rounded-xl border border-dashed p-4 md:col-span-2">
+            <span className="grid size-14 place-items-center rounded-xl bg-primary font-title text-xl text-primary-foreground">AC</span>
+            <div className="flex-1">
+              <p className="font-medium">Logo</p>
+              <p className="text-sm text-muted-foreground">A placeholder is used for the demo. Logo upload will come later.</p>
+            </div>
+            <Button type="button" variant="outline" disabled>
+              <ImageIcon aria-hidden /> Upload logo
+            </Button>
+          </div>
+        </div>
+      </FormSection>
+
+      <FormSection title="Discounts and tax" description="Used to work out every price." icon={<Percent className="size-5" />}>
+        <div className="grid gap-5 md:grid-cols-2">
+          <Field label="MCCIA member discount (%)" required error={e.memberDiscountPct?.message} helper="Taken off the rate for MCCIA members, e.g. 10">
+            {(p) => <Input {...p} type="number" min={0} max={100} step="any" inputMode="decimal" {...register("memberDiscountPct", num)} />}
+          </Field>
+          <div className="flex flex-col gap-1.5">
+            <span className="text-base font-medium">Also apply to non-MSME members</span>
+            <label className="flex min-h-11 items-center gap-3">
+              <Controller
+                control={control}
+                name="applyDiscountToNonMsme"
+                render={({ field }) => <Switch checked={field.value} onCheckedChange={field.onChange} aria-label="Also apply to non-MSME members" />}
+              />
+              <span>{applyNonMsme ? "Yes" : "No"}</span>
+            </label>
+            <p className="text-sm text-muted-foreground">
+              {applyNonMsme
+                ? `OEM, Tier 1 and Tier 2 members also get ${Number.isFinite(pct) ? pct : 10}% off the OEM rate.`
+                : "Only MSME members get the discount."}
+            </p>
+          </div>
+          <Field label="GST (%)" required error={e.gstPct?.message} helper="e.g. 18. Split into CGST + SGST within the home state, IGST outside it.">
+            {(p) => <Input {...p} type="number" min={0} max={100} step="any" inputMode="decimal" {...register("gstPct", num)} />}
+          </Field>
+          <Field label="Home state" required error={e.homeStateCode?.message} helper="Customers in this state pay CGST + SGST.">
+            {(p) => (
+              <Controller
+                control={control}
+                name="homeStateCode"
+                render={({ field }) => (
+                  <Select value={field.value} onValueChange={field.onChange}>
+                    <SelectTrigger {...p} className="w-full">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent className="max-h-80">
+                      {INDIAN_STATES.map((s) => (
+                        <SelectItem key={s.code} value={s.code}>
+                          {s.name} ({s.code})
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+              />
+            )}
+          </Field>
+        </div>
+      </FormSection>
+
+      <FormSection title="Quotations" icon={<FileText className="size-5" />}>
+        <div className="grid gap-5 md:grid-cols-2">
+          <Field label="Valid for (days)" required error={e.quoteValidityDays?.message} helper="Sets the default “Valid until” date, e.g. 30">
+            {(p) => <Input {...p} type="number" min={1} max={365} step={1} inputMode="numeric" {...register("quoteValidityDays", num)} />}
+          </Field>
+          <Field
+            label="Number prefix"
+            required
+            error={e.quotePrefix?.message}
+            helper={`Quotation numbers will look like ${formatQuoteNo(prefix.toUpperCase(), financialYear(new Date()), 1)}`}
+          >
+            {(p) => <Input {...p} className="uppercase" {...register("quotePrefix")} />}
+          </Field>
+          <Field
+            label="Default terms and conditions"
+            required
+            error={e.defaultTerms?.message}
+            className="md:col-span-2"
+            helper={
+              <>
+                Filled in on new quotations. Staff can still change them on each quotation.{" "}
+                <button
+                  type="button"
+                  className="font-medium text-primary underline-offset-4 hover:underline"
+                  onClick={() => setValue("defaultTerms", DEFAULT_TERMS, { shouldDirty: true })}
+                >
+                  Use the standard terms
+                </button>
+              </>
+            }
+          >
+            {(p) => <Textarea {...p} rows={8} {...register("defaultTerms")} />}
+          </Field>
+        </div>
+      </FormSection>
+
+      <div className="sticky bottom-20 z-10 flex items-center justify-between gap-3 rounded-2xl border bg-card/95 p-4 shadow-lg backdrop-blur md:bottom-4">
+        <p className="text-sm text-muted-foreground" aria-live="polite">
+          {formState.isDirty ? "You have unsaved changes." : "All changes saved."}
+        </p>
+        <Button type="submit" size="lg" disabled={pending || !formState.isDirty}>
+          {pending ? <Loader2 className="animate-spin" aria-hidden /> : <Save aria-hidden />}
+          Save settings
+        </Button>
+      </div>
+    </form>
+  );
+}
