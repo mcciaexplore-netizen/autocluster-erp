@@ -165,7 +165,7 @@ export async function loadDemoData(db: DB | Tx) {
   console.log("Adding settings, departments and the rate card...");
   await db.insert(s.settings).values({
     id: 1,
-    orgName: "ACDRI AutoCluster",
+    orgName: "AutoCluster",
     orgAddress: "Automotive Cluster Development & Research Institute, H-Block, Plot No. 1, MIDC Pimpri, Pune 411018, Maharashtra",
     orgGstin: "27AAACA1234B1ZC",
     orgPhone: "020 2712 0000",

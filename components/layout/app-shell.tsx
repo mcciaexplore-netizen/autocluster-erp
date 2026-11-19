@@ -7,12 +7,12 @@ import { UserMenu } from "./user-menu";
 
 function Logo() {
   return (
-    <Link href="/" className="flex items-center gap-2.5 rounded-lg" aria-label="ACDRI AutoCluster, go to Home">
+    <Link href="/" className="flex items-center gap-2.5 rounded-lg" aria-label="AutoCluster, go to Home">
       <span aria-hidden className="grid size-10 place-items-center rounded-xl bg-primary font-title text-lg text-primary-foreground">
         AC
       </span>
       <span className="leading-tight">
-        <span className="block text-base font-semibold text-primary">ACDRI AutoCluster</span>
+        <span className="block text-base font-semibold text-primary">AutoCluster</span>
         <span className="block text-xs text-muted-foreground">Pune</span>
       </span>
     </Link>

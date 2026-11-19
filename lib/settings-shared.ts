@@ -2,7 +2,7 @@ import type { PricingSettings } from "./pricing";
 
 export const DEFAULT_TERMS = [
   "Rates are standard charges for a standard test or job. Any extra operation will be charged separately.",
-  "Rates are as per the ACDRI rate card effective 1 November 2025 and are confirmed in this quotation.",
+  "Rates are as per the AutoCluster rate card effective 1 November 2025 and are confirmed in this quotation.",
   "GST will be charged as applicable.",
   "This quotation is valid for 30 days from the date of issue.",
   "Payment terms: [to be confirmed].",

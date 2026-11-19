@@ -1,4 +1,4 @@
-# ACDRI AutoCluster ERP (demo)
+# AutoCluster ERP (demo)
 
 Two modules for front office and department coordinators:
 

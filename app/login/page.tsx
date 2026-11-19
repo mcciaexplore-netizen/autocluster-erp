@@ -13,7 +13,7 @@ export default function LoginPage({ searchParams }: PageProps<"/login">) {
           <span aria-hidden className="mb-4 grid size-16 place-items-center rounded-2xl bg-primary font-title text-2xl text-primary-foreground">
             AC
           </span>
-          <h1 className="font-title text-3xl text-primary md:text-4xl">ACDRI AutoCluster</h1>
+          <h1 className="font-title text-3xl text-primary md:text-4xl">AutoCluster</h1>
           <p className="mt-1.5 text-muted-foreground">Customers and quotations</p>
         </div>
         <div className="rounded-2xl border bg-card p-6 shadow-[0_1px_3px_rgba(11,31,58,0.06),0_4px_16px_rgba(11,31,58,0.04)] md:p-8">

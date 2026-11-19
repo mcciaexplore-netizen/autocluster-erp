@@ -19,7 +19,7 @@ export default function CustomersPage({ searchParams }: PageProps<"/customers">)
     <>
       <PageHeader
         title="Customers"
-        description="Companies that use ACDRI services."
+        description="Companies that use AutoCluster services."
         actions={
           <Button asChild size="lg">
             <Link href="/customers/new">

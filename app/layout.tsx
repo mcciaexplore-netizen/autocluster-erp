@@ -8,8 +8,8 @@ const outfit = Outfit({ variable: "--font-outfit", subsets: ["latin"], display: 
 const dmSerif = DM_Serif_Display({ variable: "--font-dm-serif", subsets: ["latin"], weight: "400", display: "swap" });
 
 export const metadata: Metadata = {
-  title: { default: "ACDRI AutoCluster", template: "%s | ACDRI AutoCluster" },
-  description: "Customers and quotations for ACDRI AutoCluster, Pune",
+  title: { default: "AutoCluster", template: "%s | AutoCluster" },
+  description: "Customers and quotations for AutoCluster, Pune",
   robots: { index: false, follow: false },
 };
 
