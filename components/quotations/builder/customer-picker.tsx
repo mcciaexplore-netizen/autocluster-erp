@@ -39,16 +39,16 @@ export function CustomerPicker({
           role="combobox"
           aria-expanded={open}
           aria-label="Choose customer"
-          className="h-14 w-full justify-between bg-card px-4 text-left text-base font-normal"
+          className="h-auto min-h-14 w-full justify-between gap-3 bg-card px-4 py-2.5 text-left text-base font-normal whitespace-normal"
         >
           {selected ? (
-            <span className="truncate font-medium text-primary">{selected.companyName}</span>
+            <span className="min-w-0 truncate font-medium text-primary">{selected.companyName}</span>
           ) : (
-            <span className="flex items-center gap-2 text-muted-foreground">
-              <Search className="size-5" aria-hidden /> Type company name, contact person or GST number
+            <span className="flex min-w-0 items-center gap-2 text-muted-foreground">
+              <Search className="size-5 shrink-0" aria-hidden /> Type company name, contact person or GST number
             </span>
           )}
-          <ChevronsUpDown className="size-5 opacity-50" aria-hidden />
+          <ChevronsUpDown className="size-5 shrink-0 opacity-50" aria-hidden />
         </Button>
       </PopoverTrigger>
       <PopoverContent className="w-(--radix-popover-trigger-width) min-w-[min(100vw-2rem,24rem)] p-0" align="start">
