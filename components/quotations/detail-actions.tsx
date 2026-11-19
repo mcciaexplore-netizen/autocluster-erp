@@ -8,8 +8,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { QUOTE_STATUS, QUOTE_STATUSES, type QuoteStatus } from "@/lib/labels";
 import { useQuotationActions } from "./row-actions";
 
-export function QuotationDetailActions({ id, status, autoPrint }: { id: string; status: QuoteStatus; autoPrint: boolean }) {
-  const { pending, duplicate, changeStatus } = useQuotationActions(id);
+export function QuotationDetailActions({ id, status, autoPrint, locked }: { id: string; status: QuoteStatus; autoPrint: boolean; locked: boolean }) {
+  const { pending, duplicate, changeStatus, dialog } = useQuotationActions(id);
 
   useEffect(() => {
     if (!autoPrint) return;
@@ -21,6 +21,7 @@ export function QuotationDetailActions({ id, status, autoPrint }: { id: string; 
 
   return (
     <div className="flex flex-col gap-3 print:hidden">
+      {dialog}
       <div className="flex flex-wrap gap-3">
         <Button asChild size="lg">
           <a href={`/quotations/${id}/pdf?download=1`} download>
@@ -30,13 +31,15 @@ export function QuotationDetailActions({ id, status, autoPrint }: { id: string; 
         <Button variant="outline" size="lg" onClick={() => window.print()}>
           <Printer aria-hidden /> Print
         </Button>
-        <Button asChild variant="outline" size="lg">
-          <Link href={`/quotations/${id}/edit`}>
-            <Pencil aria-hidden /> Edit
-          </Link>
-        </Button>
+        {locked ? null : (
+          <Button asChild variant="outline" size="lg">
+            <Link href={`/quotations/${id}/edit`}>
+              <Pencil aria-hidden /> Edit
+            </Link>
+          </Button>
+        )}
         <Button variant="outline" size="lg" onClick={duplicate} disabled={pending}>
-          <Copy aria-hidden /> Duplicate
+          <Copy aria-hidden /> {locked ? "Duplicate as revised quotation" : "Duplicate"}
         </Button>
       </div>
       <div className="flex items-center gap-3">

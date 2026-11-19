@@ -12,7 +12,7 @@ const STYLES = {
     off: "text-foreground/80 hover:bg-secondary hover:text-primary",
   },
   bottom: {
-    base: "flex h-16 flex-col items-center justify-center gap-1 text-[11px] font-medium",
+    base: "flex h-16 min-w-0 flex-col items-center justify-center gap-1 text-[11px] font-medium",
     on: "text-primary",
     off: "text-muted-foreground",
   },
@@ -28,18 +28,18 @@ export function NavLinkList({ variant, pathname }: { variant: "side" | "bottom";
   const s = STYLES[variant];
   return (
     <>
-      {NAV.map(({ href, label, icon: Icon }) => {
+      {NAV.map(({ href, label, short, icon: Icon }) => {
         const active = pathname != null && isActive(pathname, href);
         return (
           <Link key={href} href={href} aria-current={active ? "page" : undefined} className={cn(s.base, active ? s.on : s.off)}>
             {variant === "bottom" ? (
-              <span className={cn("grid h-7 w-12 place-items-center rounded-full", active && "bg-secondary")}>
+              <span className={cn("grid h-7 w-11 place-items-center rounded-full", active && "bg-secondary")}>
                 <Icon className="size-5" aria-hidden />
               </span>
             ) : (
               <Icon className="size-5" aria-hidden />
             )}
-            {label}
+            {variant === "bottom" ? (short ?? label) : label}
           </Link>
         );
       })}

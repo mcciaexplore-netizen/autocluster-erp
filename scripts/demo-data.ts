@@ -36,7 +36,7 @@ export async function isEmpty(db: DB | Tx) {
 
 export async function wipe(db: DB | Tx) {
   await db.execute(
-    sql`TRUNCATE quotation_items, quotations, quote_counters, customer_services, customer_departments, customers, services, departments, settings RESTART IDENTITY CASCADE`,
+    sql`TRUNCATE ticket_events, follow_ups, payments, tickets, invoices, purchase_orders, billing_exports, files, ticket_counters, quotation_items, quotations, quote_counters, customer_services, customer_departments, customers, services, departments, settings RESTART IDENTITY CASCADE`,
   );
 }
 
@@ -161,7 +161,8 @@ const CUSTOMERS = [
   },
 ];
 
-export async function loadDemoData(db: DB | Tx) {
+export async function loadDemoData(db: DB | Tx, opts: { quiet?: boolean } = {}) {
+  const console = opts.quiet ? { log: () => {} } : globalThis.console;
   console.log("Adding settings, departments and the rate card...");
   await db.insert(s.settings).values({
     id: 1,

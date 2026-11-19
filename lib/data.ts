@@ -17,6 +17,7 @@ import {
   quoteCounters,
   services,
   settings,
+  tickets,
 } from "@/db/schema";
 import { financialYear, formatQuoteNo } from "@/lib/pricing";
 
@@ -174,12 +175,22 @@ export async function getQuotation(id: string) {
   if (!/^[0-9a-f-]{36}$/i.test(id)) return null;
   const [q] = await db.select().from(quotations).where(and(eq(quotations.id, id), isNull(quotations.deletedAt)));
   if (!q) return null;
-  const items = await db
-    .select()
-    .from(quotationItems)
-    .where(eq(quotationItems.quotationId, id))
-    .orderBy(asc(quotationItems.sortOrder));
-  return { ...q, items };
+  const [items, ticketRows] = await Promise.all([
+    db.select().from(quotationItems).where(eq(quotationItems.quotationId, id)).orderBy(asc(quotationItems.sortOrder)),
+    db
+      .select({
+        id: tickets.id,
+        ticketNo: tickets.ticketNo,
+        stage: tickets.stage,
+        description: sql<string>`${tickets.snapshot}->>'description'`,
+        totalAmount: tickets.totalAmount,
+        cancelReason: tickets.cancelReason,
+      })
+      .from(tickets)
+      .where(eq(tickets.quotationId, id))
+      .orderBy(asc(tickets.seq)),
+  ]);
+  return { ...q, items, tickets: ticketRows, locked: ticketRows.length > 0 };
 }
 export type QuotationWithItems = NonNullable<Awaited<ReturnType<typeof getQuotation>>>;
 

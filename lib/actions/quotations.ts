@@ -8,6 +8,8 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { db } from "@/db";
 import { createQuotation, updateQuotation, UserFacingError, type QuotationInput } from "@/db/quote-writer";
+import { changeQuotationStatus, planStatusChange, type StatusChangePlan } from "@/db/ticket-writer";
+import { todayInIndia } from "@/lib/tickets";
 import { quotationItems, quotations, settings as settingsTable } from "@/db/schema";
 import { addDaysIso, todayIso } from "@/lib/format";
 import { lineProblems, type DraftLine } from "@/lib/quote-calc";
@@ -87,18 +89,30 @@ export async function saveQuotation(
   }
 }
 
-export async function setQuotationStatus(id: string, status: z.infer<typeof statusSchema>): Promise<Result<null>> {
+/** What changing the status would do to the quotation's tickets, so the screen can ask first. */
+export async function previewStatusChange(id: string, status: z.infer<typeof statusSchema>): Promise<Result<StatusChangePlan>> {
   if (!(await isSignedIn())) return { ok: false as const, message: SIGNED_OUT_MESSAGE };
   const s = statusSchema.safeParse(status);
   if (!s.success) return { ok: false, message: "Unknown status." };
-  const [row] = await db
-    .update(quotations)
-    .set({ status: s.data })
-    .where(and(eq(quotations.id, id), isNull(quotations.deletedAt)))
-    .returning({ id: quotations.id });
-  if (!row) return { ok: false, message: "This quotation could not be found." };
-  refresh();
-  return { ok: true, data: null };
+  return { ok: true, data: await planStatusChange(db, id, s.data) };
+}
+
+export async function setQuotationStatus(
+  id: string,
+  status: z.infer<typeof statusSchema>,
+): Promise<Result<{ opened: number; reopened: number; cancelled: number }>> {
+  if (!(await isSignedIn())) return { ok: false as const, message: SIGNED_OUT_MESSAGE };
+  const s = statusSchema.safeParse(status);
+  if (!s.success) return { ok: false, message: "Unknown status." };
+  try {
+    const r = await changeQuotationStatus(db, id, s.data, todayInIndia());
+    refresh();
+    return { ok: true, data: r };
+  } catch (e) {
+    if (e instanceof UserFacingError) return { ok: false, message: e.message };
+    console.error(e);
+    return { ok: false, message: "We couldn't change the status right now. Please try again." };
+  }
 }
 
 /**
