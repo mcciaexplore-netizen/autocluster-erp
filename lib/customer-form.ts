@@ -21,5 +21,6 @@ export function toDetailsInput(c: Customer): CustomerDetailsInput {
     pocEmail: c.pocEmail,
     isMcciaMember: c.isMcciaMember ? "yes" : "no",
     mcciaMembershipId: c.mcciaMembershipId ?? "",
+    creditDays: String(c.creditDays),
   };
 }

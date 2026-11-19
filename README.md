@@ -1,13 +1,19 @@
 # AutoCluster ERP (demo)
 
-Two modules for front office and department coordinators:
+Three modules for front office, department coordinators and accounts:
 
-1. **Customers**: save a company once, with its departments and the services it uses.
+1. **Customers**: save a company once, with its departments, the services it uses and its credit period.
 2. **Quotations**: pick a customer, add services, and get a quotation PDF with the right price, member discount and GST worked out automatically.
+3. **Orders & Billing**: a board that follows every accepted service from PO to payment.
+   - Marking a quotation **Accepted** opens one ticket per service in **Waiting for PO**.
+   - **Add PO** (with the PO copy) moves it to **Billing**. One PO can cover several services.
+   - **Export to Tally** (coming soon) downloads the billing details as Excel; **Upload tax invoice** moves it to **Payment follow-up**.
+   - There, staff send ready-written WhatsApp or email reminders, add follow-up notes and record payments (with TDS). Fully paid invoices move to **Paid**.
+   - Cards can be dragged one step at a time. Moving back or cancelling asks for a reason, and every step is kept in the ticket's timeline.
 
 When `DEMO_PASSWORD` is set, the site asks for a password first (cookie lasts 7 days; **Sign out** is in the top-right menu).
 
-Built with Next.js 16 (App Router), TypeScript, Tailwind CSS, shadcn/ui, React Hook Form + Zod, Drizzle ORM on Postgres (Neon), and @react-pdf/renderer.
+Built with Next.js 16 (App Router), TypeScript, Tailwind CSS, shadcn/ui, React Hook Form + Zod, Drizzle ORM on Postgres (Neon), @react-pdf/renderer, @dnd-kit (board), ExcelJS (billing details) and Vercel Blob (PO and invoice files).
 
 ---
 
@@ -41,6 +47,7 @@ npm run dev
 | `DATABASE_URL_UNPOOLED` | Neon's **direct** string (pooling OFF). Used by `db:push`, `db:seed` and `db:reset`. If empty, they use `DATABASE_URL`. |
 | `DEMO_PASSWORD` | Password for the sign-in screen. Leave it empty to turn the sign-in screen off (handy locally). |
 | `AUTH_SECRET` | Long random text that signs the sign-in cookie. At least 32 characters. Make one with the command below. |
+| `BLOB_READ_WRITE_TOKEN` | Vercel Blob store's read-write token (Vercel > Storage > your Blob store). Needed to upload and view PO copies and tax invoices, and for the sample PDFs in the demo data. |
 
 ```powershell
 # Make a new AUTH_SECRET (copy the output into .env.local)
@@ -58,15 +65,30 @@ npm run db:reset   # WIPES everything and reloads clean demo data; asks you to t
 
 Use `npm run db:reset` before a demo. It works on whichever database `.env.local` points to, and says which one before asking.
 
+The demo data fills the Orders & Billing board with every situation:
+- 2 services **Waiting for PO**
+- 2 in **Billing** on one shared PO
+- 3 in **Payment follow-up**: due in 5 days, due today, and overdue by 12 days with a note and a part payment incl. TDS
+- 1 **Paid** and 1 **Cancelled**
+
+Sample PDFs marked "SAMPLE PO" / "SAMPLE TAX INVOICE" are uploaded to Blob. The MSME member SLA quotation (ACDRI/QT/…/0001) is left as **Sent**, so the demo can start by marking it Accepted.
+
+**Files are kept apart per environment:**
+- Blob folders: `local/` (your computer), `preview/` (test versions), `live/` (the website).
+- `db:reset` deletes only the files listed in the database it resets, never anything else in the store.
+- When resetting a non-local database, the sample PDFs go to `live/`. Set `$env:BLOB_FOLDER="preview"` first for the preview copy.
+
 ### Other commands
 
 ```powershell
-npm test            # pricing, validation and sign-in tests (Vitest)
+npm test            # pricing, validation, sign-in and Orders & Billing tests (Vitest; DB tests use a local "acdri_test" database)
 npm run typecheck   # TypeScript check
 npm run lint        # ESLint
 npm run build       # production build
 npm run start       # run the production build locally
 npm run db:studio   # browse the database in a web page
+npm run db:backup   # save a JSON copy of every table to backups/ (not committed)
+npm run tickets:backfill   # open tickets for quotations accepted before Module 3 (safe to run twice)
 node scripts/embed-fonts.mjs   # only if you change the PDF fonts in assets/fonts
 ```
 
@@ -94,11 +116,17 @@ Push the code to a **private** repository (for example `autocluster-erp-demo`). 
 
 ### 3. Vercel
 1. At https://vercel.com click **Add New > Project** and import the repository. Leave the framework (Next.js) and build settings as they are.
-2. Under **Environment Variables**, add `DATABASE_URL`, `DATABASE_URL_UNPOOLED`, `DEMO_PASSWORD` and `AUTH_SECRET`, copying the values from `.env.local`.
+2. Under **Environment Variables**, add `DATABASE_URL`, `DATABASE_URL_UNPOOLED`, `DEMO_PASSWORD`, `AUTH_SECRET` and `BLOB_READ_WRITE_TOKEN`, copying the values from `.env.local`.
 3. Click **Deploy**.
 4. Check **Settings > General > Node.js Version** is **22.x**, and **Settings > Functions > Function Region** matches the Neon region.
 
 Every push to the `main` branch updates the live site automatically. Changing an environment variable needs a **Redeploy** (Deployments > ... > Redeploy).
+
+**Test versions (Preview):**
+- Other branches (e.g. `module3`) build as Preview versions.
+- They use a separate Neon branch called `preview`, a copy of the live database, so they never touch live data.
+- Vercel's **Preview** environment has its own `DATABASE_URL`, `DATABASE_URL_UNPOOLED` and `AUTH_SECRET`. `DEMO_PASSWORD` and `BLOB_READ_WRITE_TOKEN` are the same values as live.
+- Preview versions are also behind Vercel's own login.
 
 ### Switching back to the local database
 ```powershell
@@ -121,7 +149,12 @@ Copy-Item .env.local.localdb .env.local   # use the local database again
 | `lib/quote-calc.ts` | Turns the services added in the builder into priced lines and totals. Runs live in the browser and again on the server when saving. |
 | `db/schema.ts` | Database tables (section 8 of the brief). |
 | `db/quote-writer.ts` | Saves quotations: recalculates every amount, stores the customer and rate snapshot, takes the next number inside a transaction. |
-| `scripts/demo-data.ts`, `scripts/seed.ts`, `scripts/reset.ts` | Demo data, safe seed, and reset. |
+| `scripts/demo-data.ts`, `scripts/demo-orders.ts`, `scripts/seed.ts`, `scripts/reset.ts` | Demo data (incl. the Orders & Billing board and sample PDFs), safe seed, and reset. |
+| `lib/tickets.ts` | Board rules: steps, moving one step at a time, splitting a quotation into tickets, due chips, amount left, follow-up due. Tested in `lib/tickets.test.ts`. |
+| `db/ticket-writer.ts`, `db/po-writer.ts`, `db/invoice-writer.ts`, `db/payment-writer.ts` | Opening/cancelling/moving tickets, POs, tax invoices, payments, notes and reminders. Each runs in one transaction with row locks. Tested in `tests/*.db.test.ts`. |
+| `lib/tally/` | Billing export behind one `exportBilling(tickets)` interface. Today: manual Excel (`excel.ts`). A TallyPrime version can be added later. |
+| `app/api/files/` | Upload ticket for Blob (signed-in only, PDF/JPG/PNG up to 10 MB) and the file viewer `/api/files/[id]` (signed-in only; the storage link is never shown). |
+| `app/(app)/orders`, `components/orders` | The board, cards, ticket details panel and the step forms. |
 | `proxy.ts`, `lib/auth.ts`, `app/login` | Demo password sign-in. |
 | `lib/actions/` | Server actions (each one checks sign-in). |
 | `app/(app)/customers`, `components/customers` | Customers list, 3-step wizard, detail page. |
@@ -131,6 +164,11 @@ Copy-Item .env.local.localdb .env.local   # use the local database again
 
 ### How money is handled
 All money is calculated in whole **paise** (₹1 = 100 paise) with `decimal.js` for quantity x rate, so there is no floating-point rounding. The database stores money as `numeric(14,2)`.
+
+### How tickets are numbered and valued
+- **Numbering:** tickets are numbered like `ACDRI/TK/2026-27/0001`, with the prefix set in Settings, using the same safe counter as quotations.
+- **Value:** each ticket carries its share of the quotation, including list amount, member discount, taxable value and GST. The last ticket also takes any GST rounding paise and the round off. So the tickets of a quotation always add up exactly to its grand total.
+- **Locking:** once a quotation has tickets it is locked. To change it, use **Duplicate as revised quotation**.
 
 ### How quotation numbers work
 Format `ACDRI/QT/2026-27/0001`. The financial year runs April to March. A counter row per financial year is incremented inside the same transaction that saves the quotation, so two people saving at once never get the same number, and numbers are never reused. (Tested with 10 saves at the same moment.)

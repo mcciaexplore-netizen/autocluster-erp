@@ -59,6 +59,8 @@ export interface CustomerWizardProps {
   departments: Department[];
   services: Service[];
   pricing: PricingSettings;
+  /** Pre-filled credit period for new customers (Settings > default credit period). */
+  defaultCreditDays?: number;
   /** Present when editing an existing customer. */
   initial?: {
     id: string;
@@ -81,7 +83,8 @@ const CATEGORY_OPTIONS = [
   { value: "MSME", title: "MSME", hint: "Micro, small or medium business" },
 ] as const;
 
-export function CustomerWizard({ departments, services, pricing, initial, onSaved, onCancel }: CustomerWizardProps) {
+export function CustomerWizard({ departments, services, pricing, initial, onSaved, onCancel, defaultCreditDays = 30 }: CustomerWizardProps) {
+  const blank: CustomerDetailsInput = { ...EMPTY_CUSTOMER_DETAILS, creditDays: String(defaultCreditDays) };
   const router = useRouter();
   const editing = !!initial;
   const embedded = !!onSaved;
@@ -101,7 +104,7 @@ export function CustomerWizard({ departments, services, pricing, initial, onSave
 
   const form = useForm<CustomerDetailsInput>({
     resolver: zodResolver(customerDetailsSchema),
-    defaultValues: initial?.details ?? EMPTY_CUSTOMER_DETAILS,
+    defaultValues: initial?.details ?? blank,
     mode: "onTouched",
   });
   const { register, control, setValue, getValues, formState, handleSubmit, reset, setError } = form;
@@ -114,7 +117,7 @@ export function CustomerWizard({ departments, services, pricing, initial, onSave
   useEffect(() => {
     const d = readDraft<DraftState>(storageKey);
     if (d && d.step !== "done") {
-      reset(d.details);
+      reset({ ...blank, ...d.details });
       setStep(d.step);
       setCustomerId(d.customerId ?? initial?.id ?? null);
       setDeptCodes(d.deptCodes);
@@ -147,7 +150,7 @@ export function CustomerWizard({ departments, services, pricing, initial, onSave
 
   const startOver = () => {
     clearDraft(storageKey);
-    reset(initial?.details ?? EMPTY_CUSTOMER_DETAILS);
+    reset(initial?.details ?? blank);
     setStep(1);
     setCustomerId(initial?.id ?? null);
     setDeptCodes(initial?.deptCodes ?? []);
@@ -455,6 +458,16 @@ export function CustomerWizard({ departments, services, pricing, initial, onSave
               </Field>
               <Field label="TAN" optional error={errors.tan?.message} helper="10 characters, e.g. PNEA12345B">
                 {(p) => <Input {...p} className="font-mono tracking-wider uppercase" maxLength={10} spellCheck={false} {...upper("tan", 10)} />}
+              </Field>
+              <Field label="Credit period (days)" required error={errors.creditDays?.message} helper="Days the customer gets to pay an invoice, e.g. 30">
+                {(p) => (
+                  <Input
+                    {...p}
+                    inputMode="numeric"
+                    maxLength={3}
+                    {...register("creditDays", { onChange: (e) => setValue("creditDays", e.target.value.replace(/\D/g, "").slice(0, 3)) })}
+                  />
+                )}
               </Field>
             </div>
           </FormSection>

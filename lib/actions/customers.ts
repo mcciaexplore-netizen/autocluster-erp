@@ -58,6 +58,7 @@ export async function saveCustomerDetails(
     pocEmail: v.pocEmail.toLowerCase(),
     isMcciaMember: v.isMcciaMember === "yes",
     mcciaMembershipId: v.isMcciaMember === "yes" ? v.mcciaMembershipId : null,
+    creditDays: Number(v.creditDays),
   };
 
   try {

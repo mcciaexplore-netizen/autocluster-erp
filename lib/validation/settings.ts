@@ -19,5 +19,15 @@ export const settingsSchema = z.object({
     .max(30, { message: "Keep the prefix short, e.g. ACDRI/QT." })
     .regex(/^[A-Za-z0-9/_-]+$/, { message: "Use letters, numbers, / - or _ only, e.g. ACDRI/QT." }),
   defaultTerms: z.string().trim().min(1, { message: "Please enter the terms." }).max(6000),
+  ticketPrefix: z
+    .string()
+    .trim()
+    .min(1, { message: "Please enter a prefix, e.g. ACDRI/TK." })
+    .max(30, { message: "Keep the prefix short, e.g. ACDRI/TK." })
+    .regex(/^[A-Za-z0-9/_-]+$/, { message: "Use letters, numbers, / - or _ only, e.g. ACDRI/TK." }),
+  defaultCreditDays: z.number({ message: "Enter a number of days, e.g. 30." }).int({ message: "Use whole days." }).min(0, { message: "Use 0 or more." }).max(365, { message: "Use 365 days or less." }),
+  whatsappTemplate: z.string().trim().min(10, { message: "Please write the WhatsApp message." }).max(1000, { message: "Please keep the message under 1,000 characters." }),
+  emailSubjectTemplate: z.string().trim().min(3, { message: "Please write the email subject." }).max(200, { message: "Please keep the subject under 200 characters." }),
+  emailBodyTemplate: z.string().trim().min(10, { message: "Please write the email message." }).max(4000, { message: "Please keep the message under 4,000 characters." }),
 });
 export type SettingsInput = z.input<typeof settingsSchema>;

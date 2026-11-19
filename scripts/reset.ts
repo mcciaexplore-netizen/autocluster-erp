@@ -7,11 +7,12 @@
 import { createInterface } from "node:readline/promises";
 import { deleteStoredFiles, storedFilePaths } from "./blob-files";
 import { loadDemoData, scriptDb, wipe } from "./demo-data";
+import { scriptBlobFolder } from "./demo-orders";
 
 async function main() {
   const { db, pool, where } = scriptDb();
   try {
-    console.log(`\nThis will DELETE every customer, quotation and setting in ${where}`);
+    console.log(`\nThis will DELETE every customer, quotation, order, uploaded file and setting in ${where}`);
     console.log("and load clean demo data instead. This cannot be undone.\n");
     const rl = createInterface({ input: process.stdin, output: process.stdout });
     const answer = (await rl.question("Type RESET to continue: ")).trim();
@@ -24,12 +25,20 @@ async function main() {
     // Note the files this database knows about before wiping it.
     const oldFiles = await storedFilePaths(db);
     // One transaction: if anything fails, the old data stays as it was.
-    await db.transaction(async (tx) => {
-      console.log("Wiping data...");
-      await wipe(tx);
-      console.log("Loading demo data...");
-      await loadDemoData(tx);
-    });
+    const uploaded: string[] = [];
+    const blobFolder = scriptBlobFolder(process.env.DATABASE_URL_UNPOOLED || process.env.DATABASE_URL);
+    try {
+      await db.transaction(async (tx) => {
+        console.log("Wiping data...");
+        await wipe(tx);
+        console.log("Loading demo data...");
+        await loadDemoData(tx, { orders: { blobFolder, onUpload: (p) => uploaded.push(p) } });
+      });
+    } catch (e) {
+      // Nothing was saved, so remove the sample PDFs this run uploaded.
+      await deleteStoredFiles(uploaded).catch(() => {});
+      throw e;
+    }
     // Only after the new data is safely saved: delete the old uploaded files.
     const r = await deleteStoredFiles(oldFiles);
     if (r.skipped) console.log(r.skipped);

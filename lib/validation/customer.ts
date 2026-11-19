@@ -52,6 +52,11 @@ export const customerDetailsSchema = z
       .email({ message: "This email address doesn't look right, e.g. name@company.com." }),
     isMcciaMember: z.enum(["yes", "no"], { message: "Please choose Yes or No." }),
     mcciaMembershipId: opt,
+    creditDays: z
+      .string()
+      .trim()
+      .regex(/^\d{1,3}$/, { message: "Please enter the number of days, e.g. 30." })
+      .refine((v) => Number(v) <= 365, { message: "Credit period can be at most 365 days." }),
   })
   // `when` makes these cross-field checks run even while other fields still have
   // errors, so every problem is shown at once.
@@ -89,6 +94,7 @@ export const EMPTY_CUSTOMER_DETAILS: CustomerDetailsInput = {
   pocDesignation: "",
   pocPhone: "",
   pocEmail: "",
+  creditDays: "30",
   isMcciaMember: "" as unknown as "no",
   mcciaMembershipId: "",
 };

@@ -13,7 +13,7 @@ export const metadata: Metadata = { title: "Settings" };
 export default function SettingsPage() {
   return (
     <div className="mx-auto max-w-4xl">
-      <PageHeader title="Settings" description="Organisation details, discounts, tax and quotation defaults." />
+      <PageHeader title="Settings" description="Organisation details, discounts, tax, quotation and billing defaults." />
       <Suspense fallback={<FormSkeleton />}>
         <Form />
       </Suspense>
@@ -40,6 +40,11 @@ async function Form() {
         homeStateCode: s.homeStateCode,
         quoteValidityDays: s.quoteValidityDays,
         quotePrefix: s.quotePrefix,
+        ticketPrefix: s.ticketPrefix,
+        defaultCreditDays: s.defaultCreditDays,
+        whatsappTemplate: s.whatsappTemplate,
+        emailSubjectTemplate: s.emailSubjectTemplate,
+        emailBodyTemplate: s.emailBodyTemplate,
         defaultTerms: s.defaultTerms,
       }}
     />

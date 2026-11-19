@@ -8,6 +8,7 @@ import { createDb, createPool, type DB, type Tx } from "../db/client";
 import * as s from "../db/schema";
 import { createQuotation } from "../db/quote-writer";
 import { DEFAULT_TERMS } from "../lib/settings-shared";
+import { loadDemoOrders, type DemoOrdersOptions } from "./demo-orders";
 
 config({ path: ".env.local", quiet: true });
 
@@ -90,7 +91,7 @@ const CUSTOMERS = [
     city: "Pune", state: "Maharashtra", stateCode: "27", pincode: "411026",
     gstin: "27AAKCS1234F1Z5", pan: "AAKCS1234F", tan: "PNES12345A",
     pocName: "Rohan Kulkarni", pocDesignation: "Purchase Manager", pocPhone: "9822012345", pocEmail: "rohan.k@sahyadri-auto.example",
-    isMcciaMember: true, mcciaMembershipId: "MCCIA/2019/04512",
+    isMcciaMember: true, mcciaMembershipId: "MCCIA/2019/04512", creditDays: 45,
     depts: ["RPT", "PPF"],
     services: ["SLA - imported resin", "SLA - local resin", "5-axis machining"],
   },
@@ -161,7 +162,8 @@ const CUSTOMERS = [
   },
 ];
 
-export async function loadDemoData(db: DB | Tx, opts: { quiet?: boolean } = {}) {
+/** `orders` also adds the Orders & Billing demo (tickets, POs, invoices, payments, sample PDFs). */
+export async function loadDemoData(db: DB | Tx, opts: { quiet?: boolean; orders?: DemoOrdersOptions } = {}) {
   const console = opts.quiet ? { log: () => {} } : globalThis.console;
   console.log("Adding settings, departments and the rate card...");
   await db.insert(s.settings).values({
@@ -231,7 +233,8 @@ export async function loadDemoData(db: DB | Tx, opts: { quiet?: boolean } = {}) 
     {
       customer: "Sahyadri Auto Components Pvt Ltd",
       date: daysAgo(12),
-      status: "ACCEPTED" as const,
+      // Sent, not Accepted: marking it Accepted is the first step of the demo (a ₹8,496 ticket appears).
+      status: "SENT" as const,
       subject: "Quotation for Rapid Prototyping services",
       lines: [line("SLA - imported resin", { ccPerPart: 50, parts: 4 }, "Housing cover prototype")],
     },
@@ -266,6 +269,11 @@ export async function loadDemoData(db: DB | Tx, opts: { quiet?: boolean } = {}) 
       lines: q.lines,
     });
     console.log(`  ${r.quoteNo}  ${q.customer}  (${q.status})`);
+  }
+
+  if (opts.orders) {
+    console.log(`Adding Orders & Billing demo (sample PDFs go to the "${opts.orders.blobFolder}/" folder)...`);
+    await loadDemoOrders(db, custIds, { ...opts.orders, log: (m) => console.log(m) });
   }
 
 }

@@ -21,5 +21,5 @@ export default function NewCustomerPage() {
 
 async function Wizard() {
   const [departments, services, settings] = await Promise.all([getDepartments(), getServices(), getSettings()]);
-  return <CustomerWizard departments={departments} services={services} pricing={toPricingSettings(settings)} />;
+  return <CustomerWizard departments={departments} services={services} pricing={toPricingSettings(settings)} defaultCreditDays={settings.defaultCreditDays} />;
 }

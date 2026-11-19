@@ -112,7 +112,7 @@ export async function invoiceSummaries(invoiceIds: string[]): Promise<Map<string
   return out;
 }
 
-export async function getBoardTickets(): Promise<BoardTicket[]> {
+export async function getBoardTickets(customerId?: string): Promise<BoardTicket[]> {
   await connection();
   const rows = await db
     .select({
@@ -135,6 +135,7 @@ export async function getBoardTickets(): Promise<BoardTicket[]> {
     .from(tickets)
     .innerJoin(customers, eq(customers.id, tickets.customerId))
     .leftJoin(purchaseOrders, eq(purchaseOrders.id, tickets.poId))
+    .where(customerId ? eq(tickets.customerId, customerId) : undefined)
     .orderBy(asc(tickets.stageChangedAt), asc(tickets.seq));
 
   const inv = await invoiceSummaries(rows.map((r) => r.t.invoiceId).filter((x): x is string => !!x));

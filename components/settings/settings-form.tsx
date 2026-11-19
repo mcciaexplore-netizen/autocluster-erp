@@ -1,7 +1,7 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Building2, FileText, ImageIcon, Loader2, Percent, Save } from "lucide-react";
+import { BellRing, Building2, FileText, ImageIcon, Loader2, Percent, Save, SquareKanban } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useTransition } from "react";
 import { Controller, useForm, useWatch } from "react-hook-form";
@@ -16,7 +16,25 @@ import { Textarea } from "@/components/ui/textarea";
 import { useUnsavedChangesWarning } from "@/hooks/use-unsaved-changes";
 import { financialYear, formatQuoteNo } from "@/lib/pricing";
 import { INDIAN_STATES } from "@/lib/india";
+import {
+  DEFAULT_EMAIL_BODY_TEMPLATE,
+  DEFAULT_EMAIL_SUBJECT_TEMPLATE,
+  DEFAULT_WHATSAPP_TEMPLATE,
+  fillTemplate,
+  TEMPLATE_PLACEHOLDERS,
+  type TemplateValues,
+} from "@/lib/reminder-templates";
 import { DEFAULT_TERMS } from "@/lib/settings-shared";
+
+const SAMPLE_VALUES: TemplateValues = {
+  company: "Sahyadri Auto Components Pvt Ltd",
+  contact_name: "Rohan Kulkarni",
+  invoice_no: "MCCIA/2026-27/0456",
+  invoice_date: "10 Nov 2026",
+  amount_due: "8,496",
+  due_date: "10 Dec 2026",
+  days_overdue: "0",
+};
 import { settingsSchema, type SettingsInput } from "@/lib/validation/settings";
 
 export function SettingsForm({ initial }: { initial: SettingsInput }) {
@@ -42,6 +60,8 @@ export function SettingsForm({ initial }: { initial: SettingsInput }) {
 
   const num = { valueAsNumber: true } as const;
   const prefix = useWatch({ control, name: "quotePrefix" }) || "ACDRI/QT";
+  const ticketPrefix = useWatch({ control, name: "ticketPrefix" }) || "ACDRI/TK";
+  const whatsapp = useWatch({ control, name: "whatsappTemplate" });
   const pct = useWatch({ control, name: "memberDiscountPct" });
   const applyNonMsme = useWatch({ control, name: "applyDiscountToNonMsme" });
 
@@ -165,6 +185,72 @@ export function SettingsForm({ initial }: { initial: SettingsInput }) {
             }
           >
             {(p) => <Textarea {...p} rows={8} {...register("defaultTerms")} />}
+          </Field>
+        </div>
+      </FormSection>
+
+      <FormSection title="Orders & Billing" description="Ticket numbers and payment terms." icon={<SquareKanban className="size-5" />}>
+        <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
+          <Field
+            label="Ticket number prefix"
+            required
+            error={e.ticketPrefix?.message}
+            helper={`New tickets will look like ${formatQuoteNo(ticketPrefix.toUpperCase(), financialYear(new Date()), 1)}. Existing tickets keep their numbers.`}
+          >
+            {(p) => <Input {...p} className="uppercase" {...register("ticketPrefix")} />}
+          </Field>
+          <Field label="Default credit period (days)" required error={e.defaultCreditDays?.message} helper="Filled in for new customers, e.g. 30. Each customer can have their own.">
+            {(p) => <Input {...p} type="number" min={0} max={365} step={1} inputMode="numeric" {...register("defaultCreditDays", num)} />}
+          </Field>
+        </div>
+      </FormSection>
+
+      <FormSection title="Payment reminders" description="The ready-written WhatsApp and email messages. Staff check them and press send." icon={<BellRing className="size-5" />}>
+        <div className="flex flex-col gap-5">
+          <p className="text-sm text-muted-foreground">
+            These words are filled in for you:{" "}
+            {TEMPLATE_PLACEHOLDERS.map((ph) => (
+              <code key={ph} className="mr-1 rounded bg-muted px-1.5 py-0.5 text-xs text-foreground">
+                {ph}
+              </code>
+            ))}
+          </p>
+          <Field
+            label="WhatsApp message"
+            required
+            error={e.whatsappTemplate?.message}
+            helper={
+              <>
+                Preview: <span className="text-foreground">{fillTemplate(whatsapp ?? "", SAMPLE_VALUES)}</span>{" "}
+                <button type="button" className="font-medium text-primary underline-offset-4 hover:underline" onClick={() => setValue("whatsappTemplate", DEFAULT_WHATSAPP_TEMPLATE, { shouldDirty: true, shouldValidate: true })}>
+                  Use the standard wording
+                </button>
+              </>
+            }
+          >
+            {(p) => <Textarea {...p} rows={4} {...register("whatsappTemplate")} />}
+          </Field>
+          <Field label="Email subject" required error={e.emailSubjectTemplate?.message}>
+            {(p) => <Input {...p} {...register("emailSubjectTemplate")} />}
+          </Field>
+          <Field
+            label="Email message"
+            required
+            error={e.emailBodyTemplate?.message}
+            helper={
+              <button
+                type="button"
+                className="font-medium text-primary underline-offset-4 hover:underline"
+                onClick={() => {
+                  setValue("emailSubjectTemplate", DEFAULT_EMAIL_SUBJECT_TEMPLATE, { shouldDirty: true, shouldValidate: true });
+                  setValue("emailBodyTemplate", DEFAULT_EMAIL_BODY_TEMPLATE, { shouldDirty: true, shouldValidate: true });
+                }}
+              >
+                Use the standard email
+              </button>
+            }
+          >
+            {(p) => <Textarea {...p} rows={10} {...register("emailBodyTemplate")} />}
           </Field>
         </div>
       </FormSection>

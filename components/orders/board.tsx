@@ -376,7 +376,6 @@ function ColumnHeader({ stage, count, totalPaise }: { stage: BoardStage; count: 
         </h2>
         <span className="text-sm font-semibold tabular-nums" title={stage === "PAYMENT" ? "Amount still to collect" : "Value of these services"}>
           {formatINR(totalPaise).replace(/\.00$/, "")}
-          {stage === "PAYMENT" ? <span className="font-normal text-muted-foreground"> due</span> : null}
         </span>
       </div>
       <p className="text-xs text-muted-foreground">{STAGE_INFO[stage].help}</p>

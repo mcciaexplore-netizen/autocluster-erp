@@ -19,6 +19,7 @@ export async function saveSettings(input: SettingsInput) {
     .set({
       ...v,
       quotePrefix: v.quotePrefix.toUpperCase(),
+      ticketPrefix: v.ticketPrefix.toUpperCase(),
       memberDiscountPct: String(v.memberDiscountPct),
       gstPct: String(v.gstPct),
     })

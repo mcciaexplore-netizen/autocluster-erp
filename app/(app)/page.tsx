@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { Suspense } from "react";
-import { ArrowRight, Clock, FilePlus2, FileText, IndianRupee, UserPlus, Users } from "lucide-react";
+import { AlertTriangle, ArrowRight, Clock, FileClock, FilePlus2, FileText, IndianRupee, Receipt, UserPlus, Users, Wallet } from "lucide-react";
 import { StatusChip } from "@/components/common/badges";
 import { EmptyState } from "@/components/common/empty-state";
 import { Button } from "@/components/ui/button";
@@ -8,6 +8,8 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { getDashboardStats, listQuotations } from "@/lib/data";
 import { formatDate, money } from "@/lib/format";
+import { getOrdersStats } from "@/lib/orders-data";
+import { formatINRShort } from "@/lib/pricing";
 
 export default function HomePage() {
   return (
@@ -50,6 +52,20 @@ export default function HomePage() {
         <Stats />
       </Suspense>
 
+      <section className="mt-10" aria-labelledby="orders-heading">
+        <div className="mb-4 flex items-center justify-between">
+          <h2 id="orders-heading" className="text-xl font-semibold">Orders &amp; Billing</h2>
+          <Button asChild variant="ghost" size="sm">
+            <Link href="/orders">
+              Open board <ArrowRight aria-hidden />
+            </Link>
+          </Button>
+        </div>
+        <Suspense fallback={<StatsSkeleton />}>
+          <OrderStats />
+        </Suspense>
+      </section>
+
       <section className="mt-10" aria-labelledby="recent-heading">
         <div className="mb-4 flex items-center justify-between">
           <h2 id="recent-heading" className="text-xl font-semibold">Recent quotations</h2>
@@ -84,6 +100,40 @@ async function Stats() {
               <Icon className="size-6 text-primary/70" aria-hidden />
               <div>
                 <div className="text-2xl font-semibold text-primary tabular-nums md:text-3xl">{value}</div>
+                <div className="text-sm text-muted-foreground">{label}</div>
+              </div>
+            </CardContent>
+          </Card>
+        </Link>
+      ))}
+    </div>
+  );
+}
+
+async function OrderStats() {
+  const s = await getOrdersStats();
+  const items = [
+    { label: "Waiting for PO", value: s.waitingPo.toLocaleString("en-IN"), icon: FileClock, href: "/orders?stage=WAITING_PO", hint: "Services accepted, PO not received yet", tone: "" },
+    { label: "Ready to bill", value: s.readyToBill.toLocaleString("en-IN"), icon: Receipt, href: "/orders?stage=BILLING", hint: "PO received, invoice not made yet", tone: "" },
+    { label: "Outstanding", value: formatINRShort(s.outstandingPaise), icon: Wallet, href: "/orders?stage=PAYMENT", hint: "Invoiced, not paid yet", tone: "" },
+    {
+      label: "Overdue",
+      value: formatINRShort(s.overduePaise),
+      icon: AlertTriangle,
+      href: "/orders?overdue=1",
+      hint: "Past the due date, not paid yet",
+      tone: s.overduePaise > 0 ? "text-destructive" : "",
+    },
+  ];
+  return (
+    <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+      {items.map(({ label, value, icon: Icon, href, hint, tone }) => (
+        <Link key={label} href={href} className="rounded-2xl" title={hint}>
+          <Card className="h-full transition hover:border-primary/30">
+            <CardContent className="flex flex-col gap-3">
+              <Icon className={`size-6 ${tone || "text-primary/70"}`} aria-hidden />
+              <div>
+                <div className={`text-2xl font-semibold tabular-nums md:text-3xl ${tone || "text-primary"}`}>{value}</div>
                 <div className="text-sm text-muted-foreground">{label}</div>
               </div>
             </CardContent>

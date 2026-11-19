@@ -1,9 +1,11 @@
 /**
  * npm run db:seed
- * Loads demo data into an EMPTY database only. It never deletes anything.
+ * Loads demo data (incl. Orders & Billing with sample PDFs) into an EMPTY database only. It never deletes anything.
  * To wipe and reload, use: npm run db:reset
  */
+import { deleteStoredFiles } from "./blob-files";
 import { isEmpty, loadDemoData, scriptDb } from "./demo-data";
+import { scriptBlobFolder } from "./demo-orders";
 
 async function main() {
   const { db, pool, where } = scriptDb();
@@ -15,7 +17,14 @@ async function main() {
       return;
     }
     console.log(`Loading demo data into ${where}...`);
-    await loadDemoData(db);
+    const uploaded: string[] = [];
+    const blobFolder = scriptBlobFolder(process.env.DATABASE_URL_UNPOOLED || process.env.DATABASE_URL);
+    try {
+      await db.transaction((tx) => loadDemoData(tx, { orders: { blobFolder, onUpload: (p) => uploaded.push(p) } }));
+    } catch (e) {
+      await deleteStoredFiles(uploaded).catch(() => {});
+      throw e;
+    }
     console.log("Done.");
   } finally {
     await pool.end();

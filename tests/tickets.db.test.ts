@@ -111,6 +111,8 @@ describe.skipIf(skip)("tickets (database)", () => {
   });
 
   it("backfill opens tickets for already-accepted quotations, once", async () => {
+    // A quotation accepted before tickets existed.
+    await db.update(s.quotations).set({ status: "ACCEPTED" });
     const first = await backfillTickets(db, TODAY);
     const second = await backfillTickets(db, TODAY);
     expect(first.flatMap((r) => r.opened).length).toBeGreaterThan(0);

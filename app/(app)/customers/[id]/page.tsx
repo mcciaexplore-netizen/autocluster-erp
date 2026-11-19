@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Suspense } from "react";
-import { ArrowLeft, FilePlus2, FileText, Info, Pencil } from "lucide-react";
+import { ArrowLeft, FilePlus2, FileText, Info, Pencil, SquareKanban } from "lucide-react";
 import { CategoryBadge, DeptChip, MemberBadge } from "@/components/common/badges";
 import { EmptyState } from "@/components/common/empty-state";
 import { ListSkeleton } from "@/components/common/form-skeleton";
@@ -14,7 +14,10 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { getCustomer, getDepartments, getServices, getSettings, listQuotations } from "@/lib/data";
-import { customerRate, formatINRShort, priceTypeFor } from "@/lib/pricing";
+import { getBoardTickets } from "@/lib/orders-data";
+import { customerRate, formatINR, formatINRShort, priceTypeFor } from "@/lib/pricing";
+import { invoiceChips, todayInIndia } from "@/lib/tickets";
+import { StageChip, ToneChip } from "@/components/orders/stage-chip";
 import { toPricingSettings } from "@/lib/settings-shared";
 
 export const metadata: Metadata = { title: "Customer" };
@@ -54,6 +57,7 @@ async function CustomerDetail({ params }: { params: Promise<{ id: string }> }) {
     ["Mobile", <a key="tel" href={`tel:+91${c.pocPhone}`} className="text-primary hover:underline">+91 {c.pocPhone}</a>],
     ["Email", <a key="mail" href={`mailto:${c.pocEmail}`} className="break-all text-primary hover:underline">{c.pocEmail}</a>],
     ["MCCIA membership", c.isMcciaMember ? `Member, ID ${c.mcciaMembershipId}` : "Not a member"],
+    ["Credit period", `${c.creditDays} days`],
   ];
 
   return (
@@ -88,6 +92,7 @@ async function CustomerDetail({ params }: { params: Promise<{ id: string }> }) {
         <TabsList className="mb-4">
           <TabsTrigger value="details">Details</TabsTrigger>
           <TabsTrigger value="quotations">Quotations</TabsTrigger>
+          <TabsTrigger value="orders">Orders</TabsTrigger>
         </TabsList>
 
         <TabsContent value="details" className="flex flex-col gap-6">
@@ -178,6 +183,12 @@ async function CustomerDetail({ params }: { params: Promise<{ id: string }> }) {
             <CustomerQuotations id={c.id} />
           </Suspense>
         </TabsContent>
+
+        <TabsContent value="orders">
+          <Suspense fallback={<ListSkeleton rows={3} />}>
+            <CustomerOrders id={c.id} />
+          </Suspense>
+        </TabsContent>
       </Tabs>
     </>
   );
@@ -201,6 +212,55 @@ async function CustomerQuotations({ id }: { id: string }) {
     );
   }
   return <QuotationList rows={rows} hideCompany />;
+}
+
+async function CustomerOrders({ id }: { id: string }) {
+  const rows = (await getBoardTickets(id)).sort((a, b) => a.ticketNo.localeCompare(b.ticketNo));
+  if (!rows.length) {
+    return <EmptyState icon={SquareKanban} title="No orders yet" description="Services appear here once one of their quotations is marked Accepted." />;
+  }
+  const today = todayInIndia();
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="flex justify-end">
+        <Button asChild variant="outline" size="sm">
+          <Link href={`/orders?customer=${id}`}>
+            <SquareKanban aria-hidden /> Open on the board
+          </Link>
+        </Button>
+      </div>
+      <ul className="divide-y rounded-2xl border bg-card">
+        {rows.map((t) => (
+          <li key={t.id}>
+            <Link
+              href={`/orders?ticket=${t.id}${t.stage === "CANCELLED" ? "&cancelled=1" : ""}`}
+              className="flex flex-wrap items-center gap-x-4 gap-y-1.5 px-5 py-4 hover:bg-secondary/60"
+            >
+              <span className="min-w-0 flex-1">
+                <span className="block font-semibold text-primary tabular-nums">{t.ticketNo}</span>
+                <span className="block text-sm text-muted-foreground">
+                  {t.description} · Quotation {t.quoteNo}
+                  {t.po ? ` · PO ${t.po.number}` : ""}
+                  {t.invoice ? ` · Invoice ${t.invoice.number}` : ""}
+                </span>
+              </span>
+              <span className="flex flex-wrap items-center gap-2">
+                <StageChip stage={t.stage} />
+                {t.invoice && t.stage === "PAYMENT"
+                  ? invoiceChips(t.invoice, today).map((ch) => (
+                      <ToneChip key={ch.label} tone={ch.tone} className="text-xs">
+                        {ch.label}
+                      </ToneChip>
+                    ))
+                  : null}
+              </span>
+              <span className="w-28 text-right font-semibold tabular-nums">{formatINR(t.totalPaise)}</span>
+            </Link>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
 }
 
 function DetailSkeleton() {
