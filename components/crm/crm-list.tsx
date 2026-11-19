@@ -10,7 +10,8 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { bulkAddTagAction, bulkAssignAction, bulkMoveAction, deleteLeadsAction, restoreLeadsAction } from "@/lib/actions/crm";
-import type { BoardLead, BoardStage, CrmPickers } from "@/lib/crm-data";
+import type { BoardLead, BoardStage, LeadFormOptions } from "@/lib/crm-data";
+import { LeadPanel } from "./lead-panel";
 import { ACTIVITY_TYPES, activityDueLabel, activityStatus, matchesFilters, sortLeads, todayInIndia } from "@/lib/crm/leads";
 import { stageColor } from "@/lib/crm/stages";
 import { formatDate } from "@/lib/format";
@@ -39,9 +40,10 @@ const COLS: { key: Col; label: string; right?: boolean }[] = [
 
 const ACT_TEXT = { planned: "text-emerald-700", today: "text-amber-700 font-medium", overdue: "text-red-700 font-medium", none: "text-muted-foreground" } as const;
 
-export function CrmList({ stages, leads, pickers }: { stages: BoardStage[]; leads: BoardLead[]; pickers: CrmPickers }) {
+export function CrmList({ stages, leads, options: pickers }: { stages: BoardStage[]; leads: BoardLead[]; options: LeadFormOptions }) {
   const router = useRouter();
-  const { filters, sort } = useCrmFilters();
+  const { filters, sort, set } = useCrmFilters();
+  const refreshKey = useMemo(() => leads.map((l) => `${l.id}:${l.stageId}:${l.priority}`).join("|"), [leads]);
   const today = todayInIndia();
   const [pending, start] = useTransition();
   const [dialog, confirm] = useConfirm();
@@ -162,7 +164,7 @@ export function CrmList({ stages, leads, pickers }: { stages: BoardStage[]; lead
   return (
     <>
       {dialog}
-      <CrmToolbar view="list" pickers={pickers} onNew={() => router.push("/crm?new=1")} />
+      <CrmToolbar view="list" pickers={pickers} onNew={() => set({ new: "1", lead: null, edit: null })} />
 
       {ids.length ? (
         <div className="sticky top-16 z-20 mb-3 flex flex-wrap items-center gap-2 rounded-xl border bg-card p-2 shadow-md" aria-busy={pending}>
@@ -208,7 +210,11 @@ export function CrmList({ stages, leads, pickers }: { stages: BoardStage[]; lead
                       <Checkbox checked={ticked.has(l.id)} onCheckedChange={() => toggle(l.id)} aria-label={`Tick ${l.title}`} />
                     </td>
                     <td className="px-3 py-2.5 whitespace-nowrap tabular-nums">{l.leadNo}</td>
-                    <td className="max-w-64 min-w-48 px-3 py-2.5 font-medium">{l.title}</td>
+                    <td className="max-w-64 min-w-48 px-3 py-2.5 font-medium">
+                      <button type="button" className="text-left hover:text-primary hover:underline" onClick={() => set({ lead: l.id, edit: null, new: null })}>
+                        {l.title}
+                      </button>
+                    </td>
                     <td className="max-w-56 min-w-40 px-3 py-2.5">{l.companyName}</td>
                     <td className="px-3 py-2.5 whitespace-nowrap">{l.contactName}</td>
                     <td className="px-3 py-2.5">
@@ -241,6 +247,7 @@ export function CrmList({ stages, leads, pickers }: { stages: BoardStage[]; lead
         Showing {rows.length} of {plural(leads.length)}.
       </p>
 
+      <LeadPanel options={pickers} refreshKey={refreshKey} />
       <LostDialog
         open={!!lostFor}
         title={`Mark ${plural(ids.length)} as lost?`}

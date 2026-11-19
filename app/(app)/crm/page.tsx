@@ -3,7 +3,7 @@ import { Suspense } from "react";
 import { PageHeader } from "@/components/common/page-header";
 import { CrmBoard } from "@/components/crm/crm-board";
 import { boardStage, CrmSkeleton } from "@/components/crm/crm-skeleton";
-import { getBoardLeads, getCrmPickers, getCrmStages } from "@/lib/crm-data";
+import { getBoardLeads, getCrmStages, getLeadFormOptions } from "@/lib/crm-data";
 
 export const metadata: Metadata = { title: "Enquiries" };
 
@@ -26,6 +26,6 @@ export default function CrmPage() {
 }
 
 async function Board() {
-  const [stages, leads, pickers] = await Promise.all([getCrmStages(), getBoardLeads(), getCrmPickers()]);
-  return <CrmBoard stages={stages.map(boardStage)} leads={leads} pickers={pickers} />;
+  const [stages, leads, options] = await Promise.all([getCrmStages(), getBoardLeads(), getLeadFormOptions()]);
+  return <CrmBoard stages={stages.map(boardStage)} leads={leads} options={options} />;
 }

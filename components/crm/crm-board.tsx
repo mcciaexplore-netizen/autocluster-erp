@@ -3,28 +3,31 @@
 import { DndContext, DragOverlay, PointerSensor, useDroppable, useSensor, useSensors, type DragEndEvent, type DragStartEvent } from "@dnd-kit/core";
 import { ChevronsLeftRight, Handshake, MoreHorizontal, Plus, SearchX } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useState, useTransition } from "react";
+import { useMemo, useState, useTransition } from "react";
 import { usePatches } from "./use-patches";
 import { toast } from "sonner";
 import { useConfirm } from "@/components/common/confirm";
 import { EmptyState } from "@/components/common/empty-state";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { deleteLeadsAction, moveLeadAction, restoreLeadsAction, setLeadPriorityAction, setStageFoldedAction } from "@/lib/actions/crm";
-import type { BoardLead, BoardStage, CrmPickers } from "@/lib/crm-data";
+import { deleteLeadsAction, restoreLeadsAction, setLeadPriorityAction, setStageFoldedAction } from "@/lib/actions/crm";
+import type { BoardLead, BoardStage, LeadFormOptions } from "@/lib/crm-data";
+import { parseMobileOrEmail } from "@/lib/crm/contact";
+import type { LeadFormValues } from "@/lib/validation/lead";
+import { LeadPanel } from "./lead-panel";
+import { useLeadMove } from "./use-lead-move";
 import { matchesFilters, sortLeads, todayInIndia } from "@/lib/crm/leads";
 import { stageColor } from "@/lib/crm/stages";
 import { formatINRShort } from "@/lib/pricing";
 import { cn } from "@/lib/utils";
 import { CrmToolbar } from "./crm-toolbar";
 import { LeadCard, type LeadCardHandlers } from "./lead-card";
-import { LostDialog } from "./lost-dialog";
 import { QuickAdd } from "./quick-add";
 import { useCrmFilters } from "./use-crm-filters";
 
-export function CrmBoard({ stages, leads, pickers }: { stages: BoardStage[]; leads: BoardLead[]; pickers: CrmPickers }) {
+export function CrmBoard({ stages, leads, options: pickers }: { stages: BoardStage[]; leads: BoardLead[]; options: LeadFormOptions }) {
   const router = useRouter();
-  const { filters, sort, params, set } = useCrmFilters();
+  const { filters, sort, set } = useCrmFilters();
   const today = todayInIndia();
   const [pending, startTransition] = useTransition();
   const [dialog, confirm] = useConfirm();
@@ -36,49 +39,20 @@ export function CrmBoard({ stages, leads, pickers }: { stages: BoardStage[]; lea
   const visible = useMemo(() => sortLeads(all.filter((l) => matchesFilters(l, filters, today)), sort), [all, filters, sort, today]);
   const inStage = (id: string) => visible.filter((l) => l.stageId === id);
   const stageById = (id: string) => stages.find((s) => s.id === id)!;
+  const refreshKey = useMemo(() => leads.map((l) => `${l.id}:${l.stageId}:${l.priority}`).join("|"), [leads]);
   const isFolded = (s: BoardStage) => foldPatch[s.id]?.folded ?? s.isFolded;
 
-  // ---- moving cards ---------------------------------------------------------------
-  const [lost, setLost] = useState<{ lead: BoardLead; stageId: string } | null>(null);
-
-  const doMove = (l: BoardLead, stageId: string, lostInfo?: { reasonId: string; note: string }) =>
-    startTransition(async () => {
-      patchLead(l.id, { stageId, stageChangedAt: new Date().toISOString() });
-      const r = await moveLeadAction(l.id, stageId, lostInfo);
-      if (!r.ok) {
-        patchLead(l.id, { stageId: l.stageId, stageChangedAt: l.stageChangedAt });
-        return void toast.error(r.message);
-      }
-      setLost(null);
-      router.refresh();
-      const d = r.data;
-      if (d.toType === "WON") {
-        toast.success(`${l.title} is won`);
-        if (!d.customerId) void askConvert(d.leadId, d.companyName);
-      } else if (d.toType === "LOST") toast.success(`${l.title} marked as lost`);
-      else if (d.fromType !== "OPEN") toast.success(`${l.title} reopened in ${d.toName}`);
-      else toast.success(`Moved to ${d.toName}`);
+  // ---- moving cards (same rules as the stage bar: Lost asks for a reason, Won offers to convert) ----
+  const mover = useLeadMove({ stages, lostReasons: pickers.lostReasons });
+  const moveTo = (l: BoardLead, stageId: string) =>
+    mover.moveTo(l, stageId, {
+      optimistic: () => patchLead(l.id, { stageId, stageChangedAt: new Date().toISOString() }),
+      revert: () => patchLead(l.id, { stageId: l.stageId, stageChangedAt: l.stageChangedAt }),
     });
-
-  // Asked after the move has saved (outside the save, so the board isn't kept busy).
-  const askConvert = async (leadId: string, company: string) => {
-    const yes = await confirm({
-      title: `Make ${company} a customer now?`,
-      description: "You'll get the customer form with the enquiry's details filled in. Add the address, GST and PAN, then save.",
-      confirmLabel: "Yes, convert",
-      cancelLabel: "Later",
-    });
-    if (yes) router.push(`/customers/new?lead=${leadId}`);
-  };
-
-  const moveTo = (l: BoardLead, stageId: string) => {
-    if (stageId === l.stageId) return;
-    if (stageById(stageId).type === "LOST") return setLost({ lead: l, stageId });
-    doMove(l, stageId);
-  };
 
   const handlers: LeadCardHandlers = {
     onMoveTo: moveTo,
+    onOpen: (l) => set({ lead: l.id, edit: null, new: null }),
     onPriority: (l, v) =>
       startTransition(async () => {
         patchLead(l.id, { priority: v });
@@ -109,19 +83,18 @@ export function CrmBoard({ stages, leads, pickers }: { stages: BoardStage[]; lea
 
   // ---- quick add -------------------------------------------------------------------
   const firstOpen = stages.find((s) => s.type === "OPEN")!;
-  // "New enquiry" from the list view lands here with ?new=1.
-  const [quickAdd, setQuickAdd] = useState<string | null>(() => (params.get("new") === "1" ? firstOpen.id : null));
+  const [quickAdd, setQuickAdd] = useState<string | null>(null);
+  const [createDraft, setCreateDraft] = useState<Partial<LeadFormValues> | null>(null);
+  const openNew = (draft?: Partial<LeadFormValues>) => {
+    setCreateDraft(draft ?? null);
+    set({ new: "1", lead: null, edit: null });
+  };
   const [tab, setTab] = useState<string>(filters.stage ?? firstOpen.id);
   const startQuickAdd = (stageId: string) => {
     patchFold(stageId, { folded: false });
     setTab(stageId);
     setQuickAdd(stageId);
   };
-
-  useEffect(() => {
-    if (params.get("new") === "1") set({ new: null });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
   const fold = (s: BoardStage, v: boolean) => {
     patchFold(s.id, { folded: v });
@@ -152,6 +125,20 @@ export function CrmBoard({ stages, leads, pickers }: { stages: BoardStage[]; lea
         stageId={s.id}
         sources={pickers.sources}
         onCancel={() => setQuickAdd(null)}
+        onFullForm={(dr) => {
+          const c = parseMobileOrEmail(dr.mobileOrEmail);
+          setQuickAdd(null);
+          openNew({
+            stageId: s.id,
+            title: dr.title,
+            companyName: dr.companyName,
+            contactName: dr.contactName,
+            sourceId: dr.sourceId,
+            expectedValue: dr.expectedValue,
+            phone: c.phone ?? (dr.mobileOrEmail.includes("@") ? "" : dr.mobileOrEmail),
+            email: c.email ?? (dr.mobileOrEmail.includes("@") ? dr.mobileOrEmail : ""),
+          });
+        }}
         onDone={() => {
           setQuickAdd(null);
           router.refresh();
@@ -169,7 +156,8 @@ export function CrmBoard({ stages, leads, pickers }: { stages: BoardStage[]; lea
   return (
     <>
       {dialog}
-      <CrmToolbar view="board" pickers={pickers} onNew={() => startQuickAdd(firstOpen.id)} />
+      {mover.elements}
+      <CrmToolbar view="board" pickers={pickers} onNew={() => openNew()} />
 
       {nothingAtAll && !quickAdd ? (
         <EmptyState
@@ -177,7 +165,7 @@ export function CrmBoard({ stages, leads, pickers }: { stages: BoardStage[]; lea
           title="No enquiries yet"
           description="Add each phone call, walk-in, website or event enquiry as a card, then move it along as you follow up."
           action={
-            <Button onClick={() => startQuickAdd(firstOpen.id)}>
+            <Button onClick={() => openNew()}>
               <Plus aria-hidden /> Add the first enquiry
             </Button>
           }
@@ -252,14 +240,7 @@ export function CrmBoard({ stages, leads, pickers }: { stages: BoardStage[]; lea
         </>
       )}
 
-      <LostDialog
-        open={!!lost}
-        title={`Mark “${lost?.lead.title ?? ""}” as lost?`}
-        reasons={pickers.lostReasons}
-        pending={pending}
-        onCancel={() => setLost(null)}
-        onConfirm={(v) => lost && doMove(lost.lead, lost.stageId, v)}
-      />
+      <LeadPanel options={pickers} refreshKey={refreshKey} createDraft={createDraft} />
     </>
   );
 }

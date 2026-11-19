@@ -3,7 +3,13 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { db } from "@/db";
+import { addListItem } from "@/db/crm-lists-writer";
 import {
+  addLeadNote,
+  findDuplicates,
+  logLeadContact,
+  updateLead,
+  type Duplicates,
   bulkAddTag,
   bulkAssign,
   bulkMove,
@@ -21,6 +27,8 @@ import { SIGNED_OUT_MESSAGE } from "@/lib/auth-messages";
 import { canManagePipeline } from "@/lib/crm/permissions";
 import { parseRupees } from "@/lib/money-input";
 import { parseMobileOrEmail } from "@/lib/crm/contact";
+import { getLeadDetail, type LeadDetail } from "@/lib/crm-data";
+import { leadFormSchema, leadInputFromForm, type LeadFormValues } from "@/lib/validation/lead";
 
 type Result<T> = { ok: true; data: T } | { ok: false; message: string };
 
@@ -111,4 +119,58 @@ export async function setStageFoldedAction(stageId: string, folded: boolean) {
     if (!(await canManagePipeline())) throw new UserFacingError("Only an admin can change the stages.");
     await setStageFolded(db, id.parse(stageId), z.boolean().parse(folded));
   });
+}
+
+// ---- full form, detail panel ----------------------------------------------------------------
+
+export async function loadLeadDetail(leadId: string): Promise<Result<LeadDetail>> {
+  if (!(await isSignedIn())) return { ok: false, message: SIGNED_OUT_MESSAGE };
+  const parsed = id.safeParse(leadId);
+  const d = parsed.success ? await getLeadDetail(parsed.data) : null;
+  return d ? { ok: true, data: d } : { ok: false, message: "This enquiry could not be found. It may have been deleted." };
+}
+
+export async function createLeadAction(values: LeadFormValues) {
+  return run(async () => {
+    const v = leadFormSchema.parse(values);
+    const lead = await createLead(db, leadInputFromForm(v));
+    return { id: lead.id, leadNo: lead.leadNo };
+  });
+}
+
+export async function updateLeadAction(leadId: string, values: LeadFormValues) {
+  return run(async () => {
+    const v = leadFormSchema.parse(values);
+    const r = await updateLead(db, id.parse(leadId), leadInputFromForm(v));
+    return { changed: r.changed, moved: r.moved };
+  });
+}
+
+export async function addLeadNoteAction(leadId: string, note: string) {
+  return run(() => addLeadNote(db, id.parse(leadId), z.string().max(5000).parse(note)));
+}
+
+export async function logLeadContactAction(leadId: string, kind: "CALL" | "WHATSAPP" | "EMAIL") {
+  return run(() => logLeadContact(db, id.parse(leadId), z.enum(["CALL", "WHATSAPP", "EMAIL"]).parse(kind)));
+}
+
+const dupQuery = z.object({
+  phone: z.string().max(30).nullish(),
+  email: z.string().max(200).nullish(),
+  companyName: z.string().max(200).nullish(),
+  excludeLeadId: z.string().uuid().nullish(),
+  excludeCustomerId: z.string().uuid().nullish(),
+});
+
+/** Read-only: customers and enquiries with the same mobile, email or company name. */
+export async function findDuplicatesAction(q: z.input<typeof dupQuery>): Promise<Result<Duplicates>> {
+  if (!(await isSignedIn())) return { ok: false, message: SIGNED_OUT_MESSAGE };
+  const parsed = dupQuery.safeParse(q);
+  if (!parsed.success) return { ok: true, data: { customers: [], leads: [] } };
+  return { ok: true, data: await findDuplicates(db, parsed.data) };
+}
+
+/** "Pick or type a new tag" in the enquiry form. */
+export async function createTagAction(name: string) {
+  return run(async () => ({ id: await addListItem(db, "tags", { name: z.string().max(200).parse(name) }), name: name.trim().replace(/\s+/g, " ") }));
 }

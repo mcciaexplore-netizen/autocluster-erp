@@ -8,10 +8,10 @@
  *   Moving a Won or Lost enquiry back to an open stage reopens it.
  * - Every change is written to the enquiry's history (lead_events).
  */
-import { and, asc, eq, inArray, isNull, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { EMAIL_PROBLEM, EMAIL_RE, MOBILE_PROBLEM, normalizeMobile } from "@/lib/crm/contact";
 import { MOBILE_REGEX } from "@/lib/india";
-import { financialYear, formatQuoteNo } from "@/lib/pricing";
+import { financialYear, formatINRShort, formatQuoteNo } from "@/lib/pricing";
 import { todayInIndia } from "@/lib/tickets";
 import type { DB, Tx } from "./client";
 import { UserFacingError } from "./quote-writer";
@@ -376,4 +376,170 @@ export async function setStageFolded(db: DB, stageId: string, folded: boolean) {
     if (!st) throw new UserFacingError("That stage no longer exists. Please refresh the page.");
     await tx.insert(crmStageChanges).values({ action: folded ? "FOLD" : "UNFOLD", details: { stage: st.name }, createdBy: ACTOR });
   });
+}
+
+// ---- edit ------------------------------------------------------------------------------------
+
+const FIELD_LABELS: Record<string, string> = {
+  title: "title",
+  companyName: "company",
+  contactName: "contact person",
+  designation: "designation",
+  phone: "mobile",
+  email: "email",
+  city: "city",
+  category: "company category",
+  isMcciaMember: "MCCIA member",
+  mcciaMembershipId: "membership ID",
+  notes: "notes",
+  expectedCloseDate: "expected close date",
+  customerId: "linked customer",
+};
+
+const rupees = (p: number | null) => (p == null ? "not set" : formatINRShort(p));
+
+/**
+ * Saves the full enquiry form. Value, assignee, priority and source changes get their own
+ * history line; other edits are listed together. A stage change follows the usual rules
+ * (Lost needs "Mark as lost", so the reason is recorded).
+ */
+export async function updateLead(db: DB, leadId: string, input: LeadInput) {
+  return db.transaction(async (tx) => {
+    const before = await lockLead(tx, leadId);
+    const { row, deptCodes, serviceIds, tagIds } = await cleanInput(tx, input);
+    let sourceId = before.sourceId;
+    if (input.sourceId && input.sourceId !== before.sourceId) {
+      const [src] = await tx.select({ id: crmSources.id }).from(crmSources).where(eq(crmSources.id, input.sourceId));
+      if (!src) throw new UserFacingError("That source could not be found.");
+      sourceId = src.id;
+    }
+    const stages = await stagesInOrder(tx);
+    const target = input.stageId ? stages.find((s) => s.id === input.stageId) : undefined;
+    if (input.stageId && !target) throw new UserFacingError("That stage no longer exists. Please refresh the page.");
+    if (target && target.id !== before.stageId && target.type === "LOST") throw new UserFacingError("To mark it as lost, use “Mark as lost”, so the reason is recorded.");
+
+    const names = new Map((await tx.select({ id: teamMembers.id, name: teamMembers.name }).from(teamMembers)).map((m) => [m.id, m.name]));
+    const sourceNames = new Map((await tx.select({ id: crmSources.id, name: crmSources.name }).from(crmSources)).map((m) => [m.id, m.name]));
+    const lines: [string, string, Record<string, unknown>][] = [];
+    if (row.expectedValue !== before.expectedValue)
+      lines.push(["FIELD", `Expected value changed from ${rupees(before.expectedValue)} to ${rupees(row.expectedValue)}`, { field: "expectedValue", from: before.expectedValue, to: row.expectedValue }]);
+    if (row.assignedTo !== before.assignedTo) {
+      const a = before.assignedTo ? (names.get(before.assignedTo) ?? "someone") : "nobody";
+      const b = row.assignedTo ? (names.get(row.assignedTo) ?? "someone") : "nobody";
+      lines.push(["FIELD", `Assigned to changed from ${a} to ${b}`, { field: "assignedTo", from: a, to: b }]);
+    }
+    if (row.priority !== before.priority) lines.push(["FIELD", `Priority changed from ${before.priority} to ${row.priority} ${row.priority === 1 ? "star" : "stars"}`, { field: "priority" }]);
+    if (sourceId !== before.sourceId) lines.push(["FIELD", `Source changed from ${sourceNames.get(before.sourceId)} to ${sourceNames.get(sourceId)}`, { field: "source" }]);
+    const other = Object.keys(FIELD_LABELS).filter((k) => (row as Record<string, unknown>)[k] !== (before as Record<string, unknown>)[k]);
+
+    const [oldDepts, oldSvcs, oldTags] = await Promise.all([
+      tx.select({ v: leadDepartments.deptCode }).from(leadDepartments).where(eq(leadDepartments.leadId, leadId)),
+      tx.select({ v: leadServices.serviceId }).from(leadServices).where(eq(leadServices.leadId, leadId)),
+      tx.select({ v: leadTags.tagId }).from(leadTags).where(eq(leadTags.leadId, leadId)),
+    ]);
+    const same = (a: (string | number)[], b: (string | number)[]) => a.length === b.length && a.every((x) => b.includes(x));
+    if (!same(oldDepts.map((d) => d.v), deptCodes)) other.push("departments");
+    if (!same(oldSvcs.map((d) => d.v), serviceIds)) other.push("services");
+    if (!same(oldTags.map((d) => d.v), tagIds)) other.push("tags");
+    if (other.length) lines.push(["EDITED", `Details edited: ${other.map((k) => FIELD_LABELS[k] ?? k).join(", ")}`, { fields: other }]);
+
+    await tx.update(leads).set({ ...row, sourceId }).where(eq(leads.id, leadId));
+    await tx.delete(leadDepartments).where(eq(leadDepartments.leadId, leadId));
+    await tx.delete(leadServices).where(eq(leadServices.leadId, leadId));
+    await tx.delete(leadTags).where(eq(leadTags.leadId, leadId));
+    if (deptCodes.length) await tx.insert(leadDepartments).values(deptCodes.map((deptCode) => ({ leadId, deptCode })));
+    if (serviceIds.length) await tx.insert(leadServices).values(serviceIds.map((serviceId) => ({ leadId, serviceId })));
+    if (tagIds.length) await tx.insert(leadTags).values(tagIds.map((tagId) => ({ leadId, tagId })));
+    for (const [type, message, data] of lines) await logLeadEvent(tx, leadId, type, message, data);
+
+    let moved: MoveResult | null = null;
+    if (target && target.id !== before.stageId) moved = await moveLead(tx, leadId, target.id);
+    return { changed: lines.length > 0 || !!moved?.changed, moved };
+  });
+}
+
+// ---- notes and contact clicks ------------------------------------------------------------
+
+export async function addLeadNote(db: DB, leadId: string, note: string) {
+  const text = note.trim();
+  if (text.length < 2) throw new UserFacingError("Please write the note first.");
+  if (text.length > 3000) throw new UserFacingError("Please keep the note under 3,000 characters.");
+  return db.transaction(async (tx) => {
+    await lockLead(tx, leadId);
+    await logLeadEvent(tx, leadId, "NOTE", text);
+  });
+}
+
+export const CONTACT_KINDS = { CALL: "Call", WHATSAPP: "WhatsApp", EMAIL: "Email" } as const;
+export type ContactKind = keyof typeof CONTACT_KINDS;
+
+export async function logLeadContact(db: DB, leadId: string, kind: ContactKind) {
+  return db.transaction(async (tx) => {
+    const lead = await lockLead(tx, leadId);
+    const to = kind === "EMAIL" ? lead.email : lead.phone ? `+91 ${lead.phone}` : null;
+    await logLeadEvent(tx, leadId, `CONTACT_${kind}`, `${CONTACT_KINDS[kind]} opened by ${ACTOR}${to ? ` (${to})` : ""}`, { kind });
+  });
+}
+
+// ---- duplicate check -----------------------------------------------------------------------
+
+/** "Sahyadri Auto Components Pvt. Ltd." -> "sahyadri auto components" */
+export function companyKey(name: string | null | undefined): string {
+  return (name ?? "")
+    .toLowerCase()
+    .replace(/&/g, " and ")
+    .replace(/[^a-z0-9 ]+/g, " ")
+    .split(/\s+/)
+    .filter((w) => w && !["pvt", "private", "ltd", "limited", "llp", "co", "company", "inc", "the", "india", "m", "s"].includes(w))
+    .join(" ");
+}
+
+export type MatchOn = "mobile" | "email" | "company name";
+export interface Duplicates {
+  customers: { id: string; companyName: string; matchedOn: MatchOn[] }[];
+  leads: { id: string; leadNo: string; title: string; companyName: string; matchedOn: MatchOn[] }[];
+}
+
+/**
+ * Finds customers and enquiries with the same mobile, email or company name.
+ * It never blocks saving; the form only shows a note.
+ */
+export async function findDuplicates(
+  db: DB | Tx,
+  q: { phone?: string | null; email?: string | null; companyName?: string | null; excludeLeadId?: string | null; excludeCustomerId?: string | null },
+): Promise<Duplicates> {
+  const phone = normalizeMobile(q.phone);
+  const email = q.email?.trim().toLowerCase() || null;
+  const company = companyKey(q.companyName);
+  const out: Duplicates = { customers: [], leads: [] };
+  if (!phone && !email && company.length < 3) return out;
+  const match = (p: string | null, e: string | null, c: string) => {
+    const on: MatchOn[] = [];
+    if (phone && normalizeMobile(p) === phone) on.push("mobile");
+    if (email && e?.trim().toLowerCase() === email) on.push("email");
+    if (company.length >= 3 && companyKey(c) === company) on.push("company name");
+    return on;
+  };
+  const custRows = await db
+    .select({ id: customers.id, companyName: customers.companyName, phone: customers.pocPhone, email: customers.pocEmail })
+    .from(customers)
+    .where(isNull(customers.deletedAt));
+  for (const c of custRows) {
+    if (c.id === q.excludeCustomerId) continue;
+    const on = match(c.phone, c.email, c.companyName);
+    if (on.length) out.customers.push({ id: c.id, companyName: c.companyName, matchedOn: on });
+  }
+  const leadRows = await db
+    .select({ id: leads.id, leadNo: leads.leadNo, title: leads.title, companyName: leads.companyName, phone: leads.phone, email: leads.email })
+    .from(leads)
+    .where(isNull(leads.deletedAt))
+    .orderBy(desc(leads.createdAt));
+  for (const l of leadRows) {
+    if (l.id === q.excludeLeadId) continue;
+    const on = match(l.phone, l.email, l.companyName);
+    if (on.length) out.leads.push({ id: l.id, leadNo: l.leadNo, title: l.title, companyName: l.companyName, matchedOn: on });
+  }
+  out.leads = out.leads.slice(0, 5);
+  out.customers = out.customers.slice(0, 5);
+  return out;
 }
