@@ -156,6 +156,7 @@ export async function getBoardLeads(): Promise<BoardLead[]> {
 
 /** What the board's filters, menus and forms choose from (active items only). */
 export async function getCrmPickers() {
+  await connection();
   const lists = await getCrmLists();
   const active = <T extends { isActive: boolean }>(l: T[]) => l.filter((x) => x.isActive);
   return {
@@ -276,6 +277,7 @@ export type LeadDetail = NonNullable<Awaited<ReturnType<typeof getLeadDetail>>>;
 
 /** What the enquiry form chooses from. */
 export async function getLeadFormOptions() {
+  await connection();
   const [pickers, stages, depts, svcs, custs] = await Promise.all([
     getCrmPickers(),
     getCrmStages(),
