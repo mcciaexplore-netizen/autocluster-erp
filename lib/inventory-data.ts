@@ -177,6 +177,7 @@ export type InvItemDetail = NonNullable<Awaited<ReturnType<typeof getInvItem>>>;
 
 /** What the item form chooses from. */
 export async function getItemFormOptions() {
+  await connection();
   const [lists, suppliers, nextCode] = await Promise.all([
     getInvLists(),
     db.select({ id: invSuppliers.id, name: invSuppliers.name, isActive: invSuppliers.isActive }).from(invSuppliers).orderBy(asc(invSuppliers.name)),

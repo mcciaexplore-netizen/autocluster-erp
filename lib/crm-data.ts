@@ -406,6 +406,7 @@ export type TodaysActivity = Awaited<ReturnType<typeof getTodaysActivities>>[num
 
 /** What imported rows are checked against (active items only). */
 export async function getImportLists() {
+  await connection();
   const [pickers, stages, depts] = await Promise.all([getCrmPickers(), getCrmStages(), db.select().from(departmentsTable).orderBy(asc(departmentsTable.sortOrder))]);
   return {
     sources: pickers.sources,
