@@ -28,7 +28,7 @@ import { useLeadMove } from "./use-lead-move";
 import { useActivityFlow } from "./use-activity-flow";
 import { StageEditor } from "./stage-editor";
 import { useStageActions } from "./stage-actions";
-import { useLiveRefresh } from "./use-live-refresh";
+import { useAutoRefresh } from "@/hooks/use-auto-refresh";
 import { matchesFilters, sortLeads, todayInIndia } from "@/lib/crm/leads";
 import { STAGE_COLOR_KEYS, STAGE_COLORS, stageColor, type StageColor } from "@/lib/crm/stages";
 import { formatINRShort } from "@/lib/pricing";
@@ -145,7 +145,7 @@ export function CrmBoard({ stages, leads, options: pickers, canManage }: { stage
       remove: s.type === "OPEN" ? () => a.remove(s) : undefined,
     };
   };
-  useLiveRefresh();
+  useAutoRefresh("crm");
 
   // ---- drag and drop -----------------------------------------------------------------
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }));

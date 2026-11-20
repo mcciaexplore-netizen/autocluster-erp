@@ -23,6 +23,7 @@ import type { BoardTicket } from "@/lib/orders-data";
 import { formatINR } from "@/lib/pricing";
 import { daysBetween, followUpDue, moveKind, moveProblem, STAGE_INFO, STAGES, todayInIndia, type BoardStage } from "@/lib/tickets";
 import { cn } from "@/lib/utils";
+import { useAutoRefresh } from "@/hooks/use-auto-refresh";
 import { BoardForms } from "./forms";
 import { ReasonDialog } from "./reason-dialog";
 import { TicketCard } from "./ticket-card";
@@ -59,6 +60,7 @@ export function OrdersBoard({ tickets, customers, uploadEnv }: { tickets: BoardT
   const today = todayInIndia();
   const [q, setQ] = useState(params.get("q") ?? "");
   const [pending, startTransition] = useTransition();
+  useAutoRefresh("orders");
 
   // ---- filters ---------------------------------------------------------------
   useEffect(() => {

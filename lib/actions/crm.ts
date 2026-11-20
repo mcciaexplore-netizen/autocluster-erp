@@ -6,7 +6,6 @@ import { db } from "@/db";
 import { addListItem } from "@/db/crm-lists-writer";
 import { cancelActivity, markActivityDone, planActivity } from "@/db/activity-writer";
 import { addStage, deleteStage, moveStage, renameStage, reorderStages, setStageColor, setStageFolded, setStageProbability } from "@/db/stage-writer";
-import { sql } from "drizzle-orm";
 import { todayInIndia } from "@/lib/tickets";
 import {
   addLeadNote,
@@ -235,19 +234,4 @@ export async function moveStageAction(stageId: string, dir: -1 | 1) {
 }
 export async function deleteStageAction(stageId: string, moveToId: string | null) {
   return pipeline(() => deleteStage(db, id.parse(stageId), moveToId ? id.parse(moveToId) : null));
-}
-
-/**
- * A short fingerprint of the CRM data. The board checks it every few seconds and refreshes
- * when it changes, so stage edits (and other people's moves) show without reloading the page.
- */
-export async function crmVersionAction(): Promise<string | null> {
-  if (!(await isSignedIn())) return null;
-  const r = await db.execute<{ v: string }>(sql`
-    select concat_ws(':',
-      (select coalesce(max(id), 0) from crm_stage_changes),
-      (select coalesce(max(id), 0) from lead_events),
-      (select count(*) from crm_activities where done_at is null),
-      (select coalesce(extract(epoch from max(updated_at))::bigint, 0) from leads)) as v`);
-  return r.rows[0]?.v ?? null;
 }

@@ -12,7 +12,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { bulkAddTagAction, bulkAssignAction, bulkMoveAction, deleteLeadsAction, restoreLeadsAction } from "@/lib/actions/crm";
 import type { BoardLead, BoardStage, LeadFormOptions } from "@/lib/crm-data";
 import { LeadPanel } from "./lead-panel";
-import { useLiveRefresh } from "./use-live-refresh";
+import { useAutoRefresh } from "@/hooks/use-auto-refresh";
 import { ACTIVITY_TYPES, activityDueLabel, activityStatus, matchesFilters, sortLeads, todayInIndia } from "@/lib/crm/leads";
 import { stageColor } from "@/lib/crm/stages";
 import { formatDate } from "@/lib/format";
@@ -44,7 +44,7 @@ const ACT_TEXT = { planned: "text-emerald-700", today: "text-amber-700 font-medi
 export function CrmList({ stages, leads, options: pickers }: { stages: BoardStage[]; leads: BoardLead[]; options: LeadFormOptions }) {
   const router = useRouter();
   const { filters, sort, set } = useCrmFilters();
-  useLiveRefresh();
+  useAutoRefresh("crm");
   const refreshKey = useMemo(() => leads.map((l) => `${l.id}:${l.stageId}:${l.priority}:${l.nextActivity?.id ?? ""}`).join("|"), [leads]);
   const today = todayInIndia();
   const [pending, start] = useTransition();
