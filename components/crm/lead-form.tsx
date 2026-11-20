@@ -3,6 +3,8 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { AlertTriangle, Building2, ClipboardList, Expand, Loader2, NotebookPen, Plus, Save } from "lucide-react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useConfirm } from "@/components/common/confirm";
 import { useEffect, useState, useTransition } from "react";
 import { Controller, useForm, useWatch } from "react-hook-form";
 import { toast } from "sonner";
@@ -72,6 +74,8 @@ export function LeadForm({
   /** Tells the side panel whether there are unsaved changes (to warn before closing). */
   onDirtyChange?: (dirty: boolean) => void;
 }) {
+  const router = useRouter();
+  const [dialog, confirm] = useConfirm();
   const [pending, start] = useTransition();
   const [tags, setTags] = useState(options.tags);
   const form = useForm<LeadFormValues>({ resolver: zodResolver(leadFormSchema), defaultValues: initial, mode: "onTouched" });
@@ -162,22 +166,39 @@ export function LeadForm({
     });
   };
 
+  // After saving into Won (and not yet a customer): the same question as dragging to Won.
+  const finish = async (saved: { id: string; leadNo?: string }, askConvert: boolean, company: string) => {
+    if (askConvert) {
+      const yes = await confirm({
+        title: `Make ${company} a customer now?`,
+        description: "You'll get the customer form with the enquiry's details filled in. Add the address, GST and PAN, then save.",
+        confirmLabel: "Yes, convert",
+        cancelLabel: "Later",
+      });
+      if (yes) return router.push(`/customers/new?lead=${saved.id}`);
+    }
+    onSaved(saved);
+  };
+
   const onSubmit = (ev: React.FormEvent<HTMLFormElement>) =>
     handleSubmit(
       (v) =>
         start(async () => {
+          const linked = v.existingCustomer && !!v.customerId;
           if (mode === "create") {
             const r = await createLeadAction(v);
             if (!r.ok) return void toast.error(r.message);
             form.reset(v);
             toast.success(`Enquiry ${r.data.leadNo} added`);
-            onSaved(r.data);
+            const won = options.stages.find((s) => s.id === v.stageId)?.type === "WON";
+            void finish(r.data, won && !linked, v.companyName);
           } else {
             const r = await updateLeadAction(leadId!, v);
             if (!r.ok) return void toast.error(r.message);
             form.reset(v);
-            toast.success(r.data.changed ? "Enquiry saved" : "No changes to save");
-            onSaved({ id: leadId! });
+            const won = r.data.moved?.changed && r.data.moved.toType === "WON";
+            toast.success(won ? `“${v.title}” is won` : r.data.changed ? "Enquiry saved" : "No changes to save");
+            void finish({ id: leadId! }, !!won && !r.data.moved?.customerId, v.companyName);
           }
         }),
       () => toast.error("Some details need a second look. Please check the fields marked in red."),
@@ -191,6 +212,7 @@ export function LeadForm({
 
   return (
     <form onSubmit={onSubmit} noValidate className="flex flex-col gap-5">
+      {dialog}
       {fullPageHref ? (
         <div className="flex justify-end">
           <Button asChild variant="ghost" size="sm" onClick={() => saveLeadDraft(getValues(), leadId)}>

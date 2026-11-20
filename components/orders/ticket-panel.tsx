@@ -94,7 +94,7 @@ export function TicketPanel({
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent side="right" className="w-full gap-0 overflow-y-auto p-0 sm:max-w-xl">
+      <SheetContent side="right" className="gap-0 overflow-y-auto p-0 data-[side=right]:w-full data-[side=right]:sm:max-w-xl">
         <SheetHeader className="border-b p-5">
           <SheetTitle className="flex flex-wrap items-center gap-2 tabular-nums">
             {ticket?.ticketNo} {ticket ? <StageChip stage={ticket.stage} /> : null}
