@@ -34,7 +34,7 @@ import { suggestedQty } from "@/lib/inventory/reorder";
 import { D, valuePaise } from "@/lib/inventory/numbers";
 import { stockStatus, type StockStatus } from "@/lib/inventory/stock";
 import { financialYear } from "@/lib/pricing";
-import { addDays, todayInIndia } from "@/lib/tickets";
+import { addDays, daysBetween, todayInIndia } from "@/lib/tickets";
 
 export type InvListItem = { id: string; name: string; isActive: boolean };
 
@@ -862,3 +862,79 @@ export async function getOrderListData(supplierId: string | null, lines: { itemI
   };
 }
 export type OrderListData = Awaited<ReturnType<typeof getOrderListData>>;
+
+// ---- overview and home ------------------------------------------------------------------------------
+
+/** Items marked ordered whose lead time has passed without the stock arriving from that supplier. */
+async function lateDeliveries(today: string) {
+  const rows = await db.execute<{ id: string; name: string; code: string; ordered_on: string; supplier: string | null; lead: number | null }>(sql`
+    select i.id, i.name, i.code, i.ordered_on::text, s.name as supplier, coalesce(i.lead_time_days, si.lead_time_days) as lead
+    from inv_items i
+    left join inv_suppliers s on s.id = i.ordered_supplier_id
+    left join inv_supplier_items si on si.item_id = i.id and si.supplier_id = i.ordered_supplier_id
+    where i.ordered_on is not null
+    order by i.ordered_on`);
+  return rows.rows.filter((r) => deliveryLate(r.ordered_on, r.lead, today)).map((r) => ({ id: r.id, name: r.name, code: r.code, orderedOn: r.ordered_on, supplier: r.supplier }));
+}
+
+/** Items with a batch in stock that expires within the warning days (or has expired): matches the "Expiring soon" filter. */
+async function expiringItemCount(until: string) {
+  const r = await db.execute<{ n: string }>(sql`
+    select count(distinct b.item_id) as n from inv_batches b join inv_items i on i.id = b.item_id
+    where i.is_active and b.qty_on_hand > 0 and b.expiry_date is not null and b.expiry_date <= ${until}`);
+  return Number(r.rows[0].n);
+}
+
+/** The Inventory overview: cards, "Needs attention" and the last 10 records. */
+export async function getInvOverview() {
+  await connection();
+  const today = todayInIndia();
+  const [set] = await db.select({ warn: settings.invExpiryWarningDays }).from(settings).where(eq(settings.id, 1));
+  const warnDays = set?.warn ?? 30;
+  const until = addDays(today, warnDays);
+  const [reorder, totals, expiringItems, batches, late, jobs, recent] = await Promise.all([
+    getReorderList(),
+    db.execute<{ value: string; out: string }>(sql`
+      select coalesce(sum(round(qty_on_hand * avg_cost * 100)), 0) as value, count(*) filter (where is_active and qty_on_hand <= 0) as out from inv_items`),
+    expiringItemCount(until),
+    db.execute<{ id: string; item_id: string; name: string; unit: string; batch_no: string; expiry_date: string; qty: string; value: string }>(sql`
+      select b.id, i.id as item_id, i.name, u.name as unit, b.batch_no, b.expiry_date::text, b.qty_on_hand as qty, round(b.qty_on_hand * i.avg_cost * 100) as value
+      from inv_batches b join inv_items i on i.id = b.item_id join inv_units u on u.id = i.unit_id
+      where b.qty_on_hand > 0 and b.expiry_date is not null and b.expiry_date <= ${until}
+      order by b.expiry_date, i.name`),
+    lateDeliveries(today),
+    // Jobs in Billing or later (Paid only in the last 30 days, as on the board) whose service has a
+    // materials list but no materials recorded.
+    db.execute<{ id: string; ticket_no: string; company: string; description: string; stage: string }>(sql`
+      select t.id, t.ticket_no, t.snapshot->>'companyName' as company, t.snapshot->>'description' as description, t.stage
+      from tickets t join quotation_items qi on qi.id = t.quotation_item_id
+      where t.stage in ('BILLING', 'PAYMENT', 'PAID')
+        and (t.stage <> 'PAID' or t.stage_changed_at > now() - interval '30 days')
+        and exists (select 1 from inv_service_materials sm where sm.service_id = qi.service_id)
+        and not exists (select 1 from inv_documents d where d.ticket_id = t.id and d.type = 'OUT' and d.reverses_doc_id is null and d.reversed_by_doc_id is null)
+      order by t.stage_changed_at`),
+    listInvDocuments({}, 10),
+  ]);
+  const toReorder = reorder.groups.flatMap((g) => g.items).sort((a, b) => (a.runsOutDays ?? Infinity) - (b.runsOutDays ?? Infinity));
+  const batchRows = batches.rows.map((b) => ({ id: b.id, itemId: b.item_id, name: b.name, unit: b.unit, batchNo: b.batch_no, expiryDate: b.expiry_date, qty: b.qty, valuePaise: Number(b.value), days: daysBetween(today, b.expiry_date) }));
+  return {
+    warnDays,
+    cards: { valuePaise: Number(totals.rows[0].value), toReorder: toReorder.length, outOfStock: Number(totals.rows[0].out), expiring: expiringItems },
+    toReorder,
+    late,
+    expiringSoon: batchRows.filter((b) => b.days >= 0),
+    expired: batchRows.filter((b) => b.days < 0),
+    jobsWithoutMaterials: jobs.rows,
+    recent,
+  };
+}
+export type InvOverview = Awaited<ReturnType<typeof getInvOverview>>;
+
+/** The 2 Inventory cards on the home page. */
+export async function getInvHomeStats() {
+  await connection();
+  const [set] = await db.select({ warn: settings.invExpiryWarningDays }).from(settings).where(eq(settings.id, 1));
+  const warnDays = set?.warn ?? 30;
+  const [reorder, expiring] = await Promise.all([getReorderList(), expiringItemCount(addDays(todayInIndia(), warnDays))]);
+  return { toReorder: reorder.groups.reduce((a, g) => a + g.items.length, 0), expiring, warnDays };
+}

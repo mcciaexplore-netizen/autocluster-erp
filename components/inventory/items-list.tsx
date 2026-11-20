@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import type { ItemRow } from "@/lib/inventory-data";
 import { formatQty } from "@/lib/inventory/numbers";
-import { STATUS_CHIP } from "@/lib/inventory/stock";
+import { runsOutText, STATUS_CHIP } from "@/lib/inventory/stock";
 import { formatINRShort } from "@/lib/pricing";
 import { cn } from "@/lib/utils";
 
@@ -26,12 +26,6 @@ export function StatusChips({ status, expiring }: { status: ItemRow["status"]; e
   );
 }
 
-export function runsOutText(days: number | null | undefined, qty: string) {
-  if (Number(qty) <= 0) return "Out of stock";
-  if (days == null) return "No recent use";
-  if (days < 1) return "Less than a day";
-  return `~${Math.round(days).toLocaleString("en-IN")} ${Math.round(days) === 1 ? "day" : "days"}`;
-}
 
 export function ItemsList({
   items,

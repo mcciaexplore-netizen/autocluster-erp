@@ -17,3 +17,11 @@ export function stockStatus(qty: string | number, reorderLevel: string | number)
   if (q.lte(D(reorderLevel))) return "low";
   return "in";
 }
+
+/** "~12 days", "Less than a day", "No recent use" or "Out of stock". */
+export function runsOutText(days: number | null | undefined, qty: string) {
+  if (Number(qty) <= 0) return "Out of stock";
+  if (days == null) return "No recent use";
+  if (days < 1) return "Less than a day";
+  return `~${Math.round(days).toLocaleString("en-IN")} ${Math.round(days) === 1 ? "day" : "days"}`;
+}

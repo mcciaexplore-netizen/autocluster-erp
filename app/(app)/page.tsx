@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { Suspense } from "react";
-import { CalendarClock, Handshake, Inbox, Trophy } from "lucide-react";
+import { CalendarClock, Handshake, Inbox, ShoppingCart, Trophy } from "lucide-react";
 import { TodaysActivities } from "@/components/crm/todays-activities";
 import { getCrmHomeStats, getCrmPickers, getTodaysActivities } from "@/lib/crm-data";
 import { AlertTriangle, ArrowRight, Clock, FileClock, FilePlus2, FileText, IndianRupee, Receipt, UserPlus, Users, Wallet } from "lucide-react";
@@ -12,6 +12,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { getDashboardStats, listQuotations } from "@/lib/data";
 import { formatDate, money } from "@/lib/format";
 import { getOrdersStats } from "@/lib/orders-data";
+import { getInvHomeStats } from "@/lib/inventory-data";
 import { formatINRShort } from "@/lib/pricing";
 
 export default function HomePage() {
@@ -84,6 +85,20 @@ export default function HomePage() {
         </div>
         <Suspense fallback={<StatsSkeleton />}>
           <OrderStats />
+        </Suspense>
+      </section>
+
+      <section className="mt-10" aria-labelledby="inventory-heading">
+        <div className="mb-4 flex items-center justify-between">
+          <h2 id="inventory-heading" className="text-xl font-semibold">Inventory</h2>
+          <Button asChild variant="ghost" size="sm">
+            <Link href="/inventory">
+              Open inventory <ArrowRight aria-hidden />
+            </Link>
+          </Button>
+        </div>
+        <Suspense fallback={<StatsSkeleton />}>
+          <InventoryStats />
         </Suspense>
       </section>
 
@@ -196,6 +211,31 @@ async function OrderStats() {
               <Icon className={`size-6 ${tone || "text-primary/70"}`} aria-hidden />
               <div>
                 <div className={`text-2xl font-semibold tabular-nums md:text-3xl ${tone || "text-primary"}`}>{value}</div>
+                <div className="text-sm text-muted-foreground">{label}</div>
+              </div>
+            </CardContent>
+          </Card>
+        </Link>
+      ))}
+    </div>
+  );
+}
+
+async function InventoryStats() {
+  const s = await getInvHomeStats();
+  const items = [
+    { label: "Items to reorder", value: s.toReorder, icon: ShoppingCart, href: "/inventory/reorder", hint: "At or below the reorder level, or running out before new stock can arrive", tone: s.toReorder ? "text-amber-700" : "" },
+    { label: `Expiring in ${s.warnDays} days`, value: s.expiring, icon: CalendarClock, href: "/inventory/items?status=expiring", hint: "Items with a batch in stock that expires soon", tone: s.expiring ? "text-purple-700" : "" },
+  ];
+  return (
+    <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+      {items.map(({ label, value, icon: Icon, href, hint, tone }) => (
+        <Link key={label} href={href} className="rounded-2xl" title={hint}>
+          <Card className="h-full transition hover:border-primary/30">
+            <CardContent className="flex flex-col gap-3">
+              <Icon className={`size-6 ${tone || "text-primary/70"}`} aria-hidden />
+              <div>
+                <div className={`text-2xl font-semibold tabular-nums md:text-3xl ${tone || "text-primary"}`}>{value.toLocaleString("en-IN")}</div>
                 <div className="text-sm text-muted-foreground">{label}</div>
               </div>
             </CardContent>

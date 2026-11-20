@@ -49,7 +49,7 @@ import { orderLinks, type OrderLine } from "@/lib/inventory/reorder";
 import { todayInIndia } from "@/lib/tickets";
 import { formatINR, formatINRShort } from "@/lib/pricing";
 import { cn } from "@/lib/utils";
-import { runsOutText } from "./items-list";
+import { runsOutText } from "@/lib/inventory/stock";
 import { OrderedChip } from "./ordered-chip";
 import { DoneBySelect, useDoneBy } from "./pickers";
 
