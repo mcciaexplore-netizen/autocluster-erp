@@ -44,6 +44,10 @@ export function RateCardEditor({
   const [editing, setEditing] = useState(false);
   const [edits, setEdits] = useState<Record<number, Edit>>({});
   const [confirmOpen, setConfirmOpen] = useState(false);
+  // Inventory: show only services that have no materials list yet.
+  const [onlyNoMaterials, setOnlyNoMaterials] = useState(false);
+  const noMaterials = (id: number) => !(materials[id]?.length);
+  const noMaterialsCount = services.filter((s) => s.isActive && noMaterials(s.id)).length;
   const [pending, startTransition] = useTransition();
 
   const startEditing = () => {
@@ -107,9 +111,25 @@ export function RateCardEditor({
         )}
       </div>
 
+      <div className="mb-4 flex flex-wrap items-center gap-2">
+        <button
+          type="button"
+          aria-pressed={onlyNoMaterials}
+          onClick={() => setOnlyNoMaterials((v) => !v)}
+          className={cn(
+            "inline-flex h-10 items-center gap-1.5 rounded-full border px-4 text-sm font-medium",
+            onlyNoMaterials ? "border-amber-500 bg-amber-500 text-white" : "border-amber-300 bg-amber-50 text-amber-900 hover:border-amber-400",
+          )}
+        >
+          No materials set ({noMaterialsCount})
+        </button>
+        <span className="text-sm text-muted-foreground">Materials lists suggest quantities when stock is used for a job.</span>
+      </div>
+
       <div className="flex flex-col gap-6">
         {departments.map((d) => {
-          const list = services.filter((s) => s.deptCode === d.code);
+          const list = services.filter((s) => s.deptCode === d.code && (!onlyNoMaterials || noMaterials(s.id)));
+          if (!list.length) return null;
           return (
             <section key={d.code} className="rounded-2xl border bg-card" aria-labelledby={`rc-${d.code}`}>
               <h2 id={`rc-${d.code}`} className="flex items-center gap-3 border-b px-5 py-4 text-lg font-semibold">
@@ -142,7 +162,10 @@ export function RateCardEditor({
                       <span className="col-span-2 font-medium md:col-span-1">
                         {s.name}
                         {!s.isActive ? <span className="ml-2 text-sm font-normal">(hidden)</span> : null}
-                        <span className="block">
+                        <span className="flex flex-wrap items-center gap-x-2">
+                          {noMaterials(s.id) ? (
+                            <span className="rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-900">No materials set</span>
+                          ) : null}
                           <MaterialsButton service={{ id: s.id, name: s.name, unitLabel: s.unitLabel }} current={materials[s.id] ?? []} items={items} />
                         </span>
                       </span>

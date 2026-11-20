@@ -348,9 +348,17 @@ function MaterialsSection({ ticketId, m, cancelled }: { ticketId: string; m: Tic
           </dl>
         </>
       ) : (
-        <p className="text-sm text-muted-foreground">
-          {m.hasList ? "Not recorded yet. “Record materials” fills in the suggested quantities." : "No materials recorded for this job."}
-        </p>
+        <>
+          <p className="text-sm text-muted-foreground">
+            {m.hasList ? "Not recorded yet. “Record materials” fills in the suggested quantities." : "No materials recorded for this job."}
+          </p>
+          {!m.hasList ? (
+            <dl className="mt-2 grid grid-cols-[1fr_auto] gap-x-4 border-t pt-2 text-sm">
+              <dt className="font-semibold">Kept after materials</dt>
+              <dd className="text-right text-muted-foreground">No materials list</dd>
+            </dl>
+          ) : null}
+        </>
       )}
     </section>
   );
