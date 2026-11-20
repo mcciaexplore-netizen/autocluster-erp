@@ -77,6 +77,7 @@ async function Form() {
         invExpiryWarningDays: s.invExpiryWarningDays,
         invAvgUseDays: s.invAvgUseDays,
         invSafetyDays: s.invSafetyDays,
+        invDefaultLeadTimeDays: s.invDefaultLeadTimeDays,
         invPriceRiseAlertPct: s.invPriceRiseAlertPct,
         invMaterialShareAlertPct: s.invMaterialShareAlertPct,
         invOrderWhatsappTemplate: s.invOrderWhatsappTemplate,

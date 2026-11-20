@@ -58,6 +58,7 @@ export const settingsSchema = z.object({
   invExpiryWarningDays: days("e.g. 30", 1, 365),
   invAvgUseDays: days("e.g. 90", 7, 730),
   invSafetyDays: days("e.g. 7", 0, 365),
+  invDefaultLeadTimeDays: days("e.g. 14", 0, 365),
   invPriceRiseAlertPct: pct("e.g. 10"),
   invMaterialShareAlertPct: pct("e.g. 40"),
   invOrderWhatsappTemplate: z.string().trim().min(10, { message: "Please write the WhatsApp message." }).max(1500, { message: "Please keep the message under 1,500 characters." }),

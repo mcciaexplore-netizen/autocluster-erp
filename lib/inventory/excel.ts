@@ -198,6 +198,7 @@ export async function itemImportTemplate(lists: Pick<ItemImportLists, "categorie
     ["4", "Departments: codes separated by commas, e.g. RPT, ENV. Track batches: Yes for resins, powders and chemicals."],
     ["5", "Opening stock (green columns, optional): the quantity on the shelf now, in the item's unit, and the rate per unit before GST, e.g. 4.50."],
     ["6", "Items that track batches need a batch number and an expiry date (e.g. 31/03/2027) for their opening stock. One batch per row."],
+    ["", "Several batches of one item: put the item on the first row as usual, then repeat the item name on the next rows with only the opening stock columns filled. Other details on those rows can be left empty; if filled, they must match the first row."],
     ["7", `Up to ${MAX_ITEM_IMPORT_ROWS} rows per file. All opening stock is saved as one Stock adjusted record, labelled “Opening stock”.`],
   ];
   for (const l of lines) help.addRow(l);

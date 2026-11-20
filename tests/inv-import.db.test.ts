@@ -43,25 +43,27 @@ describe.skipIf(skip)("import items from Excel (database)", () => {
     put(4, { name: "Isopropyl alcohol", category: "Lab chemical", unit: "L", reorderLevel: "5", reorderQty: "20", openingQty: "12", openingRate: "180" });
     put(5, { name: "Masking tape", category: "Consumable", unit: "pcs", reorderLevel: "10", reorderQty: "50" });
     put(6, { name: "Nitrile gloves", category: "Consumable", unit: "pcs", reorderLevel: "10", reorderQty: "50" }); // already exists
+    put(7, { name: "PA12 powder", openingQty: "10", openingRate: "4400", batchNo: "PA-2611", expiryDate: "31/07/2027" }); // second batch
     const { rows, skippedExample } = await readItemImportFile(new Uint8Array(await wb.xlsx.writeBuffer()));
     expect(skippedExample).toBe(true);
     const checked = checkItemRows(rows, l);
-    expect(checked.map((c) => [c.rowNo, !!c.input])).toEqual([[3, true], [4, true], [5, true], [6, false]]);
+    expect(checked.map((c) => [c.rowNo, !!c.input, c.addsTo, c.problems.length])).toEqual([[3, true, null, 0], [4, true, null, 0], [5, true, null, 0], [6, false, null, 1], [7, false, 3, 0]]);
     expect(checked[3].problems).toEqual(["Row 6: there is already an item called “Nitrile gloves”."]);
 
-    const good = checked.filter((c) => c.input);
-    const r = await importItems(db, good.map((c) => ({ rowNo: c.rowNo, input: c.input!, opening: c.opening })), "items.xlsx", { today: "2026-11-20" });
+    const good = checked.filter((c) => !c.problems.length);
+    const r = await importItems(db, good.map((c) => ({ rowNo: c.rowNo, input: c.input, addsTo: c.addsTo, opening: c.opening })), "items.xlsx", { today: "2026-11-20" });
     expect(r.items.map((i) => i.name)).toEqual(["PA12 powder", "Isopropyl alcohol", "Masking tape"]);
     expect(r.openingDoc?.docNo).toBe("ACDRI/ADJ/2026-27/0001");
     const mvs = await db.select().from(s.invMovements).orderBy(asc(s.invMovements.id));
     expect(mvs.map((m) => [m.qtyIn, m.unitCost, m.value, m.isOpening])).toEqual([
       ["35.500", "4200.0000", 149_100_00, true],
       ["12.000", "180.0000", 2_160_00, true],
+      ["10.000", "4400.0000", 44_000_00, true],
     ]);
     const [pa] = await db.select().from(s.invItems).where(eq(s.invItems.name, "PA12 powder"));
-    expect(pa).toMatchObject({ qtyOnHand: "35.500", avgCost: "4200.0000", trackBatches: true });
-    const [b] = await db.select().from(s.invBatches).where(eq(s.invBatches.itemId, pa.id));
-    expect(b).toMatchObject({ batchNo: "PA-2610", expiryDate: "2027-06-30", qtyOnHand: "35.500" });
+    expect(pa).toMatchObject({ qtyOnHand: "45.500", avgCost: "4243.9560", trackBatches: true });
+    const bs = await db.select().from(s.invBatches).where(eq(s.invBatches.itemId, pa.id)).orderBy(asc(s.invBatches.batchNo));
+    expect(bs.map((b) => [b.batchNo, b.expiryDate, b.qtyOnHand])).toEqual([["PA-2610", "2027-06-30", "35.500"], ["PA-2611", "2027-07-31", "10.000"]]);
     const [doc] = await db.select().from(s.invDocuments).where(eq(s.invDocuments.id, r.openingDoc!.id));
     expect(doc.note).toBe("Opening stock imported from Excel (items.xlsx)");
     expect(await verifyInventory(db)).toEqual([]);

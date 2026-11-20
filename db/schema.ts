@@ -276,6 +276,8 @@ export const settings = pgTable("settings", {
   invExpiryWarningDays: integer("inv_expiry_warning_days").notNull().default(30),
   invAvgUseDays: integer("inv_avg_use_days").notNull().default(90),
   invSafetyDays: integer("inv_safety_days").notNull().default(7),
+  /** Used when an item has no lead time of its own (and none for its supplier). */
+  invDefaultLeadTimeDays: integer("inv_default_lead_time_days").notNull().default(14),
   invPriceRiseAlertPct: integer("inv_price_rise_alert_pct").notNull().default(10),
   invMaterialShareAlertPct: integer("inv_material_share_alert_pct").notNull().default(40),
   invOrderWhatsappTemplate: text("inv_order_whatsapp_template").notNull().default(DEFAULT_ORDER_WHATSAPP_TEMPLATE),

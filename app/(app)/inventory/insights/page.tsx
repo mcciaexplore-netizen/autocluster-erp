@@ -76,7 +76,7 @@ async function Body({ searchParams }: { searchParams: Sp }) {
           )}
         </Section>
 
-        <Section title="Price changes" why={`Items whose purchase rate rose more than ${d.alertPct}%, and what that does to the services that use them (at the MSME rate-card price).`} excel={excel("prices")}>
+        <Section title="Price changes" why={`Items whose purchase rate rose more than ${d.alertPct}%, and what that does to what the services using them keep after materials, at MSME rate.`} excel={excel("prices")}>
           {d.priceChanges.length ? (
             <ul className="flex flex-col gap-3">
               {d.priceChanges.map((p) => (
@@ -88,7 +88,7 @@ async function Body({ searchParams }: { searchParams: Sp }) {
                       {p.oldDate.slice(0, 4) !== p.newDate.slice(0, 4) ? ` ${p.oldDate.slice(0, 4)}` : ""}.
                       {p.services
                         .filter((s) => s.keptNowPct != null && s.keptBeforePct != null)
-                        .map((s) => ` ${s.name} jobs now keep ${pctText(s.keptNowPct)} after materials, down from ${pctText(s.keptBeforePct)}.`)
+                        .map((s) => ` ${s.name} jobs now keep ${pctText(s.keptNowPct)} after materials at MSME rate, down from ${pctText(s.keptBeforePct)}.`)
                         .join("")}
                       {p.services.length ? " Consider reviewing the rate card." : ""}
                     </span>
@@ -172,7 +172,7 @@ async function Body({ searchParams }: { searchParams: Sp }) {
                 </Link>,
                 formatQty(r.qty, r.unit),
                 r.runsOutDays === 0 ? "-" : `~${Math.round(r.runsOutDays!)} days`,
-                r.leadTimeDays != null ? `${r.leadTimeDays} days` : "Not set",
+                `${r.leadTimeDays} days${r.leadIsDefault ? " (default)" : ""}`,
                 <span
                   key="v"
                   className={cn(

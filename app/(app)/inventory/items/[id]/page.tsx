@@ -133,7 +133,7 @@ async function Detail({ params }: { params: Promise<{ id: string }> }) {
           <dt className="text-muted-foreground">Preferred supplier</dt>
           <dd>{i.preferredSupplierName ?? "Not set"}</dd>
           <dt className="text-muted-foreground">Supplier lead time</dt>
-          <dd>{i.leadTimeDays != null ? `${i.leadTimeDays} days` : "Not set"}</dd>
+          <dd>{i.leadTimeDays != null ? `${i.leadTimeDays} days` : `${d.defaultLeadTimeDays} days (default)`}</dd>
           <dt className="text-muted-foreground">Where it&apos;s kept</dt>
           <dd>{i.storagePlace ?? "Not set"}</dd>
           <dt className="text-muted-foreground">Batches and expiry</dt>

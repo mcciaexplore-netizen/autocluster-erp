@@ -53,7 +53,7 @@ async function Overview() {
     { label: "Stock value", value: formatINRShort(o.cards.valuePaise), href: "/inventory/items", icon: IndianRupee, tone: "" },
     { label: "Items to reorder", value: o.cards.toReorder.toLocaleString("en-IN"), href: "/inventory/reorder", icon: ShoppingCart, tone: o.cards.toReorder ? "text-amber-700" : "" },
     { label: "Out of stock", value: o.cards.outOfStock.toLocaleString("en-IN"), href: "/inventory/items?status=out", icon: PackageX, tone: o.cards.outOfStock ? "text-destructive" : "" },
-    { label: `Expiring in ${o.warnDays} days`, value: o.cards.expiring.toLocaleString("en-IN"), href: "/inventory/items?status=expiring", icon: CalendarClock, tone: o.cards.expiring ? "text-purple-700" : "" },
+    { label: `Expired or expiring (${o.warnDays} days)`, value: o.cards.expiring.toLocaleString("en-IN"), href: "/inventory/items?status=expiring", icon: CalendarClock, tone: o.cards.expiring ? "text-purple-700" : "" },
   ];
   return (
     <div className="flex flex-col gap-8">

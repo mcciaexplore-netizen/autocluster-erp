@@ -64,7 +64,7 @@ export function insightTable(section: InsightSection, d: Insights): InsightTable
           { header: "New rate date", width: 12, fmt: "date" },
           { header: "Rise %", width: 10, fmt: "pct" },
           { header: "Supplier", width: 26 },
-          { header: "Services that use it (kept after materials: before, now)", width: 60 },
+          { header: "Services that use it (kept after materials at MSME rate: before -> now)", width: 64 },
         ],
         rows: d.priceChanges.map((p) => [
           p.name,

@@ -44,16 +44,16 @@ async function check(rows: unknown): Promise<CheckedItemRow[]> {
   return checkItemRows(rowsSchema.parse(rows) as { rowNo: number; raw: ItemRawRow }[], await getItemImportLists());
 }
 
-function preview(c: CheckedItemRow): ItemPreviewRow {
-  const unit = c.raw.unit ?? "";
+function preview(c: CheckedItemRow, all: CheckedItemRow[]): ItemPreviewRow {
+  const unit = c.raw.unit || (c.addsTo != null ? (all.find((x) => x.rowNo === c.addsTo)?.raw.unit ?? "") : "");
   return {
     rowNo: c.rowNo,
     raw: c.raw,
-    ok: !!c.input,
+    ok: !c.problems.length,
     problems: c.problems,
     name: c.raw.name ?? "",
     code: c.input?.code || (c.input ? "Next number" : (c.raw.code ?? "")),
-    category: c.raw.category ?? "",
+    category: c.addsTo ? `Another batch of the item on row ${c.addsTo}` : (c.raw.category ?? ""),
     opening: c.opening ? `${formatQty(c.opening.qty, unit)} at ${formatRate(c.opening.rate)}/${unit}${c.opening.batchNo ? `, batch ${c.opening.batchNo}` : ""}` : null,
   };
 }
@@ -65,18 +65,19 @@ export async function previewItemImportAction(form: FormData): Promise<Result<{ 
     if (!(file instanceof File) || !file.size) throw new UserFacingError("Please choose the filled-in Excel file first.");
     if (!/\.xlsx$/i.test(file.name)) throw new UserFacingError("Please upload an Excel file (.xlsx). If you have a .xls or .csv file, open it in Excel and save it as .xlsx.");
     const { rows, skippedExample } = await readItemImportFile(new Uint8Array(await file.arrayBuffer()));
-    return { fileName: file.name, rows: (await check(rows)).map(preview), skippedExample };
+    const checked = await check(rows);
+    return { fileName: file.name, rows: checked.map((c) => preview(c, checked)), skippedExample };
   });
 }
 
 /** Imports the good rows. Every row is checked again here, so only good rows are ever saved. */
 export async function importItemsAction(rows: { rowNo: number; raw: ItemRawRow }[], fileName: string, doneBy: string | null) {
   return guard(async () => {
-    const good = (await check(rows)).filter((c) => c.input);
+    const good = (await check(rows)).filter((c) => !c.problems.length);
     if (!good.length) throw new UserFacingError("None of these rows can be imported. Please fix the problems and upload the file again.");
     const r = await importItems(
       db,
-      good.map((c) => ({ rowNo: c.rowNo, input: c.input!, opening: c.opening })),
+      good.map((c) => ({ rowNo: c.rowNo, input: c.input, addsTo: c.addsTo, opening: c.opening })),
       z.string().max(200).parse(fileName).replace(/[^\w .()-]/g, ""),
       { doneBy: doneBy ? z.string().uuid().parse(doneBy) : null },
     );
@@ -88,7 +89,7 @@ export async function importItemsAction(rows: { rowNo: number; raw: ItemRawRow }
 /** "Download problem rows": the bad rows with their problems listed, as an Excel file (base64). */
 export async function itemProblemRowsAction(rows: { rowNo: number; raw: ItemRawRow }[]): Promise<Result<{ base64: string; fileName: string }>> {
   return guard(async () => {
-    const bad = (await check(rows)).filter((c) => !c.input);
+    const bad = (await check(rows)).filter((c) => c.problems.length);
     const bytes = await itemProblemRowsWorkbook(bad);
     return { base64: Buffer.from(bytes).toString("base64"), fileName: `Items-to-fix-${bad.length}-${bad.length === 1 ? "row" : "rows"}.xlsx` };
   });

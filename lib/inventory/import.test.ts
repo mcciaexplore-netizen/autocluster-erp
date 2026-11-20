@@ -55,6 +55,29 @@ describe("item import", () => {
     ]);
     expect(rows[1].problems).toEqual(["Row 4: a batch number or expiry date is only used when Track batches is Yes."]);
     expect(rows[2].problems).toEqual(["Row 5: a rate, batch number or expiry date was given without an opening stock quantity."]);
-    expect(rows[3].problems).toEqual(["Row 6: “wipes” is also on row 4. Each item only once, please."]);
+    expect(rows[3].problems).toEqual(["Row 6: the first row for “wipes” (row 4) has problems. Fix that row first."]);
+  });
+
+  it("the same item on several rows: the first row creates it, later rows each add a batch", () => {
+    const base = { ...ok, trackBatches: "Yes", openingRate: "4.5" };
+    const rows = checkItemRows(
+      [
+        { rowNo: 3, raw: { ...base, openingQty: "1000", batchNo: "A1", expiryDate: "30/06/2027" } },
+        { rowNo: 4, raw: { name: "sla resin, imported (grey)", openingQty: "500", openingRate: "5", batchNo: "A2", expiryDate: "31/08/2027" } },
+        { rowNo: 5, raw: { ...base, reorderLevel: "1000.000", openingQty: "300", batchNo: "A3", expiryDate: "30/09/2027" } },
+        { rowNo: 6, raw: { ...base, unit: "pcs", reorderQty: "999", openingQty: "1", batchNo: "A4", expiryDate: "30/09/2027" } },
+        { rowNo: 7, raw: { ...base, openingQty: "2", batchNo: "a1", expiryDate: "30/09/2027" } },
+        { rowNo: 8, raw: { ...base } },
+        { rowNo: 9, raw: { name: "Gloves", category: "Consumable", unit: "pcs", reorderLevel: "1", reorderQty: "1" } },
+        { rowNo: 10, raw: { name: "Gloves", openingQty: "5", openingRate: "2" } },
+      ],
+      lists,
+    );
+    expect(rows.map((r) => [r.rowNo, !!r.input, r.addsTo])).toEqual([[3, true, null], [4, false, 3], [5, false, 3], [6, false, null], [7, false, null], [8, false, null], [9, true, null], [10, false, null]]);
+    expect(rows[1].opening).toEqual({ qty: "500", rate: "5", batchNo: "A2", expiryDate: "2027-08-31" });
+    expect(rows[3].problems).toEqual(["Row 6: the item details don't match row 3 (Unit, Reorder quantity). Make them the same, or leave them empty on this row."]);
+    expect(rows[4].problems).toEqual(["Row 7: batch a1 of “SLA resin, imported (grey)” is also on row 3. Use one row per batch."]);
+    expect(rows[5].problems).toEqual(["Row 8: “SLA resin, imported (grey)” is already on row 3, so this row only adds opening stock for another batch. Please enter the quantity."]);
+    expect(rows[7].problems).toEqual(["Row 10: “Gloves” is already on row 9. The same item can only be on several rows when it tracks batches (one row per batch)."]);
   });
 });

@@ -225,7 +225,7 @@ async function InventoryStats() {
   const s = await getInvHomeStats();
   const items = [
     { label: "Items to reorder", value: s.toReorder, icon: ShoppingCart, href: "/inventory/reorder", hint: "At or below the reorder level, or running out before new stock can arrive", tone: s.toReorder ? "text-amber-700" : "" },
-    { label: `Expiring in ${s.warnDays} days`, value: s.expiring, icon: CalendarClock, href: "/inventory/items?status=expiring", hint: "Items with a batch in stock that expires soon", tone: s.expiring ? "text-purple-700" : "" },
+    { label: `Expired or expiring (${s.warnDays} days)`, value: s.expiring, icon: CalendarClock, href: "/inventory/items?status=expiring", hint: "Items with a batch in stock that has expired or expires soon", tone: s.expiring ? "text-purple-700" : "" },
   ];
   return (
     <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">

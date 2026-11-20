@@ -158,7 +158,7 @@ export async function getInvItem(id: string) {
       .innerJoin(services, eq(services.id, invServiceMaterials.serviceId))
       .where(eq(invServiceMaterials.itemId, id))
       .orderBy(asc(services.sortOrder)),
-    db.select({ days: settings.invExpiryWarningDays }).from(settings).where(eq(settings.id, 1)),
+    db.select({ days: settings.invExpiryWarningDays, lead: settings.invDefaultLeadTimeDays }).from(settings).where(eq(settings.id, 1)),
   ]);
   const i = row.i;
   const orderedFrom = i.orderedSupplierId ? prices.find((p) => p.supplierId === i.orderedSupplierId) : undefined;
@@ -166,7 +166,7 @@ export async function getInvItem(id: string) {
     ? (orderedFrom?.name ?? (await db.select({ name: invSuppliers.name }).from(invSuppliers).where(eq(invSuppliers.id, i.orderedSupplierId)))[0]?.name ?? null)
     : null;
   const ordered = i.orderedOn
-    ? { on: i.orderedOn, supplierName: orderedName, late: deliveryLate(i.orderedOn, i.leadTimeDays ?? orderedFrom?.leadTimeDays ?? null, todayInIndia()) }
+    ? { on: i.orderedOn, supplierName: orderedName, late: deliveryLate(i.orderedOn, i.leadTimeDays ?? orderedFrom?.leadTimeDays ?? set[0]?.lead ?? 14, todayInIndia()) }
     : null;
   return {
     ordered,
@@ -185,6 +185,8 @@ export async function getInvItem(id: string) {
     prices,
     usedBy,
     expiryWarningDays: set[0]?.days ?? 30,
+    /** Used when the item has no lead time of its own. */
+    defaultLeadTimeDays: set[0]?.lead ?? 14,
   };
 }
 export type InvItemDetail = NonNullable<Awaited<ReturnType<typeof getInvItem>>>;
@@ -789,12 +791,14 @@ export async function getReorderList() {
       .orderBy(asc(invSuppliers.name)),
   ]);
   const safetyDays = set?.invSafetyDays ?? 7;
+  const defaultLead = set?.invDefaultLeadTimeDays ?? 14;
   const today = todayInIndia();
   const items = rows.rows
     .map((r) => {
       const daily = use.perItem.get(r.id) ?? 0;
       const runsOut = runsOutInDays(r.qty, daily);
-      const leadTimeDays = r.lead ?? r.supplier_lead;
+      const leadTimeDays = r.lead ?? r.supplier_lead ?? defaultLead;
+      const leadIsDefault = r.lead == null && r.supplier_lead == null;
       const rate = r.supplier_rate ?? r.last_rate ?? (D(r.avg_cost).gt(0) ? r.avg_cost : null);
       return {
         id: r.id,
@@ -805,6 +809,7 @@ export async function getReorderList() {
         reorderLevel: r.reorder_level,
         runsOutDays: runsOut,
         leadTimeDays,
+        leadIsDefault,
         supplierId: r.supplier_id,
         packName: r.pack_name,
         packSize: r.pack_size,
@@ -812,7 +817,7 @@ export async function getReorderList() {
         rate,
         orderedOn: r.ordered_on,
         orderedSupplier: r.ordered_supplier,
-        deliveryLate: deliveryLate(r.ordered_on, r.ordered_lead, today),
+        deliveryLate: deliveryLate(r.ordered_on, r.ordered_lead ?? defaultLead, today),
         order: shouldOrder({ qty: r.qty, reorderLevel: r.reorder_level, runsOutDays: runsOut, leadTimeDays, safetyDays }),
         belowLevel: D(r.qty).lte(D(r.reorder_level)),
       };
@@ -867,7 +872,7 @@ export type OrderListData = Awaited<ReturnType<typeof getOrderListData>>;
 // ---- overview and home ------------------------------------------------------------------------------
 
 /** Items marked ordered whose lead time has passed without the stock arriving from that supplier. */
-async function lateDeliveries(today: string) {
+async function lateDeliveries(today: string, defaultLead: number) {
   const rows = await db.execute<{ id: string; name: string; code: string; ordered_on: string; supplier: string | null; lead: number | null }>(sql`
     select i.id, i.name, i.code, i.ordered_on::text, s.name as supplier, coalesce(i.lead_time_days, si.lead_time_days) as lead
     from inv_items i
@@ -875,7 +880,7 @@ async function lateDeliveries(today: string) {
     left join inv_supplier_items si on si.item_id = i.id and si.supplier_id = i.ordered_supplier_id
     where i.ordered_on is not null
     order by i.ordered_on`);
-  return rows.rows.filter((r) => deliveryLate(r.ordered_on, r.lead, today)).map((r) => ({ id: r.id, name: r.name, code: r.code, orderedOn: r.ordered_on, supplier: r.supplier }));
+  return rows.rows.filter((r) => deliveryLate(r.ordered_on, r.lead ?? defaultLead, today)).map((r) => ({ id: r.id, name: r.name, code: r.code, orderedOn: r.ordered_on, supplier: r.supplier }));
 }
 
 /** Items with a batch in stock that expires within the warning days (or has expired): matches the "Expiring soon" filter. */
@@ -890,7 +895,7 @@ async function expiringItemCount(until: string) {
 export async function getInvOverview() {
   await connection();
   const today = todayInIndia();
-  const [set] = await db.select({ warn: settings.invExpiryWarningDays }).from(settings).where(eq(settings.id, 1));
+  const [set] = await db.select({ warn: settings.invExpiryWarningDays, lead: settings.invDefaultLeadTimeDays }).from(settings).where(eq(settings.id, 1));
   const warnDays = set?.warn ?? 30;
   const until = addDays(today, warnDays);
   const [reorder, totals, expiringItems, batches, late, jobs, recent] = await Promise.all([
@@ -903,7 +908,7 @@ export async function getInvOverview() {
       from inv_batches b join inv_items i on i.id = b.item_id join inv_units u on u.id = i.unit_id
       where b.qty_on_hand > 0 and b.expiry_date is not null and b.expiry_date <= ${until}
       order by b.expiry_date, i.name`),
-    lateDeliveries(today),
+    lateDeliveries(today, set?.lead ?? 14),
     // Jobs in Billing or later (Paid only in the last 30 days, as on the board) whose service has a
     // materials list but no materials recorded.
     db.execute<{ id: string; ticket_no: string; company: string; description: string; stage: string }>(sql`

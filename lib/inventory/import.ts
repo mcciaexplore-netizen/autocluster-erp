@@ -54,7 +54,10 @@ export interface OpeningStock {
 export interface CheckedItemRow {
   rowNo: number;
   raw: ItemRawRow;
+  /** Set on the row that creates the item. */
   input: ItemFormValues | null;
+  /** Set on a later row of the same item: the row number of its first row (this row only adds a batch). */
+  addsTo: number | null;
   opening: OpeningStock | null;
   problems: string[];
 }
@@ -78,18 +81,61 @@ const names = (items: { name: string }[], max = 12) => {
 };
 const lowerFirst = (s: string) => s.charAt(0).toLowerCase() + s.slice(1);
 
+/** Item details that must be the same on every row of one item (later rows may leave them empty). */
+const ITEM_DETAIL_KEYS: ItemImportKey[] = ["code", "category", "departments", "unit", "packName", "packSize", "reorderLevel", "reorderQty", "leadTimeDays", "supplier", "storagePlace", "trackBatches", "hsnCode", "notes"];
+const NUMERIC_KEYS = new Set<ItemImportKey>(["packSize", "reorderLevel", "reorderQty", "leadTimeDays"]);
+const sameDetail = (k: ItemImportKey, a: string, b: string) => {
+  if (NUMERIC_KEYS.has(k) && parseQty(a) != null && parseQty(b) != null) return D(parseQty(a)!).eq(D(parseQty(b)!));
+  if (k === "trackBatches") return /^y/i.test(a) === /^y/i.test(b);
+  if (k === "departments") {
+    const set = (x: string) => x.split(/[,;]+/).map((d) => d.trim().toLowerCase()).filter(Boolean).sort().join(",");
+    return set(a) === set(b);
+  }
+  return same(a, b);
+};
+
 /**
- * Checks every row. Names and codes must be new, and not repeated within the file.
+ * Checks every row. Names and codes must be new. The same item may be on several rows when it
+ * tracks batches: the first row creates the item, and each later row only adds opening stock for
+ * its own batch (its item details must match the first row, or be left empty).
  * Every problem is a full plain-words sentence starting "Row N:".
  */
 export function checkItemRows(rows: { rowNo: number; raw: ItemRawRow }[], lists: ItemImportLists): CheckedItemRow[] {
-  const seenNames = new Map<string, number>();
+  const firsts = new Map<string, CheckedItemRow>();
+  const batchesOf = new Map<string, Map<string, number>>();
   const seenCodes = new Map<string, number>();
-  return rows.map(({ rowNo, raw }) => {
+  const out: CheckedItemRow[] = [];
+  for (const { rowNo, raw } of rows) {
     const p: string[] = [];
     const bad = (msg: string) => p.push(`Row ${rowNo}: ${msg}`);
     const v = (k: ItemImportKey) => clean(raw[k]);
+    const key = v("name").toLowerCase();
+    const first = key ? firsts.get(key) : undefined;
 
+    // ---- a later row of an item already in the file: only another batch of opening stock ----
+    if (first) {
+      const name = v("name");
+      const track = first.input?.trackBatches ?? /^y/i.test(clean(first.raw.trackBatches));
+      if (first.problems.length) bad(`the first row for “${name}” (row ${first.rowNo}) has problems. Fix that row first.`);
+      else if (!track) bad(`“${name}” is already on row ${first.rowNo}. The same item can only be on several rows when it tracks batches (one row per batch).`);
+      else {
+        const differ = ITEM_DETAIL_KEYS.filter((k) => v(k) && !sameDetail(k, v(k), clean(first.raw[k]))).map((k) => ITEM_IMPORT_COLUMNS.find((c) => c.key === k)!.header);
+        if (differ.length) bad(`the item details don't match row ${first.rowNo} (${differ.join(", ")}). Make them the same, or leave them empty on this row.`);
+        const unitName = lists.units.find((u) => u.id === first.input?.unitId)?.name ?? "unit";
+        if (!v("openingQty")) bad(`“${name}” is already on row ${first.rowNo}, so this row only adds opening stock for another batch. Please enter the quantity.`);
+        const opening = parseOpening(v, true, unitName, bad);
+        const seen = batchesOf.get(key)!;
+        const b = v("batchNo").toLowerCase();
+        if (b && seen.has(b)) bad(`batch ${v("batchNo")} of “${name}” is also on row ${seen.get(b)}. Use one row per batch.`);
+        else if (b) seen.set(b, rowNo);
+        out.push({ rowNo, raw, input: null, addsTo: p.length ? null : first.rowNo, opening: p.length ? null : opening, problems: p });
+        continue;
+      }
+      out.push({ rowNo, raw, input: null, addsTo: null, opening: null, problems: p });
+      continue;
+    }
+
+    // ---- the first (or only) row of an item: creates it ----
     const category = v("category") ? lists.categories.find((c) => same(c.name, v("category"))) : undefined;
     if (!v("category")) bad(`the category is missing. Use one of: ${names(lists.categories)}.`);
     else if (!category) bad(`category “${v("category")}” isn't in the list. Use one of: ${names(lists.categories)}.`);
@@ -132,13 +178,7 @@ export function checkItemRows(rows: { rowNo: number; raw: ItemRawRow }[], lists:
     // The item form's own rules (names, quantities, pack, lead time, HSN code).
     const parsed = itemFormSchema.safeParse(form);
     if (!parsed.success) for (const issue of parsed.error.issues) bad(lowerFirst(issue.message));
-
-    if (form.name) {
-      const key = form.name.toLowerCase();
-      if (lists.existingNames.has(key)) bad(`there is already an item called “${form.name}”.`);
-      else if (seenNames.has(key)) bad(`“${form.name}” is also on row ${seenNames.get(key)}. Each item only once, please.`);
-      else seenNames.set(key, rowNo);
-    }
+    if (form.name && lists.existingNames.has(key)) bad(`there is already an item called “${form.name}”.`);
     if (form.code) {
       if (lists.existingCodes.has(form.code)) bad(`item code ${form.code} is already used. Leave it empty for the next number.`);
       else if (seenCodes.has(form.code)) bad(`item code ${form.code} is also on row ${seenCodes.get(form.code)}.`);
@@ -146,32 +186,40 @@ export function checkItemRows(rows: { rowNo: number; raw: ItemRawRow }[], lists:
     }
 
     // Opening stock (optional): a quantity needs a rate; batch items need a batch number and expiry.
-    let opening: OpeningStock | null = null;
-    const qtyText = v("openingQty");
-    const rateText = v("openingRate");
-    const batchNo = v("batchNo");
-    const expiryText = v("expiryDate");
-    if (qtyText && D(parseQty(qtyText) ?? 0).eq(0) && parseQty(qtyText) != null) {
-      // 0 opening stock: nothing to add.
-    } else if (qtyText) {
-      const qty = parseQty(qtyText);
-      const rate = rateText ? parseRate(rateText) : null;
-      const expiry = parseImportDate(expiryText || null);
-      const unitName = unit?.name ?? "unit";
-      if (qty == null) bad(`opening stock “${qtyText}” should be a number with up to 3 decimals, e.g. 2000 or 2.5.`);
-      if (!rateText) bad(`opening stock needs the rate per ${unitName} before GST, e.g. 4.50.`);
-      else if (rate == null || D(rate).lte(0)) bad(`rate “${rateText}” should be an amount in rupees above 0, with up to 4 decimals, e.g. 4.50.`);
-      if (trackBatches) {
-        if (!batchNo) bad("this item tracks batches, so the opening stock needs a batch number.");
-        if (!expiryText) bad("this item tracks batches, so the opening stock needs an expiry date, e.g. 31/03/2027.");
-        else if (!expiry) bad(`expiry date “${expiryText}” should be a date, e.g. 31/03/2027.`);
-      } else if (batchNo || expiryText) bad("a batch number or expiry date is only used when Track batches is Yes.");
-      if (batchNo.length > 40) bad("the batch number is too long (keep it under 40 characters).");
-      if (qty != null && rate != null && D(rate).gt(0)) opening = { qty, rate, batchNo: trackBatches ? batchNo : null, expiryDate: trackBatches ? expiry : null };
-    } else if (rateText || batchNo || expiryText) bad("a rate, batch number or expiry date was given without an opening stock quantity.");
+    const opening = parseOpening(v, trackBatches, unit?.name ?? "unit", bad);
+    if (!v("openingQty") && (v("openingRate") || v("batchNo") || v("expiryDate"))) bad("a rate, batch number or expiry date was given without an opening stock quantity.");
 
-    return { rowNo, raw, input: p.length || !parsed.success ? null : parsed.data, opening: p.length ? null : opening, problems: p };
-  });
+    const row: CheckedItemRow = { rowNo, raw, input: p.length || !parsed.success ? null : parsed.data, addsTo: null, opening: p.length ? null : opening, problems: p };
+    if (key) {
+      firsts.set(key, row);
+      batchesOf.set(key, new Map(v("batchNo") ? [[v("batchNo").toLowerCase(), rowNo]] : []));
+    }
+    out.push(row);
+  }
+  return out;
+}
+
+/** The opening stock columns of one row (null when no quantity, or a quantity of 0). */
+function parseOpening(v: (k: ItemImportKey) => string, trackBatches: boolean, unitName: string, bad: (m: string) => void): OpeningStock | null {
+  const qtyText = v("openingQty");
+  const rateText = v("openingRate");
+  const batchNo = v("batchNo");
+  const expiryText = v("expiryDate");
+  if (!qtyText) return null;
+  const qty = parseQty(qtyText);
+  if (qty != null && D(qty).eq(0)) return null;
+  const rate = rateText ? parseRate(rateText) : null;
+  const expiry = parseImportDate(expiryText || null);
+  if (qty == null) bad(`opening stock “${qtyText}” should be a number with up to 3 decimals, e.g. 2000 or 2.5.`);
+  if (!rateText) bad(`opening stock needs the rate per ${unitName} before GST, e.g. 4.50.`);
+  else if (rate == null || D(rate).lte(0)) bad(`rate “${rateText}” should be an amount in rupees above 0, with up to 4 decimals, e.g. 4.50.`);
+  if (trackBatches) {
+    if (!batchNo) bad("this item tracks batches, so the opening stock needs a batch number.");
+    if (!expiryText) bad("this item tracks batches, so the opening stock needs an expiry date, e.g. 31/03/2027.");
+    else if (!expiry) bad(`expiry date “${expiryText}” should be a date, e.g. 31/03/2027.`);
+  } else if (batchNo || expiryText) bad("a batch number or expiry date is only used when Track batches is Yes.");
+  if (batchNo.length > 40) bad("the batch number is too long (keep it under 40 characters).");
+  return qty != null && rate != null && D(rate).gt(0) ? { qty, rate, batchNo: trackBatches ? batchNo : null, expiryDate: trackBatches ? expiry : null } : null;
 }
 
 /** The template's example row, left in by mistake: skipped. */

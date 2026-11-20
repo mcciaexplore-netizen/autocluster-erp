@@ -71,8 +71,8 @@ export async function getInsights(f: InsightFilters) {
   await connection();
   const today = todayInIndia();
   const [[set], depts] = await Promise.all([
-    db.execute<{ alert: number; share: number; use_days: number; safety: number }>(
-      sql`select inv_price_rise_alert_pct as alert, inv_material_share_alert_pct as share, inv_avg_use_days as use_days, inv_safety_days as safety from settings where id = 1`,
+    db.execute<{ alert: number; share: number; use_days: number; safety: number; lead: number }>(
+      sql`select inv_price_rise_alert_pct as alert, inv_material_share_alert_pct as share, inv_avg_use_days as use_days, inv_safety_days as safety, inv_default_lead_time_days as lead from settings where id = 1`,
     ).then((r) => r.rows),
     db.execute<{ code: string; name: string }>(sql`select code, name from departments order by sort_order`).then((r) => r.rows),
   ]);
@@ -80,6 +80,7 @@ export async function getInsights(f: InsightFilters) {
   const shareAlertPct = set?.share ?? 40;
   const useDays = set?.use_days ?? 90;
   const safetyDays = set?.safety ?? 7;
+  const defaultLead = set?.lead ?? 14;
 
   const [spend, items, jobs, receipts, stock, expiry, recentUse] = await Promise.all([
     // 1. material spend by month and department
@@ -228,14 +229,14 @@ export async function getInsights(f: InsightFilters) {
   const runningOut = stock.rows
     .map((r) => {
       const days = runsOutInDays(r.qty, daily.get(r.id) ?? 0);
-      return { itemId: r.id, name: r.name, code: r.code, qty: r.qty, unit: r.unit, runsOutDays: days, leadTimeDays: r.lead };
+      return { itemId: r.id, name: r.name, code: r.code, qty: r.qty, unit: r.unit, runsOutDays: days, leadTimeDays: r.lead ?? defaultLead, leadIsDefault: r.lead == null };
     })
     .filter((r) => r.runsOutDays != null)
     .sort((a, b) => a.runsOutDays! - b.runsOutDays!)
     .slice(0, 15)
     .map((r) => ({
       ...r,
-      verdict: (r.runsOutDays === 0 ? "out" : r.runsOutDays! <= (r.leadTimeDays ?? 0) ? "late" : r.runsOutDays! <= (r.leadTimeDays ?? 0) + safetyDays ? "order" : "ok") as "out" | "late" | "order" | "ok",
+      verdict: (r.runsOutDays === 0 ? "out" : r.runsOutDays! <= r.leadTimeDays ? "late" : r.runsOutDays! <= r.leadTimeDays + safetyDays ? "order" : "ok") as "out" | "late" | "order" | "ok",
     }));
 
   return {

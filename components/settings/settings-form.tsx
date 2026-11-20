@@ -400,6 +400,9 @@ export function SettingsForm({ initial, stages }: { initial: SettingsInput; stag
             <Field label="Safety days" required error={e.invSafetyDays?.message} helper="Extra days added to the supplier's delivery time before an item is put on the reorder list, e.g. 7">
               {(p) => <Input {...p} type="number" min={0} max={365} step={1} inputMode="numeric" {...register("invSafetyDays", num)} />}
             </Field>
+            <Field label="Default supplier lead time (days)" required error={e.invDefaultLeadTimeDays?.message} helper="Used for items with no lead time of their own, for “runs out before new stock arrives” and “Delivery late”, e.g. 14">
+              {(p) => <Input {...p} type="number" min={0} max={365} step={1} inputMode="numeric" {...register("invDefaultLeadTimeDays", num)} />}
+            </Field>
             <Field label="Price rise alert (%)" required error={e.invPriceRiseAlertPct?.message} helper="Flag items whose purchase rate rose more than this, e.g. 10">
               {(p) => <Input {...p} type="number" min={1} max={100} step={1} inputMode="numeric" {...register("invPriceRiseAlertPct", num)} />}
             </Field>
