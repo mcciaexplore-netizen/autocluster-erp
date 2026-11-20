@@ -5,6 +5,8 @@ import { z } from "zod";
 import { db } from "@/db";
 import { addListItem } from "@/db/crm-lists-writer";
 import { cancelActivity, markActivityDone, planActivity } from "@/db/activity-writer";
+import { addStage, deleteStage, moveStage, renameStage, reorderStages, setStageColor, setStageFolded, setStageProbability } from "@/db/stage-writer";
+import { sql } from "drizzle-orm";
 import { todayInIndia } from "@/lib/tickets";
 import {
   addLeadNote,
@@ -20,7 +22,6 @@ import {
   moveLead,
   restoreLeads,
   setLeadPriority,
-  setStageFolded,
   type MoveResult,
 } from "@/db/lead-writer";
 import { UserFacingError } from "@/db/quote-writer";
@@ -116,12 +117,6 @@ export async function restoreLeadsAction(leadIds: string[]) {
   return run(() => restoreLeads(db, idList.parse(leadIds)));
 }
 
-export async function setStageFoldedAction(stageId: string, folded: boolean) {
-  return run(async () => {
-    if (!(await canManagePipeline())) throw new UserFacingError("Only an admin can change the stages.");
-    await setStageFolded(db, id.parse(stageId), z.boolean().parse(folded));
-  });
-}
 
 // ---- full form, detail panel ----------------------------------------------------------------
 
@@ -202,4 +197,57 @@ export async function markActivityDoneAction(activityId: string, outcome: string
 
 export async function cancelActivityAction(activityId: string) {
   return run(() => cancelActivity(db, id.parse(activityId)));
+}
+
+// ---- stages (Edit stages panel and the column menu) -------------------------------------------
+
+async function pipeline<T>(fn: () => Promise<T>) {
+  return run(async () => {
+    if (!(await canManagePipeline())) throw new UserFacingError("Only an admin can change the stages.");
+    return fn();
+  });
+}
+const stageName = z.string().max(200);
+
+export async function setStageFoldedAction(stageId: string, folded: boolean) {
+  return pipeline(() => setStageFolded(db, id.parse(stageId), z.boolean().parse(folded)));
+}
+export async function renameStageAction(stageId: string, name: string) {
+  return pipeline(() => renameStage(db, id.parse(stageId), stageName.parse(name)));
+}
+export async function setStageColorAction(stageId: string, color: string) {
+  return pipeline(() => setStageColor(db, id.parse(stageId), z.string().max(20).parse(color)));
+}
+export async function setStageProbabilityAction(stageId: string, probability: number) {
+  return pipeline(() => setStageProbability(db, id.parse(stageId), z.number().parse(probability)));
+}
+export async function addStageAction(name: string, color?: string) {
+  return pipeline(async () => {
+    const s = await addStage(db, stageName.parse(name), color);
+    return { id: s.id, name: s.name };
+  });
+}
+export async function reorderStagesAction(orderedIds: string[]) {
+  return pipeline(() => reorderStages(db, z.array(id).max(50).parse(orderedIds)));
+}
+export async function moveStageAction(stageId: string, dir: -1 | 1) {
+  return pipeline(() => moveStage(db, id.parse(stageId), z.union([z.literal(-1), z.literal(1)]).parse(dir)));
+}
+export async function deleteStageAction(stageId: string, moveToId: string | null) {
+  return pipeline(() => deleteStage(db, id.parse(stageId), moveToId ? id.parse(moveToId) : null));
+}
+
+/**
+ * A short fingerprint of the CRM data. The board checks it every few seconds and refreshes
+ * when it changes, so stage edits (and other people's moves) show without reloading the page.
+ */
+export async function crmVersionAction(): Promise<string | null> {
+  if (!(await isSignedIn())) return null;
+  const r = await db.execute<{ v: string }>(sql`
+    select concat_ws(':',
+      (select coalesce(max(id), 0) from crm_stage_changes),
+      (select coalesce(max(id), 0) from lead_events),
+      (select count(*) from crm_activities where done_at is null),
+      (select coalesce(extract(epoch from max(updated_at))::bigint, 0) from leads)) as v`);
+  return r.rows[0]?.v ?? null;
 }

@@ -18,7 +18,6 @@ import { UserFacingError } from "./quote-writer";
 import {
   crmLostReasons,
   crmSources,
-  crmStageChanges,
   crmStages,
   crmTags,
   customers,
@@ -365,16 +364,6 @@ export async function restoreLeads(db: DB, leadIds: string[]) {
       .returning({ id: leads.id });
     for (const l of r) await logLeadEvent(tx, l.id, "RESTORED", "Enquiry restored (delete undone)");
     return { restored: r.length };
-  });
-}
-
-// ---- stage folding (board) ---------------------------------------------------------------
-
-export async function setStageFolded(db: DB, stageId: string, folded: boolean) {
-  return db.transaction(async (tx) => {
-    const [st] = await tx.update(crmStages).set({ isFolded: folded }).where(eq(crmStages.id, stageId)).returning();
-    if (!st) throw new UserFacingError("That stage no longer exists. Please refresh the page.");
-    await tx.insert(crmStageChanges).values({ action: folded ? "FOLD" : "UNFOLD", details: { stage: st.name }, createdBy: ACTOR });
   });
 }
 

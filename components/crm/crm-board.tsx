@@ -1,7 +1,7 @@
 "use client";
 
 import { DndContext, DragOverlay, PointerSensor, useDroppable, useSensor, useSensors, type DragEndEvent, type DragStartEvent } from "@dnd-kit/core";
-import { ChevronsLeftRight, Handshake, MoreHorizontal, Plus, SearchX } from "lucide-react";
+import { ArrowLeft, ArrowRight, Check, ChevronsLeftRight, Handshake, Lock, MoreHorizontal, Palette, Pencil, Plus, SearchX, Settings2, Trash2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useMemo, useState, useTransition } from "react";
 import { usePatches } from "./use-patches";
@@ -9,7 +9,16 @@ import { toast } from "sonner";
 import { useConfirm } from "@/components/common/confirm";
 import { EmptyState } from "@/components/common/empty-state";
 import { Button } from "@/components/ui/button";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { deleteLeadsAction, restoreLeadsAction, setLeadPriorityAction, setStageFoldedAction } from "@/lib/actions/crm";
 import type { BoardLead, BoardStage, LeadFormOptions } from "@/lib/crm-data";
 import { parseMobileOrEmail } from "@/lib/crm/contact";
@@ -17,8 +26,11 @@ import type { LeadFormValues } from "@/lib/validation/lead";
 import { LeadPanel } from "./lead-panel";
 import { useLeadMove } from "./use-lead-move";
 import { useActivityFlow } from "./use-activity-flow";
+import { StageEditor } from "./stage-editor";
+import { useStageActions } from "./stage-actions";
+import { useLiveRefresh } from "./use-live-refresh";
 import { matchesFilters, sortLeads, todayInIndia } from "@/lib/crm/leads";
-import { stageColor } from "@/lib/crm/stages";
+import { STAGE_COLOR_KEYS, STAGE_COLORS, stageColor, type StageColor } from "@/lib/crm/stages";
 import { formatINRShort } from "@/lib/pricing";
 import { cn } from "@/lib/utils";
 import { CrmToolbar } from "./crm-toolbar";
@@ -26,7 +38,7 @@ import { LeadCard, type LeadCardHandlers } from "./lead-card";
 import { QuickAdd } from "./quick-add";
 import { useCrmFilters } from "./use-crm-filters";
 
-export function CrmBoard({ stages, leads, options: pickers }: { stages: BoardStage[]; leads: BoardLead[]; options: LeadFormOptions }) {
+export function CrmBoard({ stages, leads, options: pickers, canManage }: { stages: BoardStage[]; leads: BoardLead[]; options: LeadFormOptions; canManage: boolean }) {
   const router = useRouter();
   const { filters, sort, set } = useCrmFilters();
   const today = todayInIndia();
@@ -92,7 +104,9 @@ export function CrmBoard({ stages, leads, options: pickers }: { stages: BoardSta
     setCreateDraft(draft ?? null);
     set({ new: "1", lead: null, edit: null });
   };
-  const [tab, setTab] = useState<string>(filters.stage ?? firstOpen.id);
+  const [tabPick, setTab] = useState<string>(filters.stage ?? firstOpen.id);
+  // If the chosen stage was deleted (by anyone), fall back to the first open stage.
+  const tab = stages.some((s) => s.id === tabPick) ? tabPick : firstOpen.id;
   const startQuickAdd = (stageId: string) => {
     patchFold(stageId, { folded: false });
     setTab(stageId);
@@ -110,6 +124,28 @@ export function CrmBoard({ stages, leads, options: pickers }: { stages: BoardSta
       router.refresh();
     });
   };
+
+  // ---- stages: column menu and the Edit stages panel (same rules) ----------------------
+  const counts = useMemo(() => {
+    const c: Record<string, number> = {};
+    for (const l of leads) c[l.stageId] = (c[l.stageId] ?? 0) + 1;
+    return c;
+  }, [leads]);
+  const stageTools = useStageActions({ stages, counts, onChanged: () => router.refresh() });
+  const [editingStages, setEditingStages] = useState(false);
+  const columnMenu = (s: BoardStage, desktop: boolean): ColumnMenu | undefined => {
+    if (!canManage) return undefined;
+    const a = stageTools.actions;
+    return {
+      rename: () => a.rename(s),
+      color: (c) => a.color(s, c),
+      fold: desktop ? () => fold(s, true) : undefined,
+      moveLeft: a.canMove(s, -1) ? () => a.move(s, -1) : undefined,
+      moveRight: a.canMove(s, 1) ? () => a.move(s, 1) : undefined,
+      remove: s.type === "OPEN" ? () => a.remove(s) : undefined,
+    };
+  };
+  useLiveRefresh();
 
   // ---- drag and drop -----------------------------------------------------------------
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }));
@@ -161,7 +197,20 @@ export function CrmBoard({ stages, leads, options: pickers }: { stages: BoardSta
       {dialog}
       {mover.elements}
       {flow.elements}
-      <CrmToolbar view="board" pickers={pickers} onNew={() => openNew()} />
+      {stageTools.elements}
+      <CrmToolbar
+        view="board"
+        pickers={pickers}
+        onNew={() => openNew()}
+        extra={
+          canManage ? (
+            <Button variant="outline" onClick={() => setEditingStages(true)} aria-label="Edit stages" title="Edit stages">
+              <Settings2 aria-hidden /> <span className="hidden sm:inline">Edit stages</span>
+            </Button>
+          ) : null
+        }
+      />
+      {canManage ? <StageEditor open={editingStages} onOpenChange={setEditingStages} stages={stages} counts={counts} actions={stageTools.actions} onChanged={() => router.refresh()} /> : null}
 
       {nothingAtAll && !quickAdd ? (
         <EmptyState
@@ -209,7 +258,7 @@ export function CrmBoard({ stages, leads, options: pickers }: { stages: BoardSta
               .filter((s) => s.id === tab)
               .map((s) => (
                 <div key={s.id}>
-                  <ColumnHeader stage={s} count={inStage(s.id).length} totalPaise={total(s.id)} onQuickAdd={() => startQuickAdd(s.id)} />
+                  <ColumnHeader stage={s} count={inStage(s.id).length} totalPaise={total(s.id)} onQuickAdd={() => startQuickAdd(s.id)} menu={columnMenu(s, false)} />
                   <div role="tabpanel" className="flex flex-col gap-3">
                     {quickAddFor(s)}
                     {cards(s, false)}
@@ -227,7 +276,7 @@ export function CrmBoard({ stages, leads, options: pickers }: { stages: BoardSta
                   <FoldedColumn key={s.id} stage={s} count={inStage(s.id).length} onUnfold={() => fold(s, false)} dragging={!!dragging} />
                 ) : (
                   <Column key={s.id} stage={s} dragging={dragging}>
-                    <ColumnHeader stage={s} count={inStage(s.id).length} totalPaise={total(s.id)} onQuickAdd={() => startQuickAdd(s.id)} onFold={() => fold(s, true)} />
+                    <ColumnHeader stage={s} count={inStage(s.id).length} totalPaise={total(s.id)} onQuickAdd={() => startQuickAdd(s.id)} menu={columnMenu(s, true)} />
                     <div className="flex flex-1 flex-col gap-3">
                       {quickAddFor(s)}
                       {cards(s, true)}
@@ -249,41 +298,72 @@ export function CrmBoard({ stages, leads, options: pickers }: { stages: BoardSta
   );
 }
 
-function ColumnHeader({
-  stage,
-  count,
-  totalPaise,
-  onQuickAdd,
-  onFold,
-}: {
-  stage: BoardStage;
-  count: number;
-  totalPaise: number;
-  onQuickAdd: () => void;
-  onFold?: () => void;
-}) {
+type ColumnMenu = {
+  rename: () => void;
+  color: (c: StageColor) => void;
+  fold?: () => void;
+  moveLeft?: () => void;
+  moveRight?: () => void;
+  remove?: () => void;
+};
+
+function ColumnHeader({ stage, count, totalPaise, onQuickAdd, menu }: { stage: BoardStage; count: number; totalPaise: number; onQuickAdd: () => void; menu?: ColumnMenu }) {
   return (
     <header className="mb-3">
       <div className={cn("mb-2 h-1.5 rounded-full", stageColor(stage.color).bar)} aria-hidden />
       <div className="flex items-center justify-between gap-1">
-        <h2 className="min-w-0 truncate text-base font-semibold text-primary">
+        <h2 className="min-w-0 truncate text-base font-semibold text-primary" title={stage.name}>
           {stage.name} <span className="font-normal text-muted-foreground">({count})</span>
         </h2>
         <span className="flex shrink-0 items-center">
           <Button variant="ghost" size="icon-sm" className="size-8" aria-label={`Quick add to ${stage.name}`} title="Quick add" onClick={onQuickAdd}>
             <Plus aria-hidden />
           </Button>
-          {onFold ? (
+          {menu ? (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="ghost" size="icon-sm" className="size-8" aria-label={`More for the ${stage.name} column`}>
                   <MoreHorizontal aria-hidden />
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-52">
-                <DropdownMenuItem className="h-10" onSelect={onFold}>
-                  <ChevronsLeftRight /> Fold column
+              <DropdownMenuContent align="end" className="w-56">
+                <DropdownMenuItem className="h-10" onSelect={menu.rename}>
+                  <Pencil /> Rename
                 </DropdownMenuItem>
+                <DropdownMenuSub>
+                  <DropdownMenuSubTrigger className="h-10">
+                    <Palette /> Change colour
+                  </DropdownMenuSubTrigger>
+                  <DropdownMenuSubContent className="w-48">
+                    {STAGE_COLOR_KEYS.map((c) => (
+                      <DropdownMenuItem key={c} className="h-10" onSelect={() => menu.color(c)}>
+                        <span className={cn("size-4 rounded-full", STAGE_COLORS[c].bar)} aria-hidden /> {STAGE_COLORS[c].label}
+                        {stage.color === c ? <Check className="ml-auto" aria-label="current" /> : null}
+                      </DropdownMenuItem>
+                    ))}
+                  </DropdownMenuSubContent>
+                </DropdownMenuSub>
+                {menu.fold ? (
+                  <DropdownMenuItem className="h-10" onSelect={menu.fold}>
+                    <ChevronsLeftRight /> Fold column
+                  </DropdownMenuItem>
+                ) : null}
+                <DropdownMenuItem className="h-10" disabled={!menu.moveLeft} onSelect={menu.moveLeft}>
+                  <ArrowLeft /> Move left
+                </DropdownMenuItem>
+                <DropdownMenuItem className="h-10" disabled={!menu.moveRight} onSelect={menu.moveRight}>
+                  <ArrowRight /> Move right
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                {menu.remove ? (
+                  <DropdownMenuItem className="h-10 text-destructive focus:text-destructive" onSelect={menu.remove}>
+                    <Trash2 /> Delete
+                  </DropdownMenuItem>
+                ) : (
+                  <DropdownMenuItem className="h-auto py-2 text-xs" disabled>
+                    <Lock /> The {stage.type === "WON" ? "Won" : "Lost"} stage can&apos;t be deleted
+                  </DropdownMenuItem>
+                )}
               </DropdownMenuContent>
             </DropdownMenu>
           ) : null}
