@@ -4,6 +4,7 @@ import ExcelJS from "exceljs";
 import type { InvDocRow, ItemHistoryRow, OrderListData } from "@/lib/inventory-data";
 import { formatDate } from "@/lib/format";
 import { orderQtyText } from "./reorder";
+import type { Col, InsightTable } from "./insights-tables";
 import { UserFacingError } from "@/db/quote-writer";
 import { IMPORT_TOO_BIG, MAX_IMPORT_BYTES } from "@/lib/crm/import";
 import { ITEM_IMPORT_COLUMNS, MAX_ITEM_IMPORT_ROWS, isExampleItemRow, itemColumnForHeader, type CheckedItemRow, type ItemImportKey, type ItemImportLists, type ItemRawRow } from "./import";
@@ -293,5 +294,33 @@ export async function itemProblemRowsWorkbook(rows: CheckedItemRow[]): Promise<U
     row.getCell("__problems").font = { color: { argb: "FFB91C1C" } };
     row.getCell("__problems").alignment = { wrapText: true, vertical: "top" };
   }
+  return new Uint8Array(await wb.xlsx.writeBuffer());
+}
+
+// ---- Insights tables -------------------------------------------------------------------------------
+
+/** One Insights table as a workbook, with the period and department on top. */
+export async function insightTableWorkbook(t: InsightTable, note: string): Promise<Uint8Array> {
+  const FMT: Record<NonNullable<Col["fmt"]>, string> = { money: MONEY, pct: "0.0%", qty: QTY, rate: RATE, date: "dd/mm/yyyy", int: "#,##0" };
+  const wb = new ExcelJS.Workbook();
+  wb.creator = "AutoCluster ERP";
+  const ws = wb.addWorksheet(t.title.slice(0, 31));
+  ws.addRow([t.title]).font = { bold: true, size: 13 };
+  ws.addRow([note]).font = { color: { argb: "FF6B7280" } };
+  ws.addRow([]);
+  const head = ws.addRow(t.columns.map((c) => c.header));
+  head.font = { bold: true, color: { argb: "FFFFFFFF" } };
+  head.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF0B1F3A" } };
+  head.alignment = { vertical: "middle", wrapText: true };
+  head.height = 32;
+  t.columns.forEach((c, i) => (ws.getColumn(i + 1).width = c.width));
+  for (const r of t.rows) {
+    const row = ws.addRow(r.map((v, i) => (t.columns[i]?.fmt === "date" && typeof v === "string" ? asDate(v) : v)));
+    t.columns.forEach((c, i) => {
+      if (c.fmt && typeof r[i] !== "string") row.getCell(i + 1).numFmt = FMT[c.fmt];
+      if (c.fmt === "date" && r[i]) row.getCell(i + 1).numFmt = FMT.date;
+    });
+  }
+  ws.views = [{ state: "frozen", ySplit: 4 }];
   return new Uint8Array(await wb.xlsx.writeBuffer());
 }
