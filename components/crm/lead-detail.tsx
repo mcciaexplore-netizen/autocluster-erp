@@ -21,7 +21,15 @@ import {
   Trophy,
   XCircle,
   Plus,
+  CalendarClock,
+  CalendarX,
+  CheckCheck,
+  X,
 } from "lucide-react";
+import { timeLabel } from "@/lib/crm/time";
+import { ACTIVITY_TYPES, activityDueLabel, activityStatus, todayInIndia } from "@/lib/crm/leads";
+import { ACTIVITY_ICONS } from "./activity-dialogs";
+import { useActivityFlow } from "./use-activity-flow";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
@@ -30,7 +38,7 @@ import { StatusChip } from "@/components/common/badges";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Textarea } from "@/components/ui/textarea";
-import { addLeadNoteAction, deleteLeadsAction, logLeadContactAction, restoreLeadsAction, setLeadPriorityAction } from "@/lib/actions/crm";
+import { addLeadNoteAction, cancelActivityAction, deleteLeadsAction, logLeadContactAction, restoreLeadsAction, setLeadPriorityAction } from "@/lib/actions/crm";
 import type { LeadDetail } from "@/lib/crm-data";
 import { stageColor } from "@/lib/crm/stages";
 import { formatDate } from "@/lib/format";
@@ -41,6 +49,10 @@ import { Initials, PriorityStars, StagePill } from "./lead-bits";
 import { useLeadMove } from "./use-lead-move";
 
 type StageLite = { id: string; name: string; color: string; type: "OPEN" | "WON" | "LOST" };
+
+const ACT_ROW = { overdue: "border-red-200 bg-red-50/60", today: "border-amber-300 bg-amber-50/60", planned: "border-emerald-200 bg-emerald-50/40", none: "" } as const;
+const ACT_ICON = { overdue: "border-red-200 text-red-700", today: "border-amber-300 text-amber-700", planned: "border-emerald-200 text-emerald-700", none: "" } as const;
+const ACT_TEXT = { overdue: "font-semibold text-red-700", today: "font-semibold text-amber-700", planned: "text-emerald-700", none: "" } as const;
 
 const dateTime = new Intl.DateTimeFormat("en-IN", { day: "numeric", month: "short", year: "numeric", hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" });
 
@@ -56,6 +68,9 @@ const EVENT_ICONS: Record<string, React.ComponentType<{ className?: string }>> =
   CONTACT_CALL: Phone,
   CONTACT_WHATSAPP: MessageCircle,
   CONTACT_EMAIL: Mail,
+  ACTIVITY_PLANNED: CalendarClock,
+  ACTIVITY_DONE: CheckCheck,
+  ACTIVITY_CANCELLED: CalendarX,
   DELETED: Trash2,
   RESTORED: RotateCcw,
 };
@@ -64,6 +79,7 @@ export function LeadDetailView({
   detail,
   stages,
   lostReasons,
+  team,
   onChanged,
   onEdit,
   onDeleted,
@@ -71,6 +87,7 @@ export function LeadDetailView({
   detail: LeadDetail;
   stages: StageLite[];
   lostReasons: { id: string; name: string }[];
+  team: { id: string; name: string }[];
   /** Called after anything is saved, so the view reloads. */
   onChanged: () => void;
   onEdit: () => void;
@@ -119,11 +136,22 @@ export function LeadDetailView({
   };
 
   const movable = { id: l.id, title: l.title, stageId: l.stageId };
+  const today = todayInIndia();
+  const flow = useActivityFlow({ team, onChanged });
+  const planned = detail.activities.filter((a) => !a.doneAt);
+  const cancelPlanned = async (a: (typeof planned)[number]) => {
+    if (!(await mover.confirm({ title: `Cancel this ${ACTIVITY_TYPES[a.type].toLowerCase()}?`, description: `Planned for ${formatDate(a.dueDate)}. This is noted in the history.`, confirmLabel: "Cancel activity", cancelLabel: "Keep it", destructive: true }))) return;
+    const r = await cancelActivityAction(a.id);
+    if (!r.ok) return void toast.error(r.message);
+    toast.success("Activity cancelled");
+    onChanged();
+  };
   const isOpen = stage?.type === "OPEN";
 
   return (
     <div className="flex flex-col gap-5">
       {mover.elements}
+      {flow.elements}
 
       {/* Header */}
       <section className="flex flex-col gap-3">
@@ -213,6 +241,9 @@ export function LeadDetailView({
 
       {/* Buttons */}
       <div className="flex flex-wrap gap-2">
+        <Button size="sm" onClick={() => flow.openPlan({ leadId: l.id, title: l.title, assignedTo: l.assignedTo })}>
+          <CalendarClock aria-hidden /> Plan activity
+        </Button>
         {isOpen ? (
           <>
             <Button size="sm" className="bg-emerald-700 text-white hover:bg-emerald-800" onClick={() => mover.markWon(movable)} disabled={mover.pending}>
@@ -288,6 +319,52 @@ export function LeadDetailView({
           <ContactButton href={detail.contact.whatsappUrl} icon={MessageCircle} label="WhatsApp" missing="No mobile number" onClick={() => contact("WHATSAPP")} external />
           <ContactButton href={detail.contact.mailtoUrl} icon={Mail} label="Email" missing="No email address" onClick={() => contact("EMAIL")} />
         </div>
+      </section>
+
+      {/* Activities: planned first; done ones move into the history */}
+      <section className="rounded-xl border p-4">
+        <div className="mb-2 flex items-center justify-between gap-2">
+          <h3 className="font-semibold text-primary">Planned activities</h3>
+          <Button size="sm" variant="ghost" onClick={() => flow.openPlan({ leadId: l.id, title: l.title, assignedTo: l.assignedTo })}>
+            <Plus aria-hidden /> Plan
+          </Button>
+        </div>
+        {planned.length ? (
+          <ul className="flex flex-col gap-2">
+            {planned.map((a) => {
+              const st = activityStatus(a.dueDate, today);
+              const Icon = ACTIVITY_ICONS[a.type];
+              return (
+                <li key={a.id} className={cn("flex flex-wrap items-start gap-3 rounded-lg border p-3", ACT_ROW[st])}>
+                  <span className={cn("grid size-9 shrink-0 place-items-center rounded-full border bg-card", ACT_ICON[st])}>
+                    <Icon className="size-4" aria-hidden />
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <p className="font-medium">
+                      {ACTIVITY_TYPES[a.type]} <span className={cn("text-sm", ACT_TEXT[st])}>· {activityDueLabel(a.dueDate, today)}</span>
+                    </p>
+                    <p className="text-sm text-muted-foreground">
+                      {formatDate(a.dueDate)}
+                      {a.dueTime ? `, ${timeLabel(a.dueTime)}` : ""}
+                      {a.assignedToName ? ` · ${a.assignedToName}` : ""}
+                    </p>
+                    {a.note ? <p className="mt-1 text-sm">{a.note}</p> : null}
+                  </div>
+                  <div className="flex gap-1">
+                    <Button size="sm" variant="outline" className="bg-card" onClick={() => flow.openDone({ id: a.id, type: a.type, leadId: l.id, title: l.title, assignedTo: a.assignedTo })}>
+                      <Check aria-hidden /> Mark done
+                    </Button>
+                    <Button size="icon-sm" variant="ghost" aria-label={`Cancel ${ACTIVITY_TYPES[a.type].toLowerCase()} on ${formatDate(a.dueDate)}`} onClick={() => cancelPlanned(a)}>
+                      <X aria-hidden />
+                    </Button>
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        ) : (
+          <p className="text-sm text-muted-foreground">Nothing planned. Plan the next call, meeting or follow-up so it isn&apos;t forgotten.</p>
+        )}
       </section>
 
       {/* What they're interested in */}

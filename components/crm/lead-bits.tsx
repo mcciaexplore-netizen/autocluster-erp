@@ -3,6 +3,7 @@
 import { Clock, Plus, Star } from "lucide-react";
 import { ACTIVITY_TYPES, activityDueLabel, activityStatus, PRIORITY_LABELS, type ActivityType } from "@/lib/crm/leads";
 import { stageColor } from "@/lib/crm/stages";
+import { timeLabel } from "@/lib/crm/time";
 import { cn } from "@/lib/utils";
 
 /** 0-3 stars. Click a star to set it; click the same star again to clear. */
@@ -55,13 +56,13 @@ export function ActivityIcon({
 }) {
   const st = activityStatus(activity?.dueDate, today);
   const label = activity
-    ? `${ACTIVITY_TYPES[activity.type]}: ${activityDueLabel(activity.dueDate, today)}${activity.dueTime ? ` at ${activity.dueTime.slice(0, 5)}` : ""}`
+    ? `${ACTIVITY_TYPES[activity.type]}: ${activityDueLabel(activity.dueDate, today)}${activity.dueTime ? ` at ${timeLabel(activity.dueTime)}` : ""}`
     : "No activity planned";
   const body = st === "none" ? <Plus className="size-4" aria-hidden /> : <Clock className="size-4" aria-hidden />;
   const cls = cn("grid size-8 place-items-center rounded-full border", ACT_STYLE[st]);
   if (onPlan)
     return (
-      <button type="button" className={cn(cls, "hover:brightness-95")} title={st === "none" ? "No activity planned. Click to plan one." : label} aria-label={st === "none" ? "Plan an activity" : label} onClick={onPlan} onPointerDown={(e) => e.stopPropagation()}>
+      <button type="button" className={cn(cls, "hover:brightness-95")} title={st === "none" ? "No activity planned. Click to plan one." : `${label}. Click to open.`} aria-label={st === "none" ? "Plan an activity" : `${label}. Open the enquiry`} onClick={onPlan} onPointerDown={(e) => e.stopPropagation()}>
         {body}
       </button>
     );

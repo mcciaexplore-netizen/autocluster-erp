@@ -4,6 +4,8 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { db } from "@/db";
 import { addListItem } from "@/db/crm-lists-writer";
+import { cancelActivity, markActivityDone, planActivity } from "@/db/activity-writer";
+import { todayInIndia } from "@/lib/tickets";
 import {
   addLeadNote,
   findDuplicates,
@@ -173,4 +175,31 @@ export async function findDuplicatesAction(q: z.input<typeof dupQuery>): Promise
 /** "Pick or type a new tag" in the enquiry form. */
 export async function createTagAction(name: string) {
   return run(async () => ({ id: await addListItem(db, "tags", { name: z.string().max(200).parse(name) }), name: name.trim().replace(/\s+/g, " ") }));
+}
+
+// ---- activities ---------------------------------------------------------------------------
+
+const planSchema = z.object({
+  leadId: id,
+  type: z.enum(["CALL", "MEETING", "EMAIL", "WHATSAPP", "SITE_VISIT", "FOLLOW_UP"], { message: "Please choose the type of activity." }),
+  dueDate: z.string().max(10),
+  dueTime: z.string().max(8).nullish(),
+  note: z.string().max(2000).nullish(),
+  assignedTo: z.string().uuid().nullable(),
+});
+export type PlanActivityInput = z.input<typeof planSchema>;
+
+export async function planActivityAction(input: PlanActivityInput) {
+  return run(async () => {
+    const a = await planActivity(db, planSchema.parse(input), todayInIndia());
+    return { id: a.id };
+  });
+}
+
+export async function markActivityDoneAction(activityId: string, outcome: string) {
+  return run(() => markActivityDone(db, id.parse(activityId), z.string().max(2000).parse(outcome)));
+}
+
+export async function cancelActivityAction(activityId: string) {
+  return run(() => cancelActivity(db, id.parse(activityId)));
 }

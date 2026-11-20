@@ -152,7 +152,8 @@ export function LeadPanel({ options, refreshKey, createDraft }: { options: LeadF
               }}
             />
           ) : (
-            <LeadDetailView detail={d} stages={options.stages} lostReasons={options.lostReasons} onChanged={changed} onEdit={() => set({ edit: "1" })} onDeleted={close} />
+            <LeadDetailView detail={d} stages={options.stages} lostReasons={options.lostReasons}
+      team={options.team} onChanged={changed} onEdit={() => set({ edit: "1" })} onDeleted={close} />
           )}
         </div>
       </SheetContent>

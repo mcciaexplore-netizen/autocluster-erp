@@ -43,7 +43,7 @@ const ACT_TEXT = { planned: "text-emerald-700", today: "text-amber-700 font-medi
 export function CrmList({ stages, leads, options: pickers }: { stages: BoardStage[]; leads: BoardLead[]; options: LeadFormOptions }) {
   const router = useRouter();
   const { filters, sort, set } = useCrmFilters();
-  const refreshKey = useMemo(() => leads.map((l) => `${l.id}:${l.stageId}:${l.priority}`).join("|"), [leads]);
+  const refreshKey = useMemo(() => leads.map((l) => `${l.id}:${l.stageId}:${l.priority}:${l.nextActivity?.id ?? ""}`).join("|"), [leads]);
   const today = todayInIndia();
   const [pending, start] = useTransition();
   const [dialog, confirm] = useConfirm();

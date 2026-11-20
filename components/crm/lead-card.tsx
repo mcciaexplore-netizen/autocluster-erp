@@ -148,7 +148,11 @@ export function LeadCard({
       <div className="mt-2.5 flex items-center justify-between gap-2">
         <span className="text-xs text-muted-foreground">{daysInStageLabel(daysInStep(l.stageChangedAt))}</span>
         <span className="flex items-center gap-1.5">
-          <ActivityIcon activity={l.nextActivity} today={today} onPlan={handlers.onPlan && !overlay ? () => handlers.onPlan!(l) : undefined} />
+          <ActivityIcon
+            activity={l.nextActivity}
+            today={today}
+            onPlan={overlay ? undefined : !l.nextActivity ? (handlers.onPlan ? () => handlers.onPlan!(l) : undefined) : handlers.onOpen ? () => handlers.onOpen!(l) : undefined}
+          />
           <Initials name={l.assignedToName} />
         </span>
       </div>

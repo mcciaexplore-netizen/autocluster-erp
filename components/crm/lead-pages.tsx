@@ -39,6 +39,7 @@ export function LeadPage({ detail, options }: { detail: LeadDetail; options: Lea
       detail={detail}
       stages={options.stages}
       lostReasons={options.lostReasons}
+      team={options.team}
       onChanged={() => router.refresh()}
       onEdit={() => router.push(`/crm/enquiries/${detail.lead.id}/edit`)}
       onDeleted={() => router.push("/crm")}

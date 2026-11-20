@@ -16,6 +16,7 @@ import { parseMobileOrEmail } from "@/lib/crm/contact";
 import type { LeadFormValues } from "@/lib/validation/lead";
 import { LeadPanel } from "./lead-panel";
 import { useLeadMove } from "./use-lead-move";
+import { useActivityFlow } from "./use-activity-flow";
 import { matchesFilters, sortLeads, todayInIndia } from "@/lib/crm/leads";
 import { stageColor } from "@/lib/crm/stages";
 import { formatINRShort } from "@/lib/pricing";
@@ -39,11 +40,12 @@ export function CrmBoard({ stages, leads, options: pickers }: { stages: BoardSta
   const visible = useMemo(() => sortLeads(all.filter((l) => matchesFilters(l, filters, today)), sort), [all, filters, sort, today]);
   const inStage = (id: string) => visible.filter((l) => l.stageId === id);
   const stageById = (id: string) => stages.find((s) => s.id === id)!;
-  const refreshKey = useMemo(() => leads.map((l) => `${l.id}:${l.stageId}:${l.priority}`).join("|"), [leads]);
+  const refreshKey = useMemo(() => leads.map((l) => `${l.id}:${l.stageId}:${l.priority}:${l.nextActivity?.id ?? ""}`).join("|"), [leads]);
   const isFolded = (s: BoardStage) => foldPatch[s.id]?.folded ?? s.isFolded;
 
   // ---- moving cards (same rules as the stage bar: Lost asks for a reason, Won offers to convert) ----
   const mover = useLeadMove({ stages, lostReasons: pickers.lostReasons });
+  const flow = useActivityFlow({ team: pickers.team, onChanged: () => router.refresh() });
   const moveTo = (l: BoardLead, stageId: string) =>
     mover.moveTo(l, stageId, {
       optimistic: () => patchLead(l.id, { stageId, stageChangedAt: new Date().toISOString() }),
@@ -53,6 +55,7 @@ export function CrmBoard({ stages, leads, options: pickers }: { stages: BoardSta
   const handlers: LeadCardHandlers = {
     onMoveTo: moveTo,
     onOpen: (l) => set({ lead: l.id, edit: null, new: null }),
+    onPlan: (l) => flow.openPlan({ leadId: l.id, title: l.title, assignedTo: l.assignedToId }),
     onPriority: (l, v) =>
       startTransition(async () => {
         patchLead(l.id, { priority: v });
@@ -157,6 +160,7 @@ export function CrmBoard({ stages, leads, options: pickers }: { stages: BoardSta
     <>
       {dialog}
       {mover.elements}
+      {flow.elements}
       <CrmToolbar view="board" pickers={pickers} onNew={() => openNew()} />
 
       {nothingAtAll && !quickAdd ? (
