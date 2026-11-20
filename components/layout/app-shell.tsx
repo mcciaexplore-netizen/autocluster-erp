@@ -59,7 +59,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
       <nav
         aria-label="Main"
-        className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-[repeat(8,minmax(min-content,1fr))] border-t bg-card pb-[env(safe-area-inset-bottom)] md:hidden print:hidden"
+        className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-5 border-t bg-card pb-[env(safe-area-inset-bottom)] md:hidden print:hidden"
       >
         <Suspense fallback={<NavLinkList variant="bottom" pathname={null} />}>
           <NavLinks variant="bottom" />
