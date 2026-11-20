@@ -26,32 +26,28 @@ export default function Page() {
 
 async function Counts() {
   const [counts, lists] = await Promise.all([listCounts(), getInvLists()]);
-  const open = counts.find((c) => c.status === "IN_PROGRESS");
+  const open = counts.filter((c) => c.status === "IN_PROGRESS");
   return (
     <div className="flex flex-col gap-6">
-      {open ? (
-        <section className="flex flex-col gap-3 rounded-2xl border-2 border-primary/30 bg-secondary p-5 sm:flex-row sm:items-center sm:justify-between">
+      <div>
+        <StartCountButton categories={lists.categories.filter((c) => c.isActive)} departments={lists.departments} team={lists.team.filter((t) => t.isActive)} />
+        {open.length ? <p className="mt-2 text-sm text-muted-foreground">More than one count can be open, as long as they don&apos;t share any items.</p> : null}
+      </div>
+      {open.map((o) => (
+        <section key={o.id} className="flex flex-col gap-3 rounded-2xl border-2 border-primary/30 bg-secondary p-5 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <p className="font-semibold">
-              Count <span className="tabular-nums">{open.countNo}</span> is open
+              Count <span className="tabular-nums">{o.countNo}</span> is open
             </p>
             <p className="text-sm text-muted-foreground">
-              {open.label} · {open.counted} of {open.lines} counted · started {formatDate(open.startedAt)}
+              {o.label} · {o.counted} of {o.lines} counted · started {formatDate(o.startedAt)}
             </p>
           </div>
           <Button asChild size="lg">
-            <Link href={`/inventory/counts/${open.id}`}>Continue counting</Link>
+            <Link href={`/inventory/counts/${o.id}`}>Continue counting</Link>
           </Button>
         </section>
-      ) : (
-        <div>
-          <StartCountButton
-            categories={lists.categories.filter((c) => c.isActive)}
-            departments={lists.departments}
-            team={lists.team.filter((t) => t.isActive)}
-          />
-        </div>
-      )}
+      ))}
 
       {!counts.length ? (
         <EmptyState icon={ClipboardCheck} title="No counts yet" description="Start a stock count to check the shelves against the stock in the app." />

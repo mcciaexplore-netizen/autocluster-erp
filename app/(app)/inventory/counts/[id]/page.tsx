@@ -181,7 +181,13 @@ function Review({ c, team }: { c: CountDetail; team: { id: string; name: string 
             {notCounted ? `${notCounted} ${notCounted === 1 ? "line isn't" : "lines aren't"} counted and will be left as ${notCounted === 1 ? "it is" : "they are"}.` : "Every line is counted."}
           </p>
           {counted.length ? (
-            <CompleteCountButton countId={c.id} countNo={c.countNo} changes={diffs.length} notCounted={notCounted} team={team} />
+            <CompleteCountButton
+              countId={c.id}
+              countNo={c.countNo}
+              changes={diffs.length}
+              notCounted={c.lines.filter((l) => l.countedQty == null).map((l) => ({ id: l.id, name: l.name, code: l.code, batchNo: l.batchNo }))}
+              team={team}
+            />
           ) : (
             <Button asChild size="lg">
               <Link href={`/inventory/counts/${c.id}`}>Start counting</Link>

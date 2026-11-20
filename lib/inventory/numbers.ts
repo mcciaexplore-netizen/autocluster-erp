@@ -62,6 +62,11 @@ export function packText(packs: Decimal.Value, packName: string, packSize: Decim
   return `${formatQty(n)} ${name} of ${formatQty(packSize, unit)} = ${formatQty(n.mul(D(packSize)), unit)}`;
 }
 
+/** 1 -> "bottle", 3 -> "bottles" (lower case). */
+export function packWord(n: Decimal.Value, packName: string): string {
+  return D(n).eq(1) ? packName.toLowerCase() : pluralise(packName.toLowerCase());
+}
+
 function pluralise(w: string) {
   if (/(s|x|ch|sh)$/.test(w)) return `${w}es`;
   if (/[^aeiou]y$/.test(w)) return `${w.slice(0, -1)}ies`;

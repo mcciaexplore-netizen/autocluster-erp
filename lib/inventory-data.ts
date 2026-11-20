@@ -28,7 +28,9 @@ import {
   settings,
   teamMembers,
 } from "@/db/schema";
+import { runsOutInDays, shouldOrder } from "@/lib/inventory/calc";
 import type { Material } from "@/lib/inventory/materials";
+import { suggestedQty } from "@/lib/inventory/reorder";
 import { D, valuePaise } from "@/lib/inventory/numbers";
 import { stockStatus, type StockStatus } from "@/lib/inventory/stock";
 import { financialYear } from "@/lib/pricing";
@@ -743,3 +745,109 @@ export async function getOpenCount() {
   const [c] = await db.select({ id: invCounts.id, countNo: invCounts.countNo }).from(invCounts).where(eq(invCounts.status, "IN_PROGRESS")).limit(1);
   return c ?? null;
 }
+
+// ---- reorder list -----------------------------------------------------------------------------------
+
+/**
+ * Items to order now (stock at or below the reorder level, or it runs out before new stock can
+ * arrive), grouped by preferred supplier, with a suggested quantity, last rate and the
+ * "Ordered on" marker. Also the suppliers and message templates for "Send to supplier".
+ */
+export async function getReorderList() {
+  await connection();
+  const [[set], use, rows, sups] = await Promise.all([
+    db.select().from(settings).where(eq(settings.id, 1)),
+    getDailyUse(),
+    db.execute<{
+      id: string; code: string; name: string; unit: string; qty: string; reorder_level: string; reorder_qty: string; lead: number | null; supplier_lead: number | null;
+      supplier_id: string | null; pack_name: string | null; pack_size: string | null; last_rate: string | null; supplier_rate: string | null; avg_cost: string;
+      ordered_on: string | null; ordered_supplier: string | null;
+    }>(sql`
+      select i.id, i.code, i.name, u.name as unit, i.qty_on_hand as qty, i.reorder_level, i.reorder_qty, i.lead_time_days as lead, si.lead_time_days as supplier_lead,
+        i.preferred_supplier_id as supplier_id, i.pack_name, i.pack_size, i.last_purchase_rate as last_rate, si.last_rate as supplier_rate, i.avg_cost,
+        i.ordered_on::text, os.name as ordered_supplier
+      from inv_items i
+      join inv_units u on u.id = i.unit_id
+      left join inv_supplier_items si on si.item_id = i.id and si.supplier_id = i.preferred_supplier_id
+      left join inv_suppliers os on os.id = i.ordered_supplier_id
+      where i.is_active
+      order by i.name`),
+    db
+      .select({ id: invSuppliers.id, name: invSuppliers.name, contactName: invSuppliers.contactName, phone: invSuppliers.phone, email: invSuppliers.email })
+      .from(invSuppliers)
+      .where(eq(invSuppliers.isActive, true))
+      .orderBy(asc(invSuppliers.name)),
+  ]);
+  const safetyDays = set?.invSafetyDays ?? 7;
+  const items = rows.rows
+    .map((r) => {
+      const daily = use.perItem.get(r.id) ?? 0;
+      const runsOut = runsOutInDays(r.qty, daily);
+      const leadTimeDays = r.lead ?? r.supplier_lead;
+      const rate = r.supplier_rate ?? r.last_rate ?? (D(r.avg_cost).gt(0) ? r.avg_cost : null);
+      return {
+        id: r.id,
+        code: r.code,
+        name: r.name,
+        unit: r.unit,
+        qty: r.qty,
+        reorderLevel: r.reorder_level,
+        runsOutDays: runsOut,
+        leadTimeDays,
+        supplierId: r.supplier_id,
+        packName: r.pack_name,
+        packSize: r.pack_size,
+        suggestedQty: suggestedQty({ qty: r.qty, reorderLevel: r.reorder_level, reorderQty: r.reorder_qty, packSize: r.pack_size }),
+        rate,
+        orderedOn: r.ordered_on,
+        orderedSupplier: r.ordered_supplier,
+        order: shouldOrder({ qty: r.qty, reorderLevel: r.reorder_level, runsOutDays: runsOut, leadTimeDays, safetyDays }),
+        belowLevel: D(r.qty).lte(D(r.reorder_level)),
+      };
+    })
+    .filter((i) => i.order)
+    // the one that runs out first, first
+    .sort((a, b) => (a.runsOutDays ?? Infinity) - (b.runsOutDays ?? Infinity) || a.name.localeCompare(b.name));
+  const groups = [...new Set(items.map((i) => i.supplierId))]
+    .map((sid) => ({ supplier: sups.find((s) => s.id === sid) ?? null, items: items.filter((i) => i.supplierId === sid) }))
+    .sort((a, b) => (a.supplier ? 0 : 1) - (b.supplier ? 0 : 1) || (a.supplier?.name ?? "").localeCompare(b.supplier?.name ?? ""));
+  return {
+    groups,
+    suppliers: sups,
+    safetyDays,
+    useDays: use.days,
+    templates: { whatsapp: set?.invOrderWhatsappTemplate ?? "", emailSubject: set?.invOrderEmailSubjectTemplate ?? "", emailBody: set?.invOrderEmailBodyTemplate ?? "" },
+    orgName: set?.orgName ?? "",
+  };
+}
+export type ReorderData = Awaited<ReturnType<typeof getReorderList>>;
+export type ReorderItem = ReorderData["groups"][number]["items"][number];
+
+/** Items and supplier for an order list download (PDF / Excel), in the order given. */
+export async function getOrderListData(supplierId: string | null, lines: { itemId: string; qty: string }[]) {
+  await connection();
+  const ids = lines.map((l) => l.itemId);
+  const [[set], sup, rows] = await Promise.all([
+    db.select().from(settings).where(eq(settings.id, 1)),
+    supplierId ? db.select().from(invSuppliers).where(eq(invSuppliers.id, supplierId)) : Promise.resolve([]),
+    ids.length
+      ? db.execute<{ id: string; code: string; name: string; unit: string; pack_name: string | null; pack_size: string | null; rate: string | null }>(sql`
+          select i.id, i.code, i.name, u.name as unit, i.pack_name, i.pack_size, coalesce(si.last_rate, i.last_purchase_rate) as rate
+          from inv_items i join inv_units u on u.id = i.unit_id
+          left join inv_supplier_items si on si.item_id = i.id and si.supplier_id = ${supplierId}
+          where i.id = any(${sql.param(ids)}::uuid[])`)
+      : Promise.resolve({ rows: [] }),
+  ]);
+  if (!set) throw new Error("Settings are missing.");
+  const items = lines.flatMap((l) => {
+    const r = rows.rows.find((x) => x.id === l.itemId);
+    return r ? [{ ...r, qty: l.qty, valuePaise: r.rate ? valuePaise(l.qty, r.rate) : null }] : [];
+  });
+  return {
+    org: { name: set.orgName, address: set.orgAddress, gstin: set.orgGstin, phone: set.orgPhone, email: set.orgEmail },
+    supplier: sup[0] ?? null,
+    items,
+    today: todayInIndia(),
+  };
+}
+export type OrderListData = Awaited<ReturnType<typeof getOrderListData>>;

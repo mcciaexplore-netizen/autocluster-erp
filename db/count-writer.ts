@@ -23,10 +23,8 @@ export const countPrefix = (adjPrefix: string | null | undefined) => (adjPrefix 
 export async function startCount(db: DB | Tx, input: CountScope & { doneBy?: string | null }, opts: { today?: string } = {}) {
   const today = opts.today ?? todayInIndia();
   return db.transaction(async (tx) => {
-    // One count at a time, so two counts never adjust the same stock twice.
+    // Counts start one after another, so two open counts never share an item (or adjust it twice).
     await tx.execute(sql`select pg_advisory_xact_lock(4242102)`);
-    const [open] = await tx.select({ countNo: invCounts.countNo }).from(invCounts).where(eq(invCounts.status, "IN_PROGRESS")).limit(1);
-    if (open) throw new UserFacingError(`Count ${open.countNo} is still open. Complete or discard it before starting another.`);
 
     let label = "All items";
     const where = [sql`(${invItems.isActive} or ${invItems.qtyOnHand} > 0)`];
@@ -56,6 +54,18 @@ export async function startCount(db: DB | Tx, input: CountScope & { doneBy?: str
       .orderBy(asc(invItems.id))
       .for("update");
     if (!items.length) throw new UserFacingError("There are no items to count with this choice.");
+    const overlap = await tx.execute<{ count_no: string; names: string[] }>(sql`
+      select c.count_no, array_agg(distinct i.name order by i.name) as names
+      from ${invCountLines} l join ${invCounts} c on c.id = l.count_id join ${invItems} i on i.id = l.item_id
+      where c.status = 'IN_PROGRESS' and l.item_id = any(${sql.param(items.map((i) => i.id))}::uuid[])
+      group by c.count_no order by c.count_no`);
+    if (overlap.rows.length) {
+      const parts = overlap.rows.map((o) => {
+        const shown = o.names.slice(0, 5).join(", ");
+        return `Count ${o.count_no} is open and already includes ${shown}${o.names.length > 5 ? ` and ${o.names.length - 5} more` : ""}.`;
+      });
+      throw new UserFacingError(`${parts.join(" ")} Complete or discard it first, or count a different category or department.`);
+    }
     const batches = await tx
       .select()
       .from(invBatches)

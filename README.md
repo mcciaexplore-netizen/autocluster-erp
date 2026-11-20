@@ -171,6 +171,11 @@ Each change is then reviewed before it reaches the live database, can be repeate
 
 ---
 
+### Inventory notes
+
+- **Reorder list is not a purchase-order system yet.** "Send to supplier" sends a ready-written list (WhatsApp, email, PDF or Excel) and marks the items "Ordered on <date>" so nobody orders twice. There are no PO numbers, approvals or part deliveries; the mark clears when stock of the item is received from that supplier, or by hand.
+- **Stock counts:** more than one count can be open, as long as they don't share any items. Completing a count makes one Stock adjusted record ("Stock count dd/mm/yyyy"); lines not counted don't change.
+
 ## Where things are
 
 | Path | What it does |

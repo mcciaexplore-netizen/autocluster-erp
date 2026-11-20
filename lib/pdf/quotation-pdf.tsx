@@ -5,7 +5,7 @@ import type { QuoteView } from "@/lib/quote-view";
 import { dmSerif400, outfit400, outfit500, outfit600, rupee400, rupee600 } from "./fonts.generated";
 
 let registered = false;
-function registerFonts() {
+export function registerFonts() {
   if (registered) return;
   Font.register({
     family: "Outfit",
@@ -50,7 +50,7 @@ const s = StyleSheet.create({
 const COLS = { sr: "5%", dept: "7%", desc: "34%", qty: "20%", unit: "8%", rate: "12%", amount: "14%" };
 
 /** Amount with the ₹ sign drawn in a font that has it. */
-function Money({ paise, bold }: { paise: number; bold?: boolean }) {
+export function Money({ paise, bold }: { paise: number; bold?: boolean }) {
   const neg = paise < 0;
   const text = formatINR(Math.abs(paise)).replace("₹", "");
   return (

@@ -301,7 +301,9 @@ export function CountSheet({ countId, lines }: { countId: string; lines: CountLi
 
 // ---- Complete / discard ---------------------------------------------------------------------------
 
-export function CompleteCountButton({ countId, countNo, changes, notCounted, team }: { countId: string; countNo: string; changes: number; notCounted: number; team: Team }) {
+type Uncounted = { id: number; name: string; code: string; batchNo: string | null };
+
+export function CompleteCountButton({ countId, countNo, changes, notCounted, team }: { countId: string; countNo: string; changes: number; notCounted: Uncounted[]; team: Team }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [doneBy, setDoneBy] = useDoneBy(team);
@@ -319,10 +321,24 @@ export function CompleteCountButton({ countId, countNo, changes, notCounted, tea
               {changes
                 ? `One Stock adjusted record is made for the ${changes} ${changes === 1 ? "difference" : "differences"}, so stock matches what was counted.`
                 : "Everything counted matches the stock, so no stock record is needed."}{" "}
-              {notCounted ? `${notCounted} ${notCounted === 1 ? "line wasn't" : "lines weren't"} counted and will be left as ${notCounted === 1 ? "it is" : "they are"}. ` : ""}
               The count is then locked.
             </DialogDescription>
           </DialogHeader>
+          {notCounted.length ? (
+            <div className="rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
+              <p className="flex items-center gap-2 font-medium">
+                <AlertTriangle className="size-4 shrink-0" aria-hidden />
+                {notCounted.length} {notCounted.length === 1 ? "line wasn't" : "lines weren't"} counted. {notCounted.length === 1 ? "Its" : "Their"} stock won&apos;t change.
+              </p>
+              <ul className="mt-2 max-h-40 list-disc overflow-y-auto pl-6">
+                {notCounted.map((u) => (
+                  <li key={u.id}>
+                    {u.name} <span className="text-amber-800/80">({[u.code, u.batchNo ? `batch ${u.batchNo}` : null].filter(Boolean).join(", ")})</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
           <Field label="Done by" optional>
             {(p) => <DoneBySelect id={p.id} team={team} value={doneBy} onChange={setDoneBy} />}
           </Field>
@@ -343,7 +359,7 @@ export function CompleteCountButton({ countId, countNo, changes, notCounted, tea
                 })
               }
             >
-              {pending ? <Loader2 className="animate-spin" aria-hidden /> : <Check aria-hidden />} Complete count
+              {pending ? <Loader2 className="animate-spin" aria-hidden /> : <Check aria-hidden />} {notCounted.length ? "Yes, complete count" : "Complete count"}
             </Button>
           </DialogFooter>
         </DialogContent>

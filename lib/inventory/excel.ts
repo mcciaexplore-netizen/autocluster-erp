@@ -1,7 +1,9 @@
 /** Inventory Excel files. Server only (exceljs). */
 import "server-only";
 import ExcelJS from "exceljs";
-import type { InvDocRow, ItemHistoryRow } from "@/lib/inventory-data";
+import type { InvDocRow, ItemHistoryRow, OrderListData } from "@/lib/inventory-data";
+import { formatDate } from "@/lib/format";
+import { orderQtyText } from "./reorder";
 
 const MONEY = '"₹"#,##,##0.00;-"₹"#,##,##0.00';
 const RATE = '"₹"#,##0.0000';
@@ -112,5 +114,43 @@ export async function itemHistoryWorkbook(item: { name: string; code: string; un
   }
   ws.addRow([]);
   ws.addRow([`${item.name} (${item.code})`]).font = { italic: true, color: { argb: "FF6B7280" } };
+  return new Uint8Array(await wb.xlsx.writeBuffer());
+}
+
+/** The order list for a supplier, with ACDRI's details on top. */
+export async function orderListWorkbook(data: OrderListData): Promise<Uint8Array> {
+  const wb = new ExcelJS.Workbook();
+  wb.creator = data.org.name;
+  const ws = wb.addWorksheet("Order list");
+  ws.columns = [{ width: 6 }, { width: 12 }, { width: 36 }, { width: 14 }, { width: 8 }, { width: 34 }, { width: 18 }, { width: 18 }];
+  ws.addRow([data.org.name]).font = { bold: true, size: 14, color: { argb: "FF0B1F3A" } };
+  ws.addRow([data.org.address]);
+  ws.addRow([`GSTIN ${data.org.gstin} · ${data.org.phone} · ${data.org.email}`]);
+  ws.addRow([]);
+  ws.addRow(["Order list", "", "", "", "", "Date", formatDate(data.today)]).font = { bold: true };
+  if (data.supplier) {
+    ws.addRow(["To", "", data.supplier.name]).font = { bold: true };
+    if (data.supplier.contactName) ws.addRow(["", "", `Kind attention: ${data.supplier.contactName}`]);
+    const contact = [data.supplier.phone, data.supplier.email].filter(Boolean).join(" · ");
+    if (contact) ws.addRow(["", "", contact]);
+  }
+  ws.addRow([]);
+  const head = ws.addRow(["Sr.", "Our code", "Item", "Quantity", "Unit", "Quantity (in packs)", "Last rate, before GST (₹)", "Estimated amount (₹)"]);
+  head.font = { bold: true, color: { argb: "FFFFFFFF" } };
+  head.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF0B1F3A" } };
+  head.alignment = { vertical: "middle", wrapText: true };
+  head.height = 30;
+  const first = head.number + 1;
+  data.items.forEach((it, i) => {
+    const r = ws.addRow([i + 1, it.code, it.name, Number(it.qty), it.unit, orderQtyText({ name: it.name, qty: it.qty, unit: it.unit, packName: it.pack_name, packSize: it.pack_size }), it.rate ? Number(it.rate) : null, it.valuePaise != null ? it.valuePaise / 100 : null]);
+    r.getCell(4).numFmt = QTY;
+    r.getCell(7).numFmt = RATE;
+    r.getCell(8).numFmt = MONEY;
+  });
+  const total = ws.addRow(["", "", "Estimated total", "", "", "", "", { formula: `SUM(H${first}:H${first + data.items.length - 1})` }]);
+  total.font = { bold: true };
+  total.getCell(8).numFmt = MONEY;
+  ws.addRow([]);
+  ws.addRow(["", "", "Last rates are for reference only. Kindly confirm the rates and the delivery date."]);
   return new Uint8Array(await wb.xlsx.writeBuffer());
 }
