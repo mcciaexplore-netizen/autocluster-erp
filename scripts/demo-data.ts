@@ -8,6 +8,7 @@ import { createDb, createPool, type DB, type Tx } from "../db/client";
 import * as s from "../db/schema";
 import { createQuotation } from "../db/quote-writer";
 import { ensureCrmDefaults } from "../db/crm-defaults";
+import { loadCrmDemo } from "./demo-crm";
 import { DEFAULT_TERMS } from "../lib/settings-shared";
 import { loadDemoOrders, type DemoOrdersOptions } from "./demo-orders";
 
@@ -164,7 +165,7 @@ const CUSTOMERS = [
 ];
 
 /** `orders` also adds the Orders & Billing demo (tickets, POs, invoices, payments, sample PDFs). */
-export async function loadDemoData(db: DB | Tx, opts: { quiet?: boolean; orders?: DemoOrdersOptions } = {}) {
+export async function loadDemoData(db: DB | Tx, opts: { quiet?: boolean; orders?: DemoOrdersOptions; crm?: boolean } = {}) {
   const console = opts.quiet ? { log: () => {} } : globalThis.console;
   console.log("Adding settings, departments and the rate card...");
   await db.insert(s.settings).values({
@@ -276,6 +277,11 @@ export async function loadDemoData(db: DB | Tx, opts: { quiet?: boolean; orders?
   if (opts.orders) {
     console.log(`Adding Orders & Billing demo (sample PDFs go to the "${opts.orders.blobFolder}/" folder)...`);
     await loadDemoOrders(db, custIds, { ...opts.orders, log: (m) => console.log(m) });
+  }
+
+  if (opts.crm) {
+    console.log("Adding the CRM demo (team members and 12 enquiries)...");
+    await loadCrmDemo(db, { links: true, log: (m) => console.log(m) });
   }
 
 }

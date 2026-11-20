@@ -32,7 +32,7 @@ async function main() {
         console.log("Wiping data...");
         await wipe(tx);
         console.log("Loading demo data...");
-        await loadDemoData(tx, { orders: { blobFolder, onUpload: (p) => uploaded.push(p) } });
+        await loadDemoData(tx, { orders: { blobFolder, onUpload: (p) => uploaded.push(p) }, crm: true });
       });
     } catch (e) {
       // Nothing was saved, so remove the sample PDFs this run uploaded.

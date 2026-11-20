@@ -1,6 +1,14 @@
 # AutoCluster ERP (demo)
 
-Three modules for front office, department coordinators and accounts:
+Four modules for front office, department coordinators and accounts:
+
+0. **CRM (Enquiries)**: every enquiry (phone call, walk-in, website, event, referral) is a card on a board, from first contact until it is won or lost.
+   - Stages New, Contacted, Negotiation, Won and Lost; an admin can rename, recolour, reorder, add and delete stages (Won and Lost always stay).
+   - Lost needs a reason. Won offers to make the company a customer.
+   - Plan activities (calls, meetings, visits, follow-ups). Overdue ones are red, today amber, upcoming green.
+   - Call, WhatsApp and email with ready-written messages; every step is kept in the enquiry's history.
+   - **Create quotation** from an enquiry: a new company is first added as a customer, its services appear as quick picks, and accepting the quotation marks the enquiry Won.
+   - Import enquiries from Excel and download the list as Excel.
 
 1. **Customers**: save a company once, with its departments, the services it uses and its credit period.
 2. **Quotations**: pick a customer, add services, and get a quotation PDF with the right price, member discount and GST worked out automatically.
@@ -13,7 +21,7 @@ Three modules for front office, department coordinators and accounts:
 
 When `DEMO_PASSWORD` is set, the site asks for a password first (cookie lasts 7 days; **Sign out** is in the top-right menu).
 
-Built with Next.js 16 (App Router), TypeScript, Tailwind CSS, shadcn/ui, React Hook Form + Zod, Drizzle ORM on Postgres (Neon), @react-pdf/renderer, @dnd-kit (board), ExcelJS (billing details) and Vercel Blob (PO and invoice files).
+Built with Next.js 16 (App Router), TypeScript, Tailwind CSS, shadcn/ui, React Hook Form + Zod, Drizzle ORM on Postgres (Neon), @react-pdf/renderer, @dnd-kit (boards and stage order), ExcelJS (billing details, CRM import and export) and Vercel Blob (PO and invoice files).
 
 ---
 
@@ -61,6 +69,7 @@ node -e "console.log(require('crypto').randomBytes(48).toString('base64url'))"
 ```powershell
 npm run db:seed    # loads demo data into an EMPTY database; stops if customers already exist
 npm run db:reset   # WIPES everything and reloads clean demo data; asks you to type RESET
+npm run crm:seed   # adds ONLY the CRM demo (team + 12 enquiries) if there are no enquiries yet; never changes customers, quotations or orders
 ```
 
 Use `npm run db:reset` before a demo. It works on whichever database `.env.local` points to, and says which one before asking.
@@ -70,6 +79,13 @@ The demo data fills the Orders & Billing board with every situation:
 - 2 in **Billing** on one shared PO
 - 3 in **Payment follow-up**: due in 5 days, due today, and overdue by 12 days with a note and a part payment incl. TDS
 - 1 **Paid** and 1 **Cancelled**
+
+The CRM demo has 3 team members (Priya Shah, Rohan Kulkarni, Amit Patil) and 12 enquiries:
+- 3 **New**, 3 **Contacted**, 2 **Negotiation**, 2 **Won**, 2 **Lost** ("Price too high" and "No response"), using every source and priority.
+- Activities: 2 overdue, 2 due today, 3 upcoming; 2 open enquiries have nothing planned.
+- The Western Drive enquiry in **Negotiation** is linked to quotation ACDRI/QT/…/0002 (Sent). Mark that quotation **Accepted** to see the enquiry move to **Won** and its tickets open on the Orders & Billing board.
+- One Won enquiry is linked to Sahyadri and its accepted (Paid) quotation; the other was converted into a new customer, Pune Precision Moulds.
+- Enquiries linked to a quotation show the quotation amount before GST as their expected value.
 
 Sample PDFs marked "SAMPLE PO" / "SAMPLE TAX INVOICE" are uploaded to Blob. The MSME member SLA quotation (ACDRI/QT/…/0001) is left as **Sent**, so the demo can start by marking it Accepted.
 
@@ -81,7 +97,7 @@ Sample PDFs marked "SAMPLE PO" / "SAMPLE TAX INVOICE" are uploaded to Blob. The 
 ### Other commands
 
 ```powershell
-npm test            # pricing, validation, sign-in and Orders & Billing tests (Vitest; DB tests use a local "acdri_test" database)
+npm test            # pricing, validation, sign-in, Orders & Billing and CRM tests (Vitest; DB tests use a local "acdri_test" database)
 npm run typecheck   # TypeScript check
 npm run lint        # ESLint
 npm run build       # production build
@@ -169,6 +185,12 @@ Each change is then reviewed before it reaches the live database, can be repeate
 | `lib/tally/` | Billing export behind one `exportBilling(tickets)` interface. Today: manual Excel (`excel.ts`). A TallyPrime version can be added later. |
 | `app/api/files/` | Upload ticket for Blob (signed-in only, PDF/JPG/PNG up to 10 MB) and the file viewer `/api/files/[id]` (signed-in only; the storage link is never shown). |
 | `app/(app)/orders`, `components/orders` | The board, cards, ticket details panel and the step forms. |
+| `app/(app)/crm`, `components/crm` | CRM: board, list, enquiry panel and page, enquiry form, activities, stage editor, import. |
+| `db/lead-writer.ts`, `db/activity-writer.ts`, `db/stage-writer.ts`, `db/lead-links.ts` | Enquiries (numbers, moves with the Won/Lost rules, history, duplicate check), activities, stage rules, and links to customers and quotations. Tested in `tests/*.db.test.ts`. |
+| `lib/crm/` | Pure CRM rules: stage rules, filters and sorting, activity colours (India time), contact checks, Excel import checks. Tested in `lib/crm/*.test.ts`. |
+| `lib/crm/permissions.ts` | `canManagePipeline()`: who may edit stages and CRM lists (everyone signed in, for the demo). |
+| `scripts/demo-crm.ts`, `scripts/crm-seed.ts` | CRM demo data, and `npm run crm:seed`. |
+| `hooks/use-auto-refresh.ts`, `lib/actions/live.ts` | Boards update without reloading: a tiny "changed since?" check every 30 s, only while the tab is visible, stopping after 15 idle minutes. |
 | `proxy.ts`, `lib/auth.ts`, `app/login` | Demo password sign-in. |
 | `lib/actions/` | Server actions (each one checks sign-in). |
 | `app/(app)/customers`, `components/customers` | Customers list, 3-step wizard, detail page. |
@@ -212,6 +234,16 @@ Decisions made while building:
 14. **Duplicate** copies the customer, services and the original rates into a new draft with a new number and today's date.
 15. **Logo upload** is a placeholder for the demo.
 16. Organisation address, GSTIN, phone and email in the demo data are placeholders. Update them in Settings.
+
+CRM (Module 4), confirmed during the build:
+
+17. **Quick add** asks for title, company, contact, one "Mobile or email" box, a source (required, no default) and an optional value.
+18. **Stage changes**: Lost always needs a reason (from the board, the stage bar, the form or a bulk change). Won offers "Make [Company] a customer now?". Folding a column is saved for everyone.
+19. **Deleting a stage** moves its enquiries to an open stage first. If it was the stage new quotations move enquiries to, that setting follows them (or becomes "Don't move").
+20. **Expected value** follows the quotation amount before GST when a quotation is created, edited or revised from the enquiry. "Won this month" uses the accepted quotation amount before GST, otherwise the expected value. Both home cards say "(before GST)".
+21. **Today's activities** on the home page lists overdue activities too (red, first).
+22. **Import**: up to 900 KB and 500 rows per file. Source, stage, assigned to and tags must match existing names; nothing is created. Good rows are saved together (all or none).
+23. **Auto-refresh**: every 30 seconds, only while the tab is visible; stops after 15 minutes without activity; checks straight away on return.
 
 ---
 

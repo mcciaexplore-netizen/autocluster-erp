@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { eq, isNull } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import * as s from "@/db/schema";
 import { invoiceBalance } from "@/db/payment-writer";
@@ -16,7 +16,7 @@ describe.skipIf(skip)("demo data (database)", () => {
     delete process.env.BLOB_READ_WRITE_TOKEN; // never upload from tests
     await db.transaction(async (tx) => {
       await wipe(tx);
-      await loadDemoData(tx, { quiet: true, orders: { blobFolder: "local" } });
+      await loadDemoData(tx, { quiet: true, orders: { blobFolder: "local" }, crm: true });
     });
   });
   afterAll(async () => {
@@ -60,5 +60,37 @@ describe.skipIf(skip)("demo data (database)", () => {
     expect(files.filter((f) => f.kind === "PO")).toHaveLength(5);
     expect(files.filter((f) => f.kind === "INVOICE")).toHaveLength(4);
     expect(files.every((f) => f.blobPath.startsWith("local/") && f.mime === "application/pdf")).toBe(true);
+  });
+
+  it("CRM: 12 enquiries across every stage, all sources and priorities, the right activities", async () => {
+    const leads = await db.select({ l: s.leads, stage: s.crmStages.name, type: s.crmStages.type }).from(s.leads).innerJoin(s.crmStages, eq(s.crmStages.id, s.leads.stageId));
+    expect(leads).toHaveLength(12);
+    const by = (n: string) => leads.filter((x) => x.stage === n).length;
+    expect({ n: by("New"), c: by("Contacted"), g: by("Negotiation"), w: by("Won"), l: by("Lost") }).toEqual({ n: 3, c: 3, g: 2, w: 2, l: 2 });
+    expect(new Set(leads.map((x) => x.l.sourceId)).size).toBe((await db.select().from(s.crmSources)).length);
+    expect([...new Set(leads.map((x) => x.l.priority))].sort()).toEqual([0, 1, 2, 3]);
+    expect((await db.select().from(s.teamMembers)).map((m) => m.name)).toEqual(["Priya Shah", "Rohan Kulkarni", "Amit Patil"]);
+    expect((await db.select().from(s.crmTags)).map((t) => t.name)).toEqual(["Urgent", "Repeat customer", "Government", "Startup"]);
+    expect(leads.filter((x) => x.l.customerId).length).toBeGreaterThanOrEqual(4); // a mix of existing customers and new companies
+
+    const today = todayInIndia();
+    const planned = await db.select().from(s.crmActivities).where(isNull(s.crmActivities.doneAt));
+    const d = planned.map((a) => daysBetween(today, a.dueDate));
+    expect({ overdue: d.filter((x) => x < 0).length, today: d.filter((x) => x === 0).length, upcoming: d.filter((x) => x > 0).length }).toEqual({ overdue: 2, today: 2, upcoming: 3 });
+    const withPlan = new Set(planned.map((a) => a.leadId));
+    expect(leads.filter((x) => x.type === "OPEN" && !withPlan.has(x.l.id))).toHaveLength(2);
+
+    const reasons = await db.select({ name: s.crmLostReasons.name }).from(s.leads).innerJoin(s.crmLostReasons, eq(s.crmLostReasons.id, s.leads.lostReasonId));
+    expect(reasons.map((r) => r.name).sort()).toEqual(["No response", "Price too high"]);
+  });
+
+  it("CRM links: Won with Sahyadri's accepted quotation, Won converted to a new customer, Negotiation with a Sent quotation; values match the quotation before GST", async () => {
+    const linked = await db.select({ q: s.quotations, l: s.leads, stage: s.crmStages.name }).from(s.quotations).innerJoin(s.leads, eq(s.leads.id, s.quotations.leadId)).innerJoin(s.crmStages, eq(s.crmStages.id, s.leads.stageId));
+    expect(linked.map((x) => `${x.stage}:${x.q.status}:${x.q.customerSnapshot.companyName.split(" ")[0]}`).sort()).toEqual(["Negotiation:SENT:Western", "Won:ACCEPTED:Sahyadri"]);
+    for (const x of linked) expect(x.l.expectedValue).toBe(toPaise(x.q.taxableValue));
+    const [conv] = await db.select({ l: s.leads, c: s.customers }).from(s.leads).innerJoin(s.customers, eq(s.customers.id, s.leads.customerId)).where(eq(s.customers.companyName, "Pune Precision Moulds Pvt Ltd"));
+    expect(conv.c.status).toBe("ACTIVE");
+    const events = await db.select().from(s.leadEvents).where(eq(s.leadEvents.leadId, conv.l.id));
+    expect(events.map((e) => e.message)).toContain("Converted to customer: Pune Precision Moulds Pvt Ltd");
   });
 });
