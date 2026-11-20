@@ -12,11 +12,10 @@ import { Textarea } from "@/components/ui/textarea";
 import { adjustStockAction, issueStockAction } from "@/lib/actions/stock";
 import { formatDate } from "@/lib/format";
 import type { StockFormData, StockFormItem } from "@/lib/inventory-data";
-import { D, formatQty, parseQty, valuePaise } from "@/lib/inventory/numbers";
+import { D, formatQty, parseQty, parseRate, valuePaise } from "@/lib/inventory/numbers";
 import { formatINR } from "@/lib/pricing";
 import { cn } from "@/lib/utils";
 import { DoneBySelect, ItemPicker, useDoneBy } from "./pickers";
-import { Toggle } from "./receive-form";
 
 const AUTO = "auto";
 let seq = 0;
@@ -178,9 +177,12 @@ export function UseForm({ data, startItemId, jobPicker }: { data: StockFormData;
 
 // ---- Adjust stock ---------------------------------------------------------------------------------------
 
-type AdjLine = { key: number; itemId: string; direction: "ADD" | "REMOVE"; qty: string; reasonId: string; batchId: string; newBatchNo: string; newExpiry: string };
+type Mode = "REMOVE" | "ADD" | "OPENING";
+type AdjLine = { key: number; itemId: string; mode: Mode; qty: string; reasonId: string; rate: string; batchId: string; newBatchNo: string; newExpiry: string };
 const NEW = "new";
-const blankAdj = (itemId = ""): AdjLine => ({ key: ++seq, itemId, direction: "REMOVE", qty: "", reasonId: "", batchId: "", newBatchNo: "", newExpiry: "" });
+const blankAdj = (itemId = ""): AdjLine => ({ key: ++seq, itemId, mode: "REMOVE", qty: "", reasonId: "", rate: "", batchId: "", newBatchNo: "", newExpiry: "" });
+/** A rate is asked for opening stock, and for added stock while the item has no average cost yet. */
+const needsRate = (l: AdjLine, item: StockFormItem) => l.mode === "OPENING" || (l.mode === "ADD" && Number(item.avgCost) <= 0);
 
 export function AdjustForm({ data, startItemId }: { data: StockFormData; startItemId?: string }) {
   const router = useRouter();
@@ -198,7 +200,8 @@ export function AdjustForm({ data, startItemId }: { data: StockFormData; startIt
     for (const [n, l] of used.entries()) {
       const i = itemOf(l.itemId)!;
       if (!parseQty(l.qty) || Number(parseQty(l.qty)) <= 0) return void toast.error(`Line ${n + 1} (${i.name}): please enter the quantity.`);
-      if (!l.reasonId) return void toast.error(`Line ${n + 1} (${i.name}): please choose the reason.`);
+      if (l.mode !== "OPENING" && !l.reasonId) return void toast.error(`Line ${n + 1} (${i.name}): please choose the reason.`);
+      if (needsRate(l, i) && !(Number(parseRate(l.rate)) > 0)) return void toast.error(`Line ${n + 1} (${i.name}): please enter the rate per ${i.unit} before GST, e.g. 4.50.`);
       if (i.trackBatches && !l.batchId) return void toast.error(`Line ${n + 1} (${i.name}): please choose the batch.`);
       if (i.trackBatches && l.batchId === NEW && (!l.newBatchNo.trim() || !l.newExpiry)) return void toast.error(`Line ${n + 1} (${i.name}): please enter the new batch number and expiry date.`);
     }
@@ -208,9 +211,11 @@ export function AdjustForm({ data, startItemId }: { data: StockFormData; startIt
         doneBy: doneBy || null,
         lines: used.map((l) => ({
           itemId: l.itemId,
-          direction: l.direction,
+          direction: l.mode === "REMOVE" ? ("REMOVE" as const) : ("ADD" as const),
+          opening: l.mode === "OPENING",
+          unitCost: needsRate(l, itemOf(l.itemId)!) ? l.rate : null,
           qty: l.qty,
-          reasonId: l.reasonId,
+          reasonId: l.mode === "OPENING" ? null : l.reasonId,
           batchId: l.batchId && l.batchId !== NEW ? l.batchId : null,
           newBatchNo: l.batchId === NEW ? l.newBatchNo : null,
           newExpiryDate: l.batchId === NEW ? l.newExpiry : null,
@@ -225,7 +230,7 @@ export function AdjustForm({ data, startItemId }: { data: StockFormData; startIt
 
   return (
     <div className="flex flex-col gap-6">
-      <FormSection title="Adjustment" description="For corrections, damage, spills and expired stock." icon={<SlidersHorizontal className="size-5" />}>
+      <FormSection title="Adjustment" description="For corrections, damage, spills, expired stock, and opening stock when you start." icon={<SlidersHorizontal className="size-5" />}>
         <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
           <Field label="Note" required className="md:col-span-2" helper="e.g. Two bottles cracked in transit">
             {(p) => <Textarea {...p} rows={2} value={note} onChange={(e) => setNote(e.target.value)} maxLength={1000} />}
@@ -249,8 +254,29 @@ export function AdjustForm({ data, startItemId }: { data: StockFormData; startIt
                 </div>
                 {item ? (
                   <>
-                    <Field label="Add or remove" required>
-                      {() => <Toggle a="Remove" b="Add" bOn={l.direction === "ADD"} onChange={(v) => update(l.key, { direction: v ? "ADD" : "REMOVE", batchId: "" })} label="Add or remove" />}
+                    <Field label="What kind of change?" required className="md:col-span-2">
+                      {() => (
+                        <div role="radiogroup" aria-label="What kind of change?" className="inline-flex flex-wrap rounded-xl border bg-secondary p-1">
+                          {(
+                            [
+                              ["REMOVE", "Remove"],
+                              ["ADD", "Add"],
+                              ["OPENING", "Opening stock"],
+                            ] as const
+                          ).map(([m, label]) => (
+                            <button
+                              key={m}
+                              type="button"
+                              role="radio"
+                              aria-checked={l.mode === m}
+                              onClick={() => update(l.key, { mode: m, batchId: "" })}
+                              className={cn("h-9 rounded-lg px-3 text-sm font-medium whitespace-nowrap", l.mode === m ? "bg-card text-primary shadow-sm" : "text-muted-foreground")}
+                            >
+                              {label}
+                            </button>
+                          ))}
+                        </div>
+                      )}
                     </Field>
                     <Field label="Quantity" required helper={`In stock: ${formatQty(item.qty, item.unit)}`}>
                       {(p) => (
@@ -260,6 +286,17 @@ export function AdjustForm({ data, startItemId }: { data: StockFormData; startIt
                         </div>
                       )}
                     </Field>
+                    {needsRate(l, item) ? (
+                      <Field label={`Rate per ${item.unit}, before GST`} required helper={l.mode === "OPENING" ? "What this stock cost, e.g. 4.50" : "This item has no average cost yet, so enter what this stock cost"}>
+                        {(p) => (
+                          <div className="flex min-w-0 items-center rounded-xl border bg-card focus-within:ring-2 focus-within:ring-ring">
+                            <span className="pl-3 text-muted-foreground">₹</span>
+                            <Input {...p} inputMode="decimal" value={l.rate} onChange={(e) => update(l.key, { rate: e.target.value })} className="border-0 shadow-none focus-visible:ring-0" />
+                          </div>
+                        )}
+                      </Field>
+                    ) : null}
+                    {l.mode !== "OPENING" ? (
                     <Field label="Reason" required>
                       {(p) => (
                         <Select value={l.reasonId} onValueChange={(v) => update(l.key, { reasonId: v })}>
@@ -276,8 +313,9 @@ export function AdjustForm({ data, startItemId }: { data: StockFormData; startIt
                         </Select>
                       )}
                     </Field>
+                    ) : null}
                     {item.trackBatches ? (
-                      <Field label="Batch" required helper={l.direction === "REMOVE" ? "Expired batches are listed too, so they can be written off." : undefined}>
+                      <Field label="Batch" required helper={l.mode === "REMOVE" ? "Expired batches are listed too, so they can be written off." : undefined}>
                         {(p) => (
                           <Select value={l.batchId} onValueChange={(v) => update(l.key, { batchId: v })}>
                             <SelectTrigger {...p} className="w-full">
@@ -290,7 +328,7 @@ export function AdjustForm({ data, startItemId }: { data: StockFormData; startIt
                                   {b.expiryDate ? ` · ${b.expired ? "expired" : "expires"} ${formatDate(b.expiryDate)}` : ""}
                                 </SelectItem>
                               ))}
-                              {l.direction === "ADD" ? <SelectItem value={NEW}>A new batch…</SelectItem> : null}
+                              {l.mode !== "REMOVE" ? <SelectItem value={NEW}>A new batch…</SelectItem> : null}
                             </SelectContent>
                           </Select>
                         )}
@@ -318,7 +356,7 @@ export function AdjustForm({ data, startItemId }: { data: StockFormData; startIt
       </section>
 
       <SaveBar label="Save adjustment" pending={pending} onSave={save}>
-        Added stock is valued at the item&apos;s average cost.
+        Added stock is valued at the item&apos;s average cost. Opening stock uses the rate you enter.
       </SaveBar>
     </div>
   );

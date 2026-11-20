@@ -10,6 +10,9 @@ const skip = !!process.env.SKIP_DB_TESTS;
 const { db, pool } = testDb();
 const TODAY = "2026-11-20";
 const opts = { today: TODAY };
+afterAll(async () => {
+  await pool.end();
+});
 
 describe.skipIf(skip)("stock engine (database)", () => {
   let x: Awaited<ReturnType<typeof invSetup>>;
@@ -20,9 +23,6 @@ describe.skipIf(skip)("stock engine (database)", () => {
   afterEach(async () => {
     // Stored stock must always match the movements.
     expect(await verifyInventory(db)).toEqual([]);
-  });
-  afterAll(async () => {
-    await pool.end();
   });
 
   it("average cost: 1,000 ml at ₹4 + 1,000 ml at ₹5 = ₹4.50; using 500 ml is valued ₹2,250, leaving 1,500 ml at ₹4.50", async () => {
@@ -147,5 +147,50 @@ describe.skipIf(skip)("stock engine (database)", () => {
     await issueStock(db, { purposeId: x.purpose("Other"), note: "Visitors' demo", lines: [{ itemId: x.gloves.id, qty: "10" }, { itemId: x.gloves.id, qty: "5" }] }, opts);
     const bal = (await db.select().from(s.invMovements).orderBy(asc(s.invMovements.id))).map((m) => m.balanceAfter);
     expect(bal).toEqual(["100.000", "90.000", "85.000"]);
+  });
+});
+
+describe.skipIf(skip)("opening stock and rates when there is no average cost (database)", () => {
+  let x: Awaited<ReturnType<typeof invSetup>>;
+  beforeEach(async () => {
+    await freshDemoData(db);
+    x = await invSetup(db);
+  });
+  afterEach(async () => {
+    expect(await verifyInventory(db)).toEqual([]);
+  });
+
+  it("opening stock needs a rate (and batch + expiry when tracked), is added at that rate, and is labelled", async () => {
+    await expect(adjustStock(db, { note: "Starting stock", lines: [{ itemId: x.gloves.id, direction: "ADD", opening: true, qty: "250" }] }, opts)).rejects.toThrow(/rate per pcs/);
+    await expect(adjustStock(db, { note: "Starting stock", lines: [{ itemId: x.resin.id, direction: "ADD", opening: true, qty: "500", unitCost: "4.2" }] }, opts)).rejects.toThrow(/batch/);
+    await expect(adjustStock(db, { note: "Starting stock", lines: [{ itemId: x.gloves.id, direction: "REMOVE", opening: true, qty: "1", unitCost: "1" }] }, opts)).rejects.toThrow(/only be added/);
+    await adjustStock(
+      db,
+      {
+        note: "Starting stock",
+        lines: [
+          { itemId: x.gloves.id, direction: "ADD", opening: true, qty: "250", unitCost: "2.4" },
+          { itemId: x.resin.id, direction: "ADD", opening: true, qty: "500", unitCost: "4.2", newBatchNo: "OPEN-1", newExpiryDate: "2027-03-31" },
+        ],
+      },
+      opts,
+    );
+    expect(await item(db, x.gloves.id)).toMatchObject({ qtyOnHand: "250.000", avgCost: "2.4000" });
+    expect(await item(db, x.resin.id)).toMatchObject({ qtyOnHand: "500.000", avgCost: "4.2000" });
+    const moves = await db.select().from(s.invMovements).orderBy(asc(s.invMovements.id));
+    expect(moves.map((m) => [m.isOpening, m.reasonId, m.value])).toEqual([
+      [true, null, 600_00],
+      [true, null, 2_100_00],
+    ]);
+  });
+
+  it("adding stock to an item with no average cost asks for a rate instead of using ₹0", async () => {
+    await expect(adjustStock(db, { note: "Found a box", lines: [{ itemId: x.gloves.id, direction: "ADD", qty: "100", reasonId: x.reason("Found extra") }] }, opts)).rejects.toThrow(/no average cost yet/);
+    await adjustStock(db, { note: "Found a box", lines: [{ itemId: x.gloves.id, direction: "ADD", qty: "100", reasonId: x.reason("Found extra"), unitCost: "2" }] }, opts);
+    expect(await item(db, x.gloves.id)).toMatchObject({ qtyOnHand: "100.000", avgCost: "2.0000" });
+    // Once there is an average cost, found stock uses it (no rate needed).
+    await adjustStock(db, { note: "Another box", lines: [{ itemId: x.gloves.id, direction: "ADD", qty: "50", reasonId: x.reason("Found extra") }] }, opts);
+    expect(await item(db, x.gloves.id)).toMatchObject({ qtyOnHand: "150.000", avgCost: "2.0000" });
+    expect(x.reason("Returned to supplier")).toBeTruthy();
   });
 });

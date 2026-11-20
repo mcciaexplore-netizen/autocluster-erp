@@ -260,7 +260,9 @@ function HistoryTable({ rows, unit }: { rows: ItemHistoryRow[]; unit: string }) 
           ? r.ticketNo
             ? `Job ${r.ticketNo}`
             : (r.purpose ?? "")
-          : [r.reason, r.note].filter(Boolean).join(": ");
+          : r.reason === "Opening stock"
+            ? "Opening stock"
+            : [r.reason, r.note].filter(Boolean).join(": ");
   return (
     <div className="-mx-5 overflow-x-auto px-5">
       <table className="w-full min-w-[640px] text-sm">

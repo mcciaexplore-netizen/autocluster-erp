@@ -821,6 +821,8 @@ export const invMovements = pgTable(
     /** Value in paise (positive), saved at the moment of the movement so job costs never change later. */
     value: bigint("value", { mode: "number" }).notNull(),
     reasonId: uuid("reason_id").references(() => invAdjustReasons.id),
+    /** Opening stock (Adjust stock > Opening stock): shown as "Opening stock" in history. */
+    isOpening: boolean("is_opening").notNull().default(false),
     note: text("note"),
     /** The item's stock right after this movement (the running balance). */
     balanceAfter: qty("balance_after").notNull(),

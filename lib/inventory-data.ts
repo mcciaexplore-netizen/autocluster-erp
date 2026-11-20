@@ -428,7 +428,7 @@ export async function getInvDocument(id: string) {
       qtyOut: invMovements.qtyOut,
       unitCost: invMovements.unitCost,
       value: invMovements.value,
-      reason: invAdjustReasons.name,
+      reason: sql<string | null>`case when ${invMovements.isOpening} then 'Opening stock' else ${invAdjustReasons.name} end`,
       balanceAfter: invMovements.balanceAfter,
     })
     .from(invMovements)
@@ -452,7 +452,8 @@ export async function getItemHistory(itemId: string, limit = 500) {
     purpose: string | null; reason: string | null; done_by: string | null; note: string | null; doc_note: string | null; reverses: string | null; reversed_by: string | null;
   }>(sql`
     select m.id, d.id as doc_id, d.doc_no, d.type, d.doc_date::text, m.qty_in, m.qty_out, m.value, m.unit_cost, m.balance_after, b.batch_no,
-      s.name as supplier, d.supplier_bill_no as bill_no, d.ticket_id, t.ticket_no, p.name as purpose, r.name as reason, tm.name as done_by,
+      s.name as supplier, d.supplier_bill_no as bill_no, d.ticket_id, t.ticket_no, p.name as purpose,
+      case when m.is_opening then 'Opening stock' else r.name end as reason, tm.name as done_by,
       m.note, d.note as doc_note, d.reverses_doc_id as reverses, d.reversed_by_doc_id as reversed_by
     from inv_movements m
     join inv_documents d on d.id = m.document_id
@@ -533,7 +534,8 @@ export async function getLinesForDocs(docIds: string[]) {
   await connection();
   if (!docIds.length) return [];
   const rows = await db.execute<{ document_id: string; item: string; code: string; unit: string; batch_no: string | null; qty_in: string; qty_out: string; unit_cost: string; value: string; reason: string | null; balance_after: string }>(sql`
-    select m.document_id, i.name as item, i.code, u.name as unit, b.batch_no, m.qty_in, m.qty_out, m.unit_cost, m.value, r.name as reason, m.balance_after
+    select m.document_id, i.name as item, i.code, u.name as unit, b.batch_no, m.qty_in, m.qty_out, m.unit_cost, m.value,
+      case when m.is_opening then 'Opening stock' else r.name end as reason, m.balance_after
     from inv_movements m join inv_items i on i.id = m.item_id join inv_units u on u.id = i.unit_id
     left join inv_batches b on b.id = m.batch_id left join inv_adjust_reasons r on r.id = m.reason_id
     where m.document_id = any(${sql.param(docIds)}::uuid[])

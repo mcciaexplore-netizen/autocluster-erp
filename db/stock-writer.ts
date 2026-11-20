@@ -108,7 +108,7 @@ class Ledger {
   avg(itemId: string) {
     return this.state.get(itemId)!.avg;
   }
-  private push(docId: string, itemId: string, batchId: string | null, m: { qtyIn?: string; qtyOut?: string; unitCost: string; value: number; reasonId?: string | null; note?: string | null }) {
+  private push(docId: string, itemId: string, batchId: string | null, m: { qtyIn?: string; qtyOut?: string; unitCost: string; value: number; reasonId?: string | null; note?: string | null; isOpening?: boolean }) {
     if (batchId) {
       const cur = this.batchQty.get(batchId) ?? D(0);
       const next = cur.add(D(m.qtyIn ?? 0)).sub(D(m.qtyOut ?? 0));
@@ -126,13 +126,14 @@ class Ledger {
       unitCost: rateText(m.unitCost),
       value: m.value,
       reasonId: m.reasonId ?? null,
+      isOpening: m.isOpening ?? false,
       note: m.note ?? null,
       balanceAfter: s.qty,
     });
   }
-  in(docId: string, itemId: string, batchId: string | null, qty: string, unitCost: string, extra: { reasonId?: string | null; note?: string | null; value?: number } = {}) {
+  in(docId: string, itemId: string, batchId: string | null, qty: string, unitCost: string, extra: { reasonId?: string | null; note?: string | null; value?: number; isOpening?: boolean } = {}) {
     this.state.set(itemId, applyIn(this.state.get(itemId)!, qty, unitCost));
-    this.push(docId, itemId, batchId, { qtyIn: qty, unitCost, value: extra.value ?? valuePaise(qty, unitCost), reasonId: extra.reasonId, note: extra.note });
+    this.push(docId, itemId, batchId, { qtyIn: qty, unitCost, value: extra.value ?? valuePaise(qty, unitCost), reasonId: extra.reasonId, note: extra.note, isOpening: extra.isOpening });
   }
   out(docId: string, itemId: string, batchId: string | null, qty: string, extra: { reasonId?: string | null; note?: string | null } = {}) {
     const avg = this.avg(itemId);
@@ -365,7 +366,12 @@ export interface AdjustLine {
   itemId: string;
   direction: "ADD" | "REMOVE";
   qty: string;
-  reasonId: string;
+  /** Not needed for opening stock. */
+  reasonId?: string | null;
+  /** Opening stock: added at the rate given (before GST), shown as "Opening stock". */
+  opening?: boolean;
+  /** Rate per unit (before GST). Required for opening stock, and for any added stock while the item has no average cost yet. */
+  unitCost?: string | null;
   /** An existing batch (needed when the item tracks batches, unless a new batch is given for ADD). */
   batchId?: string | null;
   newBatchNo?: string | null;
@@ -397,7 +403,15 @@ export async function adjustStock(db: DB | Tx, input: AdjustInput, opts: { today
       const where = `Line ${n + 1} (${item.name})`;
       const q = parseQty(l.qty);
       if (!q || D(q).lte(0)) throw new UserFacingError(`${where}: please enter the quantity.`);
-      if (!reasons.has(l.reasonId)) throw new UserFacingError(`${where}: please choose the reason.`);
+      if (l.opening && l.direction !== "ADD") throw new UserFacingError(`${where}: opening stock can only be added.`);
+      if (!l.opening && !(l.reasonId && reasons.has(l.reasonId))) throw new UserFacingError(`${where}: please choose the reason.`);
+      // A rate is needed for opening stock, and whenever stock is added to an item with no average cost yet (never ₹0).
+      let rate: string | null = null;
+      if (l.direction === "ADD" && (l.opening || D(ledger.avg(item.id)).lte(0))) {
+        rate = l.unitCost ? parseRate(l.unitCost) : null;
+        if (rate == null || D(rate).lte(0))
+          throw new UserFacingError(`${where}: please enter the rate per ${item.unit} before GST${l.opening ? "" : " (this item has no average cost yet)"}, e.g. 4.50.`);
+      }
       let batchId: string | null = null;
       if (item.trackBatches) {
         if (l.batchId) {
@@ -421,6 +435,8 @@ export async function adjustStock(db: DB | Tx, input: AdjustInput, opts: { today
           throw new UserFacingError(`${where}: batch ${b.batchNo} has only ${formatQty(ledger.batchQty.get(batchId)!, item.unit)}.`);
         }
         ledger.out(doc.id, item.id, batchId, q, { reasonId: l.reasonId });
+      } else if (rate != null) {
+        ledger.in(doc.id, item.id, batchId, q, rateText(rate), { reasonId: l.opening ? null : l.reasonId, isOpening: !!l.opening });
       } else {
         // Found stock is added at the current average cost, so the average doesn't change.
         ledger.in(doc.id, item.id, batchId, q, ledger.avg(item.id), { reasonId: l.reasonId });

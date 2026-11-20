@@ -98,7 +98,7 @@ export async function itemHistoryWorkbook(item: { name: string; code: string; un
     ws.addRow({
       date: asDate(r.docDate),
       docNo: r.docNo,
-      type: r.isReversal ? `Reversal (${TYPE[r.type].toLowerCase()})` : TYPE[r.type],
+      type: r.isReversal ? `Reversal (${TYPE[r.type].toLowerCase()})` : r.reason === "Opening stock" ? "Opening stock" : TYPE[r.type],
       what: r.type === "IN" ? [r.supplier, r.billNo ? `bill ${r.billNo}` : null].filter(Boolean).join(", ") : r.type === "OUT" ? (r.ticketNo ? `Job ${r.ticketNo}` : (r.purpose ?? "")) : (r.reason ?? ""),
       batch: r.batchNo ?? "",
       in: Number(r.qtyIn) || null,
