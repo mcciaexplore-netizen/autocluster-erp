@@ -9,6 +9,7 @@ import * as s from "../db/schema";
 import { createQuotation } from "../db/quote-writer";
 import { ensureCrmDefaults } from "../db/crm-defaults";
 import { ensureInventoryDefaults } from "../db/inv-defaults";
+import { assignInventoryDoneBy, loadInventoryDemo } from "./demo-inventory";
 import { loadCrmDemo } from "./demo-crm";
 import { DEFAULT_TERMS } from "../lib/settings-shared";
 import { loadDemoOrders, type DemoOrdersOptions } from "./demo-orders";
@@ -166,7 +167,7 @@ const CUSTOMERS = [
 ];
 
 /** `orders` also adds the Orders & Billing demo (tickets, POs, invoices, payments, sample PDFs). */
-export async function loadDemoData(db: DB | Tx, opts: { quiet?: boolean; orders?: DemoOrdersOptions; crm?: boolean } = {}) {
+export async function loadDemoData(db: DB | Tx, opts: { quiet?: boolean; orders?: DemoOrdersOptions; crm?: boolean; inventory?: boolean } = {}) {
   const console = opts.quiet ? { log: () => {} } : globalThis.console;
   console.log("Adding settings, departments and the rate card...");
   await db.insert(s.settings).values({
@@ -212,6 +213,12 @@ export async function loadDemoData(db: DB | Tx, opts: { quiet?: boolean; orders?
     custIds[c.companyName] = row.id;
     await db.insert(s.customerDepartments).values(depts.map((deptCode) => ({ customerId: row.id, deptCode })));
     await db.insert(s.customerServices).values(svcNames.map((n) => ({ customerId: row.id, serviceId: svcByName.get(n)!.id })));
+  }
+
+  if (opts.inventory) {
+    // Before the story quotations, so those keep the last numbers.
+    console.log("Adding the Inventory demo (suppliers, items, 6 months of jobs and stock records)...");
+    await loadInventoryDemo(db, custIds, { blobFolder: opts.orders?.blobFolder ?? "local", onUpload: opts.orders?.onUpload, log: (m) => console.log(m) });
   }
 
   console.log("Adding 3 sample quotations...");
@@ -285,5 +292,6 @@ export async function loadDemoData(db: DB | Tx, opts: { quiet?: boolean; orders?
     console.log("Adding the CRM demo (team members and 12 enquiries)...");
     await loadCrmDemo(db, { links: true, log: (m) => console.log(m) });
   }
+  if (opts.inventory && opts.crm) await assignInventoryDoneBy(db);
 
 }

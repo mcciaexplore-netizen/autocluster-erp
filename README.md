@@ -1,6 +1,6 @@
 # AutoCluster ERP (demo)
 
-Four modules for front office, department coordinators and accounts:
+Five modules for front office, department coordinators, the stores and accounts:
 
 0. **CRM (Enquiries)**: every enquiry (phone call, walk-in, website, event, referral) is a card on a board, from first contact until it is won or lost.
    - Stages New, Contacted, Negotiation, Won and Lost; an admin can rename, recolour, reorder, add and delete stages (Won and Lost always stay).
@@ -18,10 +18,15 @@ Four modules for front office, department coordinators and accounts:
    - **Export to Tally** (coming soon) downloads the billing details as Excel; **Upload tax invoice** moves it to **Payment follow-up**.
    - There, staff send ready-written WhatsApp or email reminders, add follow-up notes and record payments (with TDS). Fully paid invoices move to **Paid**.
    - Cards can be dragged one step at a time. Moving back or cancelling asks for a reason, and every step is kept in the ticket's timeline.
+4. **Inventory**: materials and consumables, from delivery to the job that used them.
+   - **Stock received** (in packs, with batch, expiry and the supplier's bill), **Use stock** (for a job or internal use), **Adjust stock** (incl. opening stock). Every change is a numbered record; mistakes are reversed, never edited.
+   - Average cost, "Runs out in", the batch that expires first is used first, and stock can never go below zero.
+   - **Jobs:** each rate-card service has a materials list. Recording materials on a ticket suggests the quantities, and the ticket shows **Kept after materials**.
+   - **Stock count** on a phone, **Reorder list** sent to suppliers by WhatsApp, email, PDF or Excel, **Overview** with "Needs attention", **Insights** (charts and Excel), QR **labels**, and **Import items from Excel** with opening stock.
 
 When `DEMO_PASSWORD` is set, the site asks for a password first (cookie lasts 7 days; **Sign out** is in the top-right menu).
 
-Built with Next.js 16 (App Router), TypeScript, Tailwind CSS, shadcn/ui, React Hook Form + Zod, Drizzle ORM on Postgres (Neon), @react-pdf/renderer, @dnd-kit (boards and stage order), ExcelJS (billing details, CRM import and export) and Vercel Blob (PO and invoice files).
+Built with Next.js 16 (App Router), TypeScript, Tailwind CSS, shadcn/ui, React Hook Form + Zod, Drizzle ORM on Postgres (Neon), @react-pdf/renderer, @dnd-kit (boards and stage order), ExcelJS (billing details, imports and exports), Recharts (Insights charts), qrcode (item labels) and Vercel Blob (PO, invoice and supplier bill files).
 
 ---
 
@@ -83,11 +88,18 @@ The demo data fills the Orders & Billing board with every situation:
 The CRM demo has 3 team members (Priya Shah, Rohan Deshpande, Amit Patil) and 12 enquiries:
 - 3 **New**, 3 **Contacted**, 2 **Negotiation**, 2 **Won**, 2 **Lost** ("Price too high" and "No response"), using every source and priority.
 - Activities: 2 overdue, 2 due today, 3 upcoming; 2 open enquiries have nothing planned.
-- The Western Drive enquiry in **Negotiation** is linked to quotation ACDRI/QT/…/0002 (Sent). Mark that quotation **Accepted** to see the enquiry move to **Won** and its tickets open on the Orders & Billing board.
+- The Western Drive enquiry in **Negotiation** is linked to quotation ACDRI/QT/…/0043 (Sent). Mark that quotation **Accepted** to see the enquiry move to **Won** and its tickets open on the Orders & Billing board.
 - One Won enquiry is linked to Sahyadri and its accepted (Paid) quotation; the other was converted into a new customer, Pune Precision Moulds.
 - Enquiries linked to a quotation show the quotation amount before GST as their expected value.
 
-Sample PDFs marked "SAMPLE PO" / "SAMPLE TAX INVOICE" are uploaded to Blob. The MSME member SLA quotation (ACDRI/QT/…/0001) is left as **Sent**, so the demo can start by marking it Accepted.
+Sample PDFs marked "SAMPLE PO" / "SAMPLE TAX INVOICE" are uploaded to Blob. The MSME member SLA quotation (ACDRI/QT/…/0042, Sahyadri) is left as **Sent**, so the demo can start by marking it Accepted.
+
+The Inventory demo adds 6 months of history before the story quotations (that's why they are now 0042 and 0043; `db:reset` takes about a minute):
+- 4 suppliers, 25 items across RPT, PPF, ENV and RPL, and materials lists for 15 rate-card services.
+- 41 past jobs (quotation → ticket → PO → invoice → paid) with materials recorded at the suggested quantity × 0.95 to 1.25, plus monthly internal use. A fixed random seed makes every reset the same.
+- **Situations:** 3 items below the reorder level and 1 out of stock (end mills ordered 3 days ago; nitrogen ordered 16 days ago and now **Delivery late**), 2 batches expiring within 30 days, 1 expired batch still on the shelf, 2 slow-moving items, expired stock written off in 2 months, one completed stock count, and 4 billed jobs with no materials recorded.
+- **Price story:** imported SLA resin went from ₹13.50 to ₹15.93 per ml (+18%). Insights shows: "SLA - imported resin jobs now keep 53% after materials at MSME rate, down from 60%."
+- `npm run inv:verify` reports no differences after a reset.
 
 **Files are kept apart per environment:**
 - Blob folders: `local/` (your computer), `preview/` (test versions), `live/` (the website).
@@ -97,13 +109,14 @@ Sample PDFs marked "SAMPLE PO" / "SAMPLE TAX INVOICE" are uploaded to Blob. The 
 ### Other commands
 
 ```powershell
-npm test            # pricing, validation, sign-in, Orders & Billing and CRM tests (Vitest; DB tests use a local "acdri_test" database)
+npm test            # pricing, validation, sign-in, Orders & Billing, CRM and Inventory tests (Vitest; DB tests use a local "acdri_test" database)
 npm run typecheck   # TypeScript check
 npm run lint        # ESLint
 npm run build       # production build
 npm run start       # run the production build locally
 npm run db:studio   # browse the database in a web page
 npm run db:backup   # save a JSON copy of every table to backups/ (not committed)
+npm run inv:verify  # recalculates all stock from the movements and reports any difference (only reads)
 npm run tickets:backfill   # open tickets for quotations accepted before Module 3 (safe to run twice)
 node scripts/embed-fonts.mjs   # only if you change the PDF fonts in assets/fonts
 ```
@@ -158,7 +171,7 @@ Copy-Item .env.local.localdb .env.local   # use the local database again
 ### Database updates: switch to migration files before real use
 For the demo, table changes are applied with `npm run db:push`, which compares the code with the database and applies the difference straight away.
 
-**Known quirk:** on Neon, every `db:push` shows the primary keys of the link tables as changed, and drops and re-adds them with the same name and columns. These are `customer_services`, `customer_departments`, `lead_departments`, `lead_services` and `lead_tags`.
+**Known quirk:** on Neon, every `db:push` shows the primary keys of the link tables as changed, and drops and re-adds them with the same name and columns. These are `customer_services`, `customer_departments`, `lead_departments`, `lead_services`, `lead_tags`, `inv_item_departments`, `inv_service_materials` and `inv_supplier_items`.
 - No data is affected; the key is put back within the same update.
 - The cause is in drizzle-kit 0.31.11: it reads the key's columns without a fixed order, and Neon returns them in a different order from the code. A local database doesn't show this.
 
@@ -196,6 +209,12 @@ Each change is then reviewed before it reaches the live database, can be repeate
 | `lib/crm/permissions.ts` | `canManagePipeline()`: who may edit stages and CRM lists (everyone signed in, for the demo). |
 | `scripts/demo-crm.ts`, `scripts/crm-seed.ts` | CRM demo data, and `npm run crm:seed`. |
 | `hooks/use-auto-refresh.ts`, `lib/actions/live.ts` | Boards update without reloading: a tiny "changed since?" check every 30 s, only while the tab is visible, stopping after 15 idle minutes. |
+| `app/(app)/inventory`, `components/inventory` | Inventory: overview, items, stock in & out, stock count, reorder list, suppliers, insights, import, labels. |
+| `db/stock-writer.ts` | **The only place stock changes**: receive, use, adjust, reverse, complete a count. Locks the rows, keeps average cost, batches and running balances. Tested in `tests/stock.db.test.ts`. |
+| `db/inv-master-writer.ts`, `db/count-writer.ts`, `db/reorder-writer.ts`, `db/inv-import-writer.ts`, `db/inv-verify.ts` | Items, suppliers and materials lists; stock counts; "Ordered on" marks; Excel import; and the stock check behind `npm run inv:verify`. |
+| `lib/inventory/` | Pure Inventory rules: quantities and rates, average cost, runs out in, reorder, batches, suggestions, price change, slow-moving, import checks. Tested in `lib/inventory/*.test.ts`. |
+| `lib/inventory-data.ts`, `lib/inventory-insights.ts` | Read-only Inventory queries for the pages and Insights. |
+| `scripts/demo-inventory.ts` | Inventory demo data (6 months of history, played through in memory first, then saved through the real writers). |
 | `proxy.ts`, `lib/auth.ts`, `app/login` | Demo password sign-in. |
 | `lib/actions/` | Server actions (each one checks sign-in). |
 | `app/(app)/customers`, `components/customers` | Customers list, 3-step wizard, detail page. |
@@ -249,6 +268,19 @@ CRM (Module 4), confirmed during the build:
 21. **Today's activities** on the home page lists overdue activities too (red, first).
 22. **Import**: up to 900 KB and 500 rows per file. Source, stage, assigned to and tags must match existing names; nothing is created. Good rows are saved together (all or none).
 23. **Auto-refresh**: every 30 seconds, only while the tab is visible; stops after 15 minutes without activity; checks straight away on return.
+
+Inventory (Module 5), confirmed during the build:
+
+24. **Phone bar**: Home, CRM, Orders, Stock and More (Customers, Quotations, Rate Card, Settings).
+25. **Locks**: an item's unit and batch tracking can't be changed while it has stock. Adjusting needs a note. A delivery that has partly been used can't be reversed.
+26. **Opening stock** (Adjust > Add) needs a rate, and a batch and expiry for batch items. Added stock for an item with no average cost always asks for a rate.
+27. **Materials not recorded** is shown only for services that have a materials list. A service with no list and nothing recorded shows "No materials list" (and is left out of the Insights ranking, with a note).
+28. **Paid column** shows the last 30 days (India time), with a switch to show all.
+29. **Stock count**: the count screen doesn't show the expected quantity; only the review does. Several counts can be open if they share no items. Lines not counted don't change (confirmed before completing). Extra stock is valued at the average cost.
+30. **Reorder list**: suggested quantity = reorder quantity rounded up to whole packs (or enough for twice the reorder level). Last rate = the supplier's, else the item's last purchase rate, else its average cost. Sending asks "Mark these N items as ordered?" first.
+31. **Delivery late**: the lead time has passed since "Ordered on" and nothing arrived from that supplier. Items without a lead time use the default from Settings (14 days).
+32. **Import items**: only new items. The same item can be on several rows, one per batch; later rows only add opening stock (their other details must match or be left empty).
+33. **Insights**: the price impact on services is worked out at the MSME rate. Kept after materials uses jobs opened in the period. "Money tied up" and "Running out soon" show stock as it is now.
 
 ---
 

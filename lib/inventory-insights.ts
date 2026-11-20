@@ -7,6 +7,7 @@ import { sql } from "drizzle-orm";
 import { connection } from "next/server";
 import { db } from "@/db";
 import { runsOutInDays } from "@/lib/inventory/calc";
+import { isSlowMoving, priceRise } from "@/lib/inventory/insights-calc";
 import { D, valuePaise } from "@/lib/inventory/numbers";
 import { financialYear } from "@/lib/pricing";
 import { addDays, todayInIndia } from "@/lib/tickets";
@@ -188,13 +189,10 @@ export async function getInsights(f: InsightFilters) {
   for (const r of receipts.rows) byItem.set(r.item_id, [...(byItem.get(r.item_id) ?? []), r]);
   const rises: { itemId: string; name: string; unit: string; oldRate: string; oldDate: string; newRate: string; newDate: string; supplier: string; risePct: number }[] = [];
   for (const [itemId, rs] of byItem) {
+    const r = priceRise(rs.map((x) => ({ date: x.doc_date, rate: x.rate })), f.from, f.to, alertPct);
+    if (!r) continue;
     const latest = rs.at(-1)!;
-    if (latest.doc_date < f.from) continue; // no delivery in the range
-    const before = rs.filter((r) => r.doc_date < f.from).at(-1);
-    const old = before ?? rs.find((r) => r.doc_date >= f.from && r !== latest && r.doc_date < latest.doc_date);
-    if (!old || D(old.rate).lte(0)) continue;
-    const rise = D(latest.rate).div(D(old.rate)).sub(1).mul(100).toNumber();
-    if (rise > alertPct) rises.push({ itemId, name: latest.name, unit: latest.unit, oldRate: old.rate, oldDate: old.doc_date, newRate: latest.rate, newDate: latest.doc_date, supplier: latest.supplier, risePct: rise });
+    rises.push({ itemId, name: latest.name, unit: latest.unit, oldRate: r.old.rate, oldDate: r.old.date, newRate: r.latest.rate, newDate: r.latest.date, supplier: latest.supplier, risePct: r.risePct });
   }
   rises.sort((a, b) => b.risePct - a.risePct);
   const priceChanges = await withServiceEffect(rises, f);
@@ -209,9 +207,8 @@ export async function getInsights(f: InsightFilters) {
   };
   const byCategory = sumBy((r) => [r.category]);
   const byDepartment = sumBy((r) => (r.depts?.length ? r.depts : ["No department"]));
-  const slowSince = addDays(today, -useDays);
   const slow = inStock
-    .filter((r) => !r.last_used || r.last_used <= slowSince)
+    .filter((r) => isSlowMoving({ qty: r.qty, lastUsed: r.last_used }, today, useDays))
     .map((r) => ({ itemId: r.id, name: r.name, code: r.code, qty: r.qty, unit: r.unit, valuePaise: Number(r.value), lastUsed: r.last_used, neverUsed: !r.ever_used }))
     .sort((a, b) => b.valuePaise - a.valuePaise);
   const stockValuePaise = inStock.reduce((a, r) => a + Number(r.value), 0);
