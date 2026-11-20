@@ -1,5 +1,8 @@
 import Link from "next/link";
 import { Suspense } from "react";
+import { CalendarClock, Handshake, Inbox, Trophy } from "lucide-react";
+import { TodaysActivities } from "@/components/crm/todays-activities";
+import { getCrmHomeStats, getCrmPickers, getTodaysActivities } from "@/lib/crm-data";
 import { AlertTriangle, ArrowRight, Clock, FileClock, FilePlus2, FileText, IndianRupee, Receipt, UserPlus, Users, Wallet } from "lucide-react";
 import { StatusChip } from "@/components/common/badges";
 import { EmptyState } from "@/components/common/empty-state";
@@ -48,6 +51,24 @@ export default function HomePage() {
         </Link>
       </div>
 
+      <section className="mb-10" aria-labelledby="crm-heading">
+        <div className="mb-4 flex items-center justify-between">
+          <h2 id="crm-heading" className="text-xl font-semibold">Enquiries</h2>
+          <Button asChild variant="ghost" size="sm">
+            <Link href="/crm">
+              Open CRM <ArrowRight aria-hidden />
+            </Link>
+          </Button>
+        </div>
+        <Suspense fallback={<StatsSkeleton />}>
+          <CrmStats />
+        </Suspense>
+        <h3 id="today-heading" className="mt-6 mb-3 text-lg font-semibold">Today&apos;s activities</h3>
+        <Suspense fallback={<RecentSkeleton />}>
+          <Today />
+        </Suspense>
+      </section>
+
       <Suspense fallback={<StatsSkeleton />}>
         <Stats />
       </Suspense>
@@ -81,6 +102,47 @@ export default function HomePage() {
       </section>
     </>
   );
+}
+
+async function CrmStats() {
+  const s = await getCrmHomeStats();
+  const items = [
+    { label: "New enquiries this month", value: s.newThisMonth.toLocaleString("en-IN"), icon: Inbox, href: "/crm?created=thisMonth", hint: "Enquiries added this month", sub: null as string | null, alert: false },
+    { label: "Open enquiries value", value: formatINRShort(s.openValuePaise), icon: Handshake, href: "/crm?state=open", hint: "Expected value of enquiries not yet won or lost", sub: `${s.openCount} open`, alert: false },
+    {
+      label: "Activities due today",
+      value: s.dueToday.toLocaleString("en-IN"),
+      icon: CalendarClock,
+      href: "/crm?activity=today",
+      hint: "Calls, meetings and follow-ups planned for today",
+      sub: s.overdue ? `${s.overdue} overdue` : "None overdue",
+      alert: s.overdue > 0,
+    },
+    { label: "Won this month", value: formatINRShort(s.wonValuePaise), icon: Trophy, href: "/crm?won=thisMonth", hint: "Expected value of enquiries won this month", sub: `${s.wonCount} won`, alert: false },
+  ];
+  return (
+    <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+      {items.map(({ label, value, icon: Icon, href, hint, sub, alert }) => (
+        <Link key={label} href={href} className="rounded-2xl" title={hint}>
+          <Card className="h-full transition hover:border-primary/30">
+            <CardContent className="flex flex-col gap-3">
+              <Icon className="size-6 text-primary/70" aria-hidden />
+              <div>
+                <div className="text-2xl font-semibold text-primary tabular-nums md:text-3xl">{value}</div>
+                <div className="text-sm text-muted-foreground">{label}</div>
+                {sub ? <div className={alert ? "mt-1 text-sm font-semibold text-red-700" : "mt-1 text-xs text-muted-foreground"}>{sub}</div> : null}
+              </div>
+            </CardContent>
+          </Card>
+        </Link>
+      ))}
+    </div>
+  );
+}
+
+async function Today() {
+  const [items, pickers] = await Promise.all([getTodaysActivities(), getCrmPickers()]);
+  return <TodaysActivities items={items} team={pickers.team} />;
 }
 
 async function Stats() {

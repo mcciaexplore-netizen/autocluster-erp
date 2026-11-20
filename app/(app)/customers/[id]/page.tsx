@@ -2,7 +2,10 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Suspense } from "react";
-import { ArrowLeft, FilePlus2, FileText, Info, Pencil, SquareKanban } from "lucide-react";
+import { ArrowLeft, FilePlus2, FileText, Handshake, Info, Pencil, SquareKanban } from "lucide-react";
+import { StagePill } from "@/components/crm/lead-bits";
+import { getCustomerLeads } from "@/lib/crm-data";
+import { formatDate } from "@/lib/format";
 import { CategoryBadge, DeptChip, MemberBadge } from "@/components/common/badges";
 import { EmptyState } from "@/components/common/empty-state";
 import { ListSkeleton } from "@/components/common/form-skeleton";
@@ -89,10 +92,11 @@ async function CustomerDetail({ params }: { params: Promise<{ id: string }> }) {
       </div>
 
       <Tabs defaultValue="details">
-        <TabsList className="mb-4">
+        <TabsList className="mb-4 grid w-full grid-cols-2 group-data-horizontal/tabs:h-auto sm:inline-flex sm:w-fit">
           <TabsTrigger value="details">Details</TabsTrigger>
           <TabsTrigger value="quotations">Quotations</TabsTrigger>
           <TabsTrigger value="orders">Orders</TabsTrigger>
+          <TabsTrigger value="enquiries">Enquiries</TabsTrigger>
         </TabsList>
 
         <TabsContent value="details" className="flex flex-col gap-6">
@@ -189,6 +193,12 @@ async function CustomerDetail({ params }: { params: Promise<{ id: string }> }) {
             <CustomerOrders id={c.id} />
           </Suspense>
         </TabsContent>
+
+        <TabsContent value="enquiries">
+          <Suspense fallback={<ListSkeleton rows={3} />}>
+            <CustomerEnquiries id={c.id} />
+          </Suspense>
+        </TabsContent>
       </Tabs>
     </>
   );
@@ -212,6 +222,32 @@ async function CustomerQuotations({ id }: { id: string }) {
     );
   }
   return <QuotationList rows={rows} hideCompany />;
+}
+
+async function CustomerEnquiries({ id }: { id: string }) {
+  const rows = await getCustomerLeads(id);
+  if (!rows.length) {
+    return <EmptyState icon={Handshake} title="No enquiries linked yet" description="Enquiries made from this customer, or converted into it, appear here." />;
+  }
+  return (
+    <ul className="divide-y rounded-2xl border bg-card">
+      {rows.map((l) => (
+        <li key={l.id}>
+          <Link href={`/crm/enquiries/${l.id}`} className="flex flex-wrap items-center gap-x-4 gap-y-1.5 px-5 py-4 hover:bg-secondary/60">
+            <span className="min-w-0 flex-1">
+              <span className="block font-semibold text-primary">{l.title}</span>
+              <span className="block text-sm text-muted-foreground tabular-nums">
+                {l.leadNo} · {formatDate(l.createdAt)}
+                {l.stageType === "LOST" && l.lostReason ? ` · Lost: ${l.lostReason}` : ""}
+              </span>
+            </span>
+            <StagePill name={l.stageName} color={l.stageColor} />
+            <span className="w-28 text-right font-semibold tabular-nums">{l.expectedValue != null ? formatINRShort(l.expectedValue) : "—"}</span>
+          </Link>
+        </li>
+      ))}
+    </ul>
+  );
 }
 
 async function CustomerOrders({ id }: { id: string }) {

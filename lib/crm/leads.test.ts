@@ -19,6 +19,8 @@ const lead = (p: Partial<FilterableLead> = {}): FilterableLead => ({
   tagIds: ["urgent"],
   nextActivityDate: null,
   createdAt: "2026-11-10T05:00:00.000Z",
+  stageType: "OPEN",
+  wonAt: null,
   ...p,
 });
 const TODAY = "2026-11-19";
@@ -88,5 +90,21 @@ describe("one 'Mobile or email' box", () => {
     expect(parseMobileOrEmail("neha@kalyani").problem).toMatch(/email/);
     expect(parseMobileOrEmail("neha kalyani").problem).toMatch(/mobile number or an email/);
     expect(parseMobileOrEmail("  ").problem).toMatch(/Please enter/);
+  });
+});
+
+describe("home card filters", () => {
+  const f = (q: Record<string, string>) => filtersFromParams(new URLSearchParams(q));
+  it("new this month uses the India date of creation", () => {
+    expect(matchesFilters(lead({ createdAt: "2026-11-01T00:30:00.000Z" }), f({ created: "thisMonth" }), TODAY)).toBe(true);
+    // 31 Oct 20:00 UTC is already 1 Nov in India
+    expect(matchesFilters(lead({ createdAt: "2026-10-31T20:00:00.000Z" }), f({ created: "thisMonth" }), TODAY)).toBe(true);
+    expect(matchesFilters(lead({ createdAt: "2026-10-31T17:00:00.000Z" }), f({ created: "thisMonth" }), TODAY)).toBe(false);
+  });
+  it("open, and won this month", () => {
+    expect(matchesFilters(lead(), f({ state: "open" }), TODAY)).toBe(true);
+    expect(matchesFilters(lead({ stageType: "WON" }), f({ state: "open" }), TODAY)).toBe(false);
+    expect(matchesFilters(lead({ stageType: "WON", wonAt: "2026-11-05T06:00:00.000Z" }), f({ won: "thisMonth" }), TODAY)).toBe(true);
+    expect(matchesFilters(lead({ stageType: "WON", wonAt: "2026-10-05T06:00:00.000Z" }), f({ won: "thisMonth" }), TODAY)).toBe(false);
   });
 });

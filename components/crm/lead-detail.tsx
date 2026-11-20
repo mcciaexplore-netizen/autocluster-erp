@@ -21,6 +21,9 @@ import {
   Trophy,
   XCircle,
   Plus,
+  AlertTriangle,
+  FilePlus2,
+  UserPlus,
   CalendarClock,
   CalendarX,
   CheckCheck,
@@ -68,6 +71,8 @@ const EVENT_ICONS: Record<string, React.ComponentType<{ className?: string }>> =
   CONTACT_CALL: Phone,
   CONTACT_WHATSAPP: MessageCircle,
   CONTACT_EMAIL: Mail,
+  CONVERTED: UserPlus,
+  QUOTATION: FileText,
   ACTIVITY_PLANNED: CalendarClock,
   ACTIVITY_DONE: CheckCheck,
   ACTIVITY_CANCELLED: CalendarX,
@@ -136,6 +141,21 @@ export function LeadDetailView({
   };
 
   const movable = { id: l.id, title: l.title, stageId: l.stageId };
+
+  // A quotation needs a customer (GST, address), so an enquiry without one is converted first.
+  const createQuotation = async () => {
+    if (detail.customer) return router.push(`/quotations/new?customer=${detail.customer.id}&lead=${l.id}`);
+    const yes = await mover.confirm({
+      title: "Add the customer first",
+      description: "A quotation needs the customer's GST and address. Let's add them first. The enquiry's details are filled in for you, and the quotation opens right after.",
+      confirmLabel: "Add customer details",
+      cancelLabel: "Not now",
+    });
+    if (yes) router.push(`/customers/new?lead=${l.id}&next=quote`);
+  };
+  // The latest quotation was rejected and the enquiry is still open: suggest marking it lost.
+  const latestQuote = detail.quotations[0];
+  const suggestLost = stage?.type === "OPEN" && latestQuote?.status === "REJECTED";
   const today = todayInIndia();
   const flow = useActivityFlow({ team, onChanged });
   const planned = detail.activities.filter((a) => !a.doneAt);
@@ -215,6 +235,16 @@ export function LeadDetailView({
         ) : null}
       </section>
 
+      {suggestLost ? (
+        <div role="status" className="flex flex-wrap items-center gap-3 rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
+          <AlertTriangle className="size-4 shrink-0" aria-hidden />
+          <span className="flex-1">Its quotation {latestQuote.quoteNo} was rejected. Mark the enquiry as lost?</span>
+          <Button size="sm" variant="outline" className="border-amber-400 bg-white" onClick={() => mover.markLost(movable)}>
+            <ThumbsDown aria-hidden /> Mark as lost
+          </Button>
+        </div>
+      ) : null}
+
       {/* Stage bar (Odoo style): click a stage to move the enquiry there */}
       <nav aria-label="Stage" className="flex flex-wrap gap-1">
         {stages.map((s) => {
@@ -244,6 +274,9 @@ export function LeadDetailView({
         <Button size="sm" onClick={() => flow.openPlan({ leadId: l.id, title: l.title, assignedTo: l.assignedTo })}>
           <CalendarClock aria-hidden /> Plan activity
         </Button>
+        <Button size="sm" variant="outline" onClick={createQuotation}>
+          <FilePlus2 aria-hidden /> Create quotation
+        </Button>
         {isOpen ? (
           <>
             <Button size="sm" className="bg-emerald-700 text-white hover:bg-emerald-800" onClick={() => mover.markWon(movable)} disabled={mover.pending}>
@@ -264,6 +297,11 @@ export function LeadDetailView({
             <DropdownMenuItem className="h-10" onSelect={onEdit}>
               <Pencil /> Edit
             </DropdownMenuItem>
+            {!detail.customer ? (
+              <DropdownMenuItem className="h-10" onSelect={() => router.push(`/customers/new?lead=${l.id}`)}>
+                <UserPlus /> Convert to customer
+              </DropdownMenuItem>
+            ) : null}
             <DropdownMenuSeparator />
             <DropdownMenuItem className="h-10 text-destructive focus:text-destructive" onSelect={remove}>
               <Trash2 /> Delete

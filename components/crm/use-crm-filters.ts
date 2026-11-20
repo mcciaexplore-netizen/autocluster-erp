@@ -4,7 +4,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useTransition } from "react";
 import { filtersFromParams, SORTS, type SortKey } from "@/lib/crm/leads";
 
-export const FILTER_KEYS = ["q", "assigned", "source", "dept", "priority", "tag", "activity", "close", "stage"] as const;
+export const FILTER_KEYS = ["q", "assigned", "source", "dept", "priority", "tag", "activity", "close", "stage", "created", "state", "won"] as const;
 
 /** Board and list filters live in the page address, so they survive refreshes and can be shared. */
 export function useCrmFilters() {

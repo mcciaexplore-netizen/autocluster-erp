@@ -2,7 +2,8 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Suspense } from "react";
-import { ArrowLeft, Info, Lock } from "lucide-react";
+import { ArrowLeft, Handshake, Info, Lock } from "lucide-react";
+import { getLeadRef } from "@/lib/crm-data";
 import { StatusChip } from "@/components/common/badges";
 import { StageChip } from "@/components/orders/stage-chip";
 import { QuotationDetailActions } from "@/components/quotations/detail-actions";
@@ -40,6 +41,7 @@ async function Detail({
   const [{ id }, sp] = await Promise.all([params, searchParams]);
   const [q, settings] = await Promise.all([getQuotation(id), getSettings()]);
   if (!q) notFound();
+  const lead = await getLeadRef(q.leadId);
   const view = viewFromSaved(q, settings);
 
   return (
@@ -55,6 +57,14 @@ async function Detail({
               {q.customerSnapshot.companyName}
             </Link>
           </p>
+          {lead ? (
+            <p className="mt-1 flex items-center gap-1.5 text-sm text-muted-foreground">
+              <Handshake className="size-4" aria-hidden /> From enquiry{" "}
+              <Link href={`/crm/enquiries/${lead.id}`} className="font-medium text-primary tabular-nums hover:underline">
+                {lead.leadNo}
+              </Link>
+            </p>
+          ) : null}
           <p className="text-muted-foreground">
             {formatDate(q.quoteDate)} · valid until {formatDate(q.validUntil)} · <strong className="text-foreground">{money(q.grandTotal)}</strong>
           </p>

@@ -8,6 +8,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { db } from "@/db";
 import { createQuotation, updateQuotation, UserFacingError, type QuotationInput } from "@/db/quote-writer";
+import { createQuotationFromLead } from "@/db/lead-links";
 import { changeQuotationStatus, planStatusChange, type StatusChangePlan } from "@/db/ticket-writer";
 import { todayInIndia } from "@/lib/tickets";
 import { quotationItems, quotations, settings as settingsTable } from "@/db/schema";
@@ -47,6 +48,7 @@ const inputSchema = z.object({
   terms: z.string().trim().max(6000),
   status: statusSchema,
   lines: z.array(lineSchema).min(1, { message: "Please add at least one service." }).max(100),
+  leadId: z.string().uuid().nullish(),
 });
 
 function refresh() {
@@ -74,12 +76,14 @@ function check(input: unknown): { ok: true; data: QuotationInput } | { ok: false
 export async function saveQuotation(
   input: QuotationInput,
   id: string | null,
-): Promise<Result<{ id: string; quoteNo: string }>> {
+): Promise<Result<{ id: string; quoteNo: string; movedTo?: string | null }>> {
   if (!(await isSignedIn())) return { ok: false as const, message: SIGNED_OUT_MESSAGE };
   const c = check(input);
   if (!c.ok) return c;
   try {
-    const q = id ? await updateQuotation(db, id, c.data) : await createQuotation(db, c.data);
+    // An existing quotation keeps its enquiry link; a new one made from an enquiry gets it here.
+    const { leadId, ...data } = c.data;
+    const q = id ? await updateQuotation(db, id, data) : leadId ? await createQuotationFromLead(db, data, leadId) : await createQuotation(db, data);
     refresh();
     return { ok: true, data: q };
   } catch (e) {
@@ -100,7 +104,7 @@ export async function previewStatusChange(id: string, status: z.infer<typeof sta
 export async function setQuotationStatus(
   id: string,
   status: z.infer<typeof statusSchema>,
-): Promise<Result<{ opened: number; reopened: number; cancelled: number }>> {
+): Promise<Result<{ opened: number; reopened: number; cancelled: number; leadWon: string | null }>> {
   if (!(await isSignedIn())) return { ok: false as const, message: SIGNED_OUT_MESSAGE };
   const s = statusSchema.safeParse(status);
   if (!s.success) return { ok: false, message: "Unknown status." };

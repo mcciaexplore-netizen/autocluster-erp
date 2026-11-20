@@ -56,6 +56,8 @@ export interface FilterableLead {
   tagIds: string[];
   nextActivityDate: string | null;
   createdAt: string;
+  stageType: "OPEN" | "WON" | "LOST";
+  wonAt: string | null;
 }
 
 export const CLOSE_FILTERS = {
@@ -82,7 +84,18 @@ export interface LeadFilters {
   activity?: ActivityFilter;
   close?: CloseFilter;
   stage?: string;
+  /** Home page cards: "thisMonth" */
+  created?: "thisMonth";
+  state?: "open" | "won" | "lost";
+  won?: "thisMonth";
 }
+
+/** Labels for the home-card filters, shown as removable chips on the board and list. */
+export const CARD_FILTERS = {
+  created: { thisMonth: "New this month" },
+  state: { open: "Open enquiries", won: "Won", lost: "Lost" },
+  won: { thisMonth: "Won this month" },
+} as const;
 
 /** Reads filters from the page address (?q=&assigned=...). */
 export function filtersFromParams(p: { get(k: string): string | null }): LeadFilters {
@@ -100,6 +113,9 @@ export function filtersFromParams(p: { get(k: string): string | null }): LeadFil
     activity: pick<ActivityFilter>("activity", Object.keys(ACTIVITY_FILTERS)),
     close: pick<CloseFilter>("close", Object.keys(CLOSE_FILTERS)),
     stage: pick("stage"),
+    created: pick<"thisMonth">("created", ["thisMonth"]),
+    state: pick<"open" | "won" | "lost">("state", ["open", "won", "lost"]),
+    won: pick<"thisMonth">("won", ["thisMonth"]),
   };
 }
 
@@ -110,8 +126,14 @@ function nextMonthOf(today: string) {
   return m === 12 ? `${y + 1}-01` : `${y}-${String(m + 1).padStart(2, "0")}`;
 }
 
+/** The India-time month (YYYY-MM) of a timestamp. */
+const indiaMonth = (iso: string) => todayInIndia(new Date(iso)).slice(0, 7);
+
 export function matchesFilters(l: FilterableLead, f: LeadFilters, today: string = todayInIndia()): boolean {
   if (f.stage && l.stageId !== f.stage) return false;
+  if (f.state && l.stageType !== f.state.toUpperCase()) return false;
+  if (f.created === "thisMonth" && indiaMonth(l.createdAt) !== monthOf(today)) return false;
+  if (f.won === "thisMonth" && !(l.stageType === "WON" && l.wonAt && indiaMonth(l.wonAt) === monthOf(today))) return false;
   if (f.assigned && (f.assigned === "none" ? l.assignedToId : l.assignedToId !== f.assigned)) return false;
   if (f.source && l.sourceId !== f.source) return false;
   if (f.dept && !l.depts.includes(f.dept)) return false;

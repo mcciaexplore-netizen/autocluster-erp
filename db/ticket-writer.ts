@@ -15,6 +15,7 @@ import { financialYear, formatQuoteNo, paiseToRupeeString, quantityInWords, toPa
 import { splitQuotation } from "../lib/tickets";
 import type { DB, Tx } from "./client";
 import { UserFacingError } from "./quote-writer";
+import { markLeadWonForQuotation, noteQuotationRejected } from "./lead-links";
 import { quotationItems, quotations, settings, ticketCounters, ticketEvents, tickets, type TicketSnapshot } from "./schema";
 
 type Conn = DB | Tx;
@@ -179,8 +180,10 @@ export async function changeQuotationStatus(db: DB, quotationId: string, to: "DR
     await tx.update(quotations).set({ status: to }).where(eq(quotations.id, quotationId));
     if (to === "ACCEPTED") {
       const r = await openTicketsForQuotation(tx, quotationId, today);
-      return { opened: r.opened.length, reopened: r.reopened, cancelled: 0 };
+      const won = await markLeadWonForQuotation(tx, quotationId);
+      return { opened: r.opened.length, reopened: r.reopened, cancelled: 0, leadWon: won?.leadNo ?? null };
     }
+    if (to === "REJECTED" && plan.kind !== "cancel") await noteQuotationRejected(tx, quotationId);
     if (plan.kind === "cancel") {
       const live = await tx
         .select({ id: tickets.id })
@@ -192,9 +195,10 @@ export async function changeQuotationStatus(db: DB, quotationId: string, to: "DR
         .set({ stage: "CANCELLED", autoCancelled: true, cancelReason: AUTO_CANCEL_REASON, stageChangedAt: new Date() })
         .where(inArray(tickets.id, ids));
       await addEvents(tx, ids, "CANCELLED", `Cancelled: ${AUTO_CANCEL_REASON.toLowerCase()}`);
-      return { opened: 0, reopened: 0, cancelled: ids.length };
+      if (to === "REJECTED") await noteQuotationRejected(tx, quotationId);
+      return { opened: 0, reopened: 0, cancelled: ids.length, leadWon: null };
     }
-    return { opened: 0, reopened: 0, cancelled: 0 };
+    return { opened: 0, reopened: 0, cancelled: 0, leadWon: null as string | null };
   });
 }
 

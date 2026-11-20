@@ -12,14 +12,14 @@ import {
   Info,
   Loader2,
   RotateCcw,
-  UserRound,
-} from "lucide-react";
+  UserRound, Handshake } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { Controller, useForm, useWatch } from "react-hook-form";
 import { toast } from "sonner";
 import { saveCustomerDetails, saveCustomerLinks } from "@/lib/actions/customers";
+import { linkLeadToCustomerAction } from "@/lib/actions/crm";
 import { DeptIcon } from "@/components/customers/dept-icons";
 import { Field, FormSection, StepProgress } from "@/components/forms/field";
 import { Button } from "@/components/ui/button";
@@ -74,6 +74,17 @@ export interface CustomerWizardProps {
    */
   onSaved?: (customer: { id: string; companyName: string }) => void;
   onCancel?: () => void;
+  /** "Convert to customer" from a CRM enquiry: details filled in from it, and linked to it after saving. */
+  fromLead?: {
+    id: string;
+    leadNo: string;
+    title: string;
+    /** "quote": go on to the quotation builder after saving. */
+    next: "quote" | null;
+    details: Partial<CustomerDetailsInput>;
+    deptCodes: string[];
+    serviceIds: number[];
+  };
 }
 
 const CATEGORY_OPTIONS = [
@@ -83,17 +94,21 @@ const CATEGORY_OPTIONS = [
   { value: "MSME", title: "MSME", hint: "Micro, small or medium business" },
 ] as const;
 
-export function CustomerWizard({ departments, services, pricing, initial, onSaved, onCancel, defaultCreditDays = 30 }: CustomerWizardProps) {
-  const blank: CustomerDetailsInput = { ...EMPTY_CUSTOMER_DETAILS, creditDays: String(defaultCreditDays) };
+export function CustomerWizard({ departments, services, pricing, initial, onSaved, onCancel, defaultCreditDays = 30, fromLead }: CustomerWizardProps) {
+  const blank: CustomerDetailsInput = { ...EMPTY_CUSTOMER_DETAILS, creditDays: String(defaultCreditDays), ...fromLead?.details };
   const router = useRouter();
   const editing = !!initial;
   const embedded = !!onSaved;
-  const storageKey = editing ? `acdri:customer-wizard:${initial.id}` : `acdri:customer-wizard:new${embedded ? ":panel" : ""}`;
+  const storageKey = editing
+    ? `acdri:customer-wizard:${initial.id}`
+    : fromLead
+      ? `acdri:customer-wizard:new:lead:${fromLead.id}`
+      : `acdri:customer-wizard:new${embedded ? ":panel" : ""}`;
 
   const [step, setStep] = useState<Step>(1);
   const [customerId, setCustomerId] = useState<string | null>(initial?.id ?? null);
-  const [deptCodes, setDeptCodes] = useState<string[]>(initial?.deptCodes ?? []);
-  const [serviceIds, setServiceIds] = useState<number[]>(initial?.serviceIds ?? []);
+  const [deptCodes, setDeptCodes] = useState<string[]>(initial?.deptCodes ?? fromLead?.deptCodes ?? []);
+  const [serviceIds, setServiceIds] = useState<number[]>(initial?.serviceIds ?? fromLead?.serviceIds ?? []);
   const [deptError, setDeptError] = useState<string | null>(null);
   const [restored, setRestored] = useState(false);
   const [dirty, setDirty] = useState(false);
@@ -153,8 +168,8 @@ export function CustomerWizard({ departments, services, pricing, initial, onSave
     reset(initial?.details ?? blank);
     setStep(1);
     setCustomerId(initial?.id ?? null);
-    setDeptCodes(initial?.deptCodes ?? []);
-    setServiceIds(initial?.serviceIds ?? []);
+    setDeptCodes(initial?.deptCodes ?? fromLead?.deptCodes ?? []);
+    setServiceIds(initial?.serviceIds ?? fromLead?.serviceIds ?? []);
     setRestored(false);
     setDirty(false);
   };
@@ -269,6 +284,15 @@ export function CustomerWizard({ departments, services, pricing, initial, onSave
       clearDraft(storageKey);
       setDirty(false);
       toast.success("Customer saved");
+      if (fromLead) {
+        const link = await linkLeadToCustomerAction(fromLead.id, res.data.id);
+        if (!link.ok) toast.error(`The customer was saved, but linking the enquiry failed: ${link.message}`);
+        else toast.success(`Enquiry ${fromLead.leadNo} linked to ${res.data.companyName}`);
+        if (fromLead.next === "quote") {
+          router.push(`/quotations/new?customer=${res.data.id}&lead=${fromLead.id}`);
+          return;
+        }
+      }
       if (onSaved) {
         onSaved(res.data);
         return;
@@ -294,10 +318,15 @@ export function CustomerWizard({ departments, services, pricing, initial, onSave
         <p className="mt-2 text-muted-foreground">The customer is ready. What would you like to do next?</p>
         <div className="mt-8 flex flex-col gap-3">
           <Button asChild size="lg">
-            <Link href={`/quotations/new?customer=${customerId}`}>
+            <Link href={`/quotations/new?customer=${customerId}${fromLead ? `&lead=${fromLead.id}` : ""}`}>
               <FilePlus2 aria-hidden /> Create a quotation for this customer
             </Link>
           </Button>
+          {fromLead ? (
+            <Button asChild size="lg" variant="outline">
+              <Link href={`/crm/enquiries/${fromLead.id}`}>Back to the enquiry</Link>
+            </Button>
+          ) : null}
           <Button asChild size="lg" variant="outline">
             <Link href="/customers">Back to customers</Link>
           </Button>
@@ -313,6 +342,21 @@ export function CustomerWizard({ departments, services, pricing, initial, onSave
   return (
     <div ref={topRef} className="scroll-mt-24">
       <StepProgress step={stepNum} total={3} label={STEP_LABELS[stepNum]} />
+
+      {fromLead ? (
+        <div className="mb-6 flex gap-3 rounded-xl border border-violet-200 bg-violet-50 p-4 text-violet-950">
+          <Handshake className="mt-0.5 size-5 shrink-0" aria-hidden />
+          <div>
+            <p className="font-medium">
+              From enquiry {fromLead.leadNo}: {fromLead.title}
+            </p>
+            <p className="text-sm">
+              {fromLead.next === "quote" ? "A quotation needs the customer's GST and address. Let's add them first. " : ""}
+              The enquiry&apos;s details are filled in. Add the address, GST and PAN, then save.
+            </p>
+          </div>
+        </div>
+      ) : null}
 
       {restored ? (
         <div className="mb-6 flex flex-col gap-3 rounded-xl border border-sky-200 bg-sky-50 p-4 text-sky-900 sm:flex-row sm:items-center">

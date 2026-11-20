@@ -35,6 +35,8 @@ export interface QuotationInput {
   terms: string;
   status: "DRAFT" | "SENT" | "ACCEPTED" | "REJECTED";
   lines: DraftLine[];
+  /** The CRM enquiry it was made from (only set when creating). */
+  leadId?: string | null;
 }
 
 export function snapshotOf(c: Customer): CustomerSnapshot {
@@ -107,6 +109,7 @@ async function buildRows(tx: Tx, input: QuotationInput) {
     status: input.status,
     notes: input.notes,
     terms: input.terms,
+    ...(input.leadId !== undefined ? { leadId: input.leadId } : {}),
   };
 
   const items = lines.map((l, i) => {

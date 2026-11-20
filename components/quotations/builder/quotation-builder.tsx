@@ -14,8 +14,7 @@ import {
   Save,
   Trash2,
   UserPlus,
-  Zap,
-} from "lucide-react";
+  Zap, Handshake } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
@@ -92,6 +91,7 @@ export function QuotationBuilder({
   initialCustomerId,
   existing,
   nextQuoteNo,
+  fromLead = null,
 }: {
   customers: BuilderCustomer[];
   departments: Department[];
@@ -101,10 +101,12 @@ export function QuotationBuilder({
   existing: ExistingQuotation | null;
   /** Number the next new quotation will most likely get (shown as a preview only). */
   nextQuoteNo: string;
+  /** "Create quotation" from a CRM enquiry: its services join the quick-add chips, and lead_id is saved. */
+  fromLead?: { id: string; leadNo: string; title: string; serviceIds: number[] } | null;
 }) {
   const router = useRouter();
   const pricing = useMemo(() => toPricingSettings(settings), [settings]);
-  const storageKey = existing ? `acdri:quote-builder:${existing.id}` : "acdri:quote-builder:new";
+  const storageKey = existing ? `acdri:quote-builder:${existing.id}` : fromLead ? `acdri:quote-builder:new:lead:${fromLead.id}` : "acdri:quote-builder:new";
   const today = todayIso();
 
   const [step, setStep] = useState<Step>(existing ? 2 : initialCustomerId ? 2 : 1);
@@ -272,6 +274,7 @@ export function QuotationBuilder({
           terms,
           status: existing?.status ?? "DRAFT",
           lines,
+          ...(!existing && fromLead ? { leadId: fromLead.id } : {}),
         },
         existing?.id ?? null,
       );
@@ -281,7 +284,10 @@ export function QuotationBuilder({
       }
       clearDraft(storageKey);
       setDirty(false);
-      toast.success(existing ? `Quotation ${res.data.quoteNo} saved` : `Quotation ${res.data.quoteNo} saved as draft`);
+      toast.success(
+        existing ? `Quotation ${res.data.quoteNo} saved` : `Quotation ${res.data.quoteNo} saved as draft`,
+        res.data.movedTo && fromLead ? { description: `Enquiry ${fromLead.leadNo} moved to ${res.data.movedTo}.` } : undefined,
+      );
       if (after === "download") {
         const a = document.createElement("a");
         a.href = `/quotations/${res.data.id}/pdf?download=1`;
@@ -319,8 +325,9 @@ export function QuotationBuilder({
         })
       : null;
 
+  // The customer's usual services, plus the ones the enquiry asked about.
   const quickAdd = customer
-    ? customer.serviceIds
+    ? [...new Set([...customer.serviceIds, ...(!existing && fromLead ? fromLead.serviceIds : [])])]
         .map((id) => servicesById.get(id))
         .filter((s): s is Service => !!s && s.isActive)
         .sort((a, b) => a.sortOrder - b.sortOrder)
@@ -328,6 +335,14 @@ export function QuotationBuilder({
 
   return (
     <div ref={topRef} className="scroll-mt-24">
+      {fromLead && !existing ? (
+        <p className="mb-4 flex items-center gap-2 rounded-xl border border-violet-200 bg-violet-50 px-4 py-3 text-sm text-violet-950 print:hidden">
+          <Handshake className="size-4 shrink-0" aria-hidden />
+          <span>
+            From enquiry <strong>{fromLead.leadNo}</strong>: {fromLead.title}. Its services are in “Services this customer uses”.
+          </span>
+        </p>
+      ) : null}
       {/* Step tabs */}
       <div className="print:hidden">
         <StepProgress step={step} total={4} label={STEP_LABELS[step]} />

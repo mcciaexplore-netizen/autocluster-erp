@@ -84,9 +84,11 @@ export async function getBoardLeads(): Promise<BoardLead[]> {
       sourceName: crmSources.name,
       assignedToName: teamMembers.name,
       lostReason: crmLostReasons.name,
+      stageType: crmStages.type,
     })
     .from(leads)
     .innerJoin(crmSources, eq(crmSources.id, leads.sourceId))
+    .innerJoin(crmStages, eq(crmStages.id, leads.stageId))
     .leftJoin(teamMembers, eq(teamMembers.id, leads.assignedTo))
     .leftJoin(crmLostReasons, eq(crmLostReasons.id, leads.lostReasonId))
     .where(isNull(leads.deletedAt));
@@ -122,7 +124,7 @@ export async function getBoardLeads(): Promise<BoardLead[]> {
   const deptBy = group(depts);
   const tagBy = group(tags);
   const actBy = new Map(acts.map((a) => [a.leadId, a]));
-  return rows.map(({ l, sourceName, assignedToName, lostReason }) => {
+  return rows.map(({ l, sourceName, assignedToName, lostReason, stageType }) => {
     const a = actBy.get(l.id);
     return {
       id: l.id,
@@ -150,6 +152,8 @@ export async function getBoardLeads(): Promise<BoardLead[]> {
       createdAt: l.createdAt.toISOString(),
       lostReason: lostReason ?? null,
       lostNote: l.lostNote,
+      stageType,
+      wonAt: l.wonAt?.toISOString() ?? null,
     };
   });
 }
@@ -310,3 +314,88 @@ export async function getLeadFormOptions() {
   };
 }
 export type LeadFormOptions = Awaited<ReturnType<typeof getLeadFormOptions>>;
+
+/** Enquiry number for a link (e.g. on a quotation made from it). */
+export async function getLeadRef(id: string | null) {
+  await connection();
+  if (!id) return null;
+  const [r] = await db.select({ id: leads.id, leadNo: leads.leadNo, title: leads.title, deletedAt: leads.deletedAt }).from(leads).where(eq(leads.id, id));
+  return r && !r.deletedAt ? { id: r.id, leadNo: r.leadNo, title: r.title } : null;
+}
+
+/** A customer's enquiries, newest first (customer page, Enquiries tab). */
+export async function getCustomerLeads(customerId: string) {
+  await connection();
+  return db
+    .select({
+      id: leads.id,
+      leadNo: leads.leadNo,
+      title: leads.title,
+      expectedValue: leads.expectedValue,
+      createdAt: leads.createdAt,
+      stageName: crmStages.name,
+      stageColor: crmStages.color,
+      stageType: crmStages.type,
+      lostReason: crmLostReasons.name,
+    })
+    .from(leads)
+    .innerJoin(crmStages, eq(crmStages.id, leads.stageId))
+    .leftJoin(crmLostReasons, eq(crmLostReasons.id, leads.lostReasonId))
+    .where(and(eq(leads.customerId, customerId), isNull(leads.deletedAt)))
+    .orderBy(desc(leads.createdAt));
+}
+
+/** The 4 CRM cards on the home page. Months and days are in India time. */
+export async function getCrmHomeStats() {
+  await connection();
+  const r = await db.execute<{ new_month: string; open_count: string; open_value: string; due_today: string; overdue: string; won_count: string; won_value: string }>(sql`
+    with t as (select (now() at time zone 'Asia/Kolkata')::date as today)
+    select
+      (select count(*) from leads where deleted_at is null
+         and date_trunc('month', created_at at time zone 'Asia/Kolkata') = date_trunc('month', (select today from t))) as new_month,
+      (select count(*) from leads l join crm_stages s on s.id = l.stage_id where l.deleted_at is null and s.type = 'OPEN') as open_count,
+      (select coalesce(sum(l.expected_value), 0) from leads l join crm_stages s on s.id = l.stage_id where l.deleted_at is null and s.type = 'OPEN') as open_value,
+      (select count(*) from crm_activities a join leads l on l.id = a.lead_id where l.deleted_at is null and a.done_at is null and a.due_date = (select today from t)) as due_today,
+      (select count(*) from crm_activities a join leads l on l.id = a.lead_id where l.deleted_at is null and a.done_at is null and a.due_date < (select today from t)) as overdue,
+      (select count(*) from leads l join crm_stages s on s.id = l.stage_id where l.deleted_at is null and s.type = 'WON'
+         and date_trunc('month', l.won_at at time zone 'Asia/Kolkata') = date_trunc('month', (select today from t))) as won_count,
+      (select coalesce(sum(l.expected_value), 0) from leads l join crm_stages s on s.id = l.stage_id where l.deleted_at is null and s.type = 'WON'
+         and date_trunc('month', l.won_at at time zone 'Asia/Kolkata') = date_trunc('month', (select today from t))) as won_value`);
+  const x = r.rows[0];
+  return {
+    newThisMonth: Number(x.new_month),
+    openCount: Number(x.open_count),
+    openValuePaise: Number(x.open_value),
+    dueToday: Number(x.due_today),
+    overdue: Number(x.overdue),
+    wonCount: Number(x.won_count),
+    wonValuePaise: Number(x.won_value),
+  };
+}
+
+/** Planned activities due today or overdue (not done), for "Today's activities" on the home page. */
+export async function getTodaysActivities() {
+  await connection();
+  const today = sql`(now() at time zone 'Asia/Kolkata')::date`;
+  const rows = await db
+    .select({
+      id: crmActivities.id,
+      type: crmActivities.type,
+      dueDate: crmActivities.dueDate,
+      dueTime: crmActivities.dueTime,
+      note: crmActivities.note,
+      assignedTo: crmActivities.assignedTo,
+      assignedToName: teamMembers.name,
+      leadId: leads.id,
+      leadTitle: leads.title,
+      companyName: leads.companyName,
+    })
+    .from(crmActivities)
+    .innerJoin(leads, and(eq(leads.id, crmActivities.leadId), isNull(leads.deletedAt)))
+    .leftJoin(teamMembers, eq(teamMembers.id, crmActivities.assignedTo))
+    .where(and(isNull(crmActivities.doneAt), sql`${crmActivities.dueDate} <= ${today}`))
+    .orderBy(asc(crmActivities.dueDate), sql`${crmActivities.dueTime} asc nulls last`)
+    .limit(30);
+  return rows;
+}
+export type TodaysActivity = Awaited<ReturnType<typeof getTodaysActivities>>[number];

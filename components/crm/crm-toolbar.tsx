@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import type { CrmPickers } from "@/lib/crm-data";
-import { ACTIVITY_FILTERS, CLOSE_FILTERS, PRIORITY_LABELS, SORTS } from "@/lib/crm/leads";
+import { ACTIVITY_FILTERS, CARD_FILTERS, CLOSE_FILTERS, PRIORITY_LABELS, SORTS } from "@/lib/crm/leads";
 import { cn } from "@/lib/utils";
 import { useCrmFilters } from "./use-crm-filters";
 
@@ -105,6 +105,21 @@ export function CrmToolbar({
             </SelectContent>
           </Select>
         </div>
+        {(Object.keys(CARD_FILTERS) as (keyof typeof CARD_FILTERS)[]).map((k) => {
+          const v = params.get(k);
+          const label = v ? (CARD_FILTERS[k] as Record<string, string>)[v] : null;
+          return label ? (
+            <button
+              key={k}
+              type="button"
+              onClick={() => set({ [k]: null })}
+              className="inline-flex h-10 items-center gap-1.5 rounded-full border border-primary bg-primary px-4 text-sm font-medium text-primary-foreground"
+              aria-label={`Remove filter: ${label}`}
+            >
+              {label} <X className="size-3.5" aria-hidden />
+            </button>
+          ) : null;
+        })}
         {activeCount || params.get("q") ? (
           <button
             type="button"

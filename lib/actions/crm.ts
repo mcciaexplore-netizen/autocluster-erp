@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { db } from "@/db";
 import { addListItem } from "@/db/crm-lists-writer";
+import { linkLeadToCustomer } from "@/db/lead-links";
 import { cancelActivity, markActivityDone, planActivity } from "@/db/activity-writer";
 import { addStage, deleteStage, moveStage, renameStage, reorderStages, setStageColor, setStageFolded, setStageProbability } from "@/db/stage-writer";
 import { todayInIndia } from "@/lib/tickets";
@@ -234,4 +235,11 @@ export async function moveStageAction(stageId: string, dir: -1 | 1) {
 }
 export async function deleteStageAction(stageId: string, moveToId: string | null) {
   return pipeline(() => deleteStage(db, id.parse(stageId), moveToId ? id.parse(moveToId) : null));
+}
+
+// ---- links to customers and quotations --------------------------------------------------------
+
+/** After "Convert to customer": links the enquiry to the customer just saved. */
+export async function linkLeadToCustomerAction(leadId: string, customerId: string) {
+  return run(() => linkLeadToCustomer(db, id.parse(leadId), id.parse(customerId)));
 }

@@ -65,7 +65,10 @@ export function useQuotationActions(id: string) {
       if (!res.ok) return void toast.error(res.message);
       const r = res.data;
       const extra = r.opened ? `, ${r.opened} ${r.opened === 1 ? "ticket" : "tickets"} opened` : r.reopened ? `, ${r.reopened} reopened` : r.cancelled ? `, ${r.cancelled} cancelled` : "";
-      toast.success(`Status changed to ${QUOTE_STATUS[status].label}${extra}`, r.opened || r.reopened ? { action: { label: "Open board", onClick: () => router.push("/orders") } } : undefined);
+      toast.success(`Status changed to ${QUOTE_STATUS[status].label}${extra}`, {
+        ...(r.leadWon ? { description: `Enquiry ${r.leadWon} marked as won.` } : {}),
+        ...(r.opened || r.reopened ? { action: { label: "Open board", onClick: () => router.push("/orders") } } : {}),
+      });
       router.refresh();
     });
   return { pending, duplicate, changeStatus, dialog };
