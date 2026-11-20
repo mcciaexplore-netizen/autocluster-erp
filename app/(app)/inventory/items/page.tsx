@@ -6,7 +6,9 @@ import { ListSkeleton } from "@/components/common/form-skeleton";
 import { PageHeader } from "@/components/common/page-header";
 import { ItemsList } from "@/components/inventory/items-list";
 import { Button } from "@/components/ui/button";
-import { getInvLists, listInvItems } from "@/lib/inventory-data";
+import { QuickActions } from "@/components/inventory/quick-actions";
+import { getDailyUse, getInvLists, listInvItems } from "@/lib/inventory-data";
+import { runsOutInDays } from "@/lib/inventory/calc";
 
 export const metadata: Metadata = { title: "Inventory items" };
 
@@ -17,13 +19,14 @@ export default function ItemsPage() {
         title="Items"
         description="Materials and consumables, with stock, value and when they run out."
         actions={
-          <Button asChild>
+          <Button asChild variant="outline">
             <Link href="/inventory/items/new">
               <Plus aria-hidden /> Add item
             </Link>
           </Button>
         }
       />
+      <QuickActions className="mb-6" />
       <Suspense fallback={<ListSkeleton rows={6} />}>
         <List />
       </Suspense>
@@ -32,6 +35,7 @@ export default function ItemsPage() {
 }
 
 async function List() {
-  const [items, lists] = await Promise.all([listInvItems(), getInvLists()]);
-  return <ItemsList items={items} categories={lists.categories.filter((c) => c.isActive)} departments={lists.departments} />;
+  const [items, lists, use] = await Promise.all([listInvItems(), getInvLists(), getDailyUse()]);
+  const runsOut = Object.fromEntries(items.map((i) => [i.id, runsOutInDays(i.qty, use.perItem.get(i.id) ?? 0)]));
+  return <ItemsList items={items} categories={lists.categories.filter((c) => c.isActive)} departments={lists.departments} runsOut={runsOut} />;
 }

@@ -3,7 +3,10 @@
 export const MAX_FILE_BYTES = 10 * 1024 * 1024; // 10 MB
 export const ALLOWED_FILE_TYPES = ["application/pdf", "image/jpeg", "image/png"] as const;
 export const FILE_ACCEPT = ".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png";
-export type FileKindName = "PO" | "INVOICE";
+export type FileKindName = "PO" | "INVOICE" | "BILL";
+
+/** Storage sub-folder for each kind of file. */
+export const KIND_FOLDER: Record<FileKindName, string> = { PO: "po", INVOICE: "invoice", BILL: "bill" };
 
 /** Blob folders. `local`, `preview` and `live` keep each environment's files apart. */
 export const BLOB_ENVS = ["local", "preview", "live"] as const;
@@ -50,10 +53,10 @@ export function safeFileName(name: string): string {
 
 /** Storage path for a new upload, e.g. local/po/PO-123.pdf (Blob adds a random suffix). */
 export function uploadPath(env: BlobEnv, kind: FileKindName, fileName: string): string {
-  return `${env}/${kind === "PO" ? "po" : "invoice"}/${safeFileName(fileName)}`;
+  return `${env}/${KIND_FOLDER[kind]}/${safeFileName(fileName)}`;
 }
 
 /** Checks a path the browser asks to upload to. */
 export function isValidUploadPath(path: string, env: BlobEnv): boolean {
-  return new RegExp(`^${env}/(po|invoice)/[\\w.-]{1,140}$`).test(path) && !path.includes("..");
+  return new RegExp(`^${env}/(po|invoice|bill)/[\\w.-]{1,140}$`).test(path) && !path.includes("..");
 }

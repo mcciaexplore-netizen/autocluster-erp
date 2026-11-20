@@ -4,6 +4,7 @@ import Link from "next/link";
 import { Suspense } from "react";
 import { PageHeader } from "@/components/common/page-header";
 import { ComingNext } from "@/components/inventory/coming-next";
+import { QuickActions } from "@/components/inventory/quick-actions";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -16,11 +17,12 @@ export default function InventoryOverview() {
   return (
     <div>
       <PageHeader title="Inventory" description="Materials and consumables: what's in stock, what each job uses, and what to reorder." />
+      <QuickActions big className="mb-6" />
       <Suspense fallback={<Skeleton className="h-32 rounded-2xl" />}>
         <Summary />
       </Suspense>
       <div className="mt-6">
-        <ComingNext what="Stock received, Use stock and Adjust stock come in the next step, followed by the reorder list, stock counts and insights." />
+        <ComingNext what="The overview cards, “Needs attention” and recent stock in & out come in a later step, with the reorder list, stock counts and insights." />
       </div>
     </div>
   );

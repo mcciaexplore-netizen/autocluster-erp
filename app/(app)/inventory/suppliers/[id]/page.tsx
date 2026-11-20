@@ -6,7 +6,7 @@ import { Suspense } from "react";
 import { FormSkeleton } from "@/components/common/form-skeleton";
 import { Button } from "@/components/ui/button";
 import { formatDate } from "@/lib/format";
-import { getInvSupplier } from "@/lib/inventory-data";
+import { getInvSupplier, listInvDocuments } from "@/lib/inventory-data";
 import { formatRate } from "@/lib/inventory/numbers";
 import { UUID_RE } from "@/lib/inventory/uuid";
 import { formatINRShort } from "@/lib/pricing";
@@ -32,7 +32,7 @@ export default function SupplierPage({ params }: { params: Promise<{ id: string 
 async function Detail({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   if (!UUID_RE.test(id)) notFound();
-  const d = await getInvSupplier(id);
+  const [d, received] = await Promise.all([getInvSupplier(id), listInvDocuments({ supplier: id, type: "IN" }, 100)]);
   if (!d) notFound();
   const s = d.supplier;
   const wa = s.phone ? whatsappNumber(s.phone) : null;
@@ -148,8 +148,33 @@ async function Detail({ params }: { params: Promise<{ id: string }> }) {
       </section>
 
       <section className="rounded-2xl border bg-card p-5">
-        <h2 className="mb-2 text-lg font-semibold">Stock received from them</h2>
-        <p className="text-sm text-muted-foreground">Deliveries from this supplier will be listed here.</p>
+        <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+          <h2 className="text-lg font-semibold">Stock received from them</h2>
+          {received.length ? (
+            <Link href={`/inventory/movements?supplier=${s.id}`} className="text-sm font-medium text-primary hover:underline">
+              See all on Stock in &amp; out
+            </Link>
+          ) : null}
+        </div>
+        {received.length ? (
+          <ul className="divide-y">
+            {received.map((r) => (
+              <li key={r.id}>
+                <Link href={`/inventory/movements/${r.id}`} className="flex flex-wrap items-center gap-x-4 gap-y-1 py-2.5 hover:text-primary">
+                  <span className="w-24 text-sm text-muted-foreground">{formatDate(r.docDate)}</span>
+                  <span className={`min-w-0 flex-1 ${r.reversedBy || r.reverses ? "text-muted-foreground line-through decoration-1" : ""}`}>
+                    <span className="font-medium tabular-nums">{r.docNo}</span>
+                    {r.billNo ? <span className="text-sm text-muted-foreground"> · bill {r.billNo}</span> : null}
+                    <span className="block truncate text-sm text-muted-foreground">{r.items}</span>
+                  </span>
+                  <span className="font-semibold tabular-nums">{formatINRShort(Math.abs(r.valueInPaise - r.valueOutPaise))}</span>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="text-sm text-muted-foreground">No deliveries from this supplier yet.</p>
+        )}
       </section>
     </div>
   );

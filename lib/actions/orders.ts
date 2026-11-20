@@ -15,7 +15,7 @@ import { cancelTicket, moveTicketBack } from "@/db/ticket-writer";
 import { isSignedIn } from "@/lib/auth-guard";
 import { SIGNED_OUT_MESSAGE } from "@/lib/auth-messages";
 import { BLOB_NOT_SET_MESSAGE, blobAuth, blobConfigured, blobEnv } from "@/lib/blob";
-import { ALLOWED_FILE_TYPES, isValidUploadPath, MAX_FILE_BYTES, type UploadedFile } from "@/lib/files";
+import { ALLOWED_FILE_TYPES, isValidUploadPath, KIND_FOLDER, MAX_FILE_BYTES, type UploadedFile } from "@/lib/files";
 import { getTicketDetail, type TicketDetail } from "@/lib/orders-data";
 import { todayInIndia } from "@/lib/tickets";
 
@@ -62,7 +62,7 @@ export async function cancelTicketAction(ticketId: string, why: string) {
 const uploadInput = z.object({
   pathname: z.string().min(1).max(200),
   fileName: z.string().trim().min(1).max(200),
-  kind: z.enum(["PO", "INVOICE"]),
+  kind: z.enum(["PO", "INVOICE", "BILL"]),
 });
 
 /** Records a file the browser just uploaded to Blob, after checking it really is there and allowed. */
@@ -73,7 +73,7 @@ export async function registerUpload(input: z.input<typeof uploadInput>): Promis
   if (!parsed.success) return { ok: false, message: "That upload didn't look right. Please try again." };
   const { pathname, fileName, kind } = parsed.data;
   // Blob adds a random suffix before the extension, so check the folder part only.
-  const folder = `${blobEnv()}/${kind === "PO" ? "po" : "invoice"}/`;
+  const folder = `${blobEnv()}/${KIND_FOLDER[kind]}/`;
   if (!pathname.startsWith(folder) || !isValidUploadPath(pathname, blobEnv())) return { ok: false, message: "That upload didn't look right. Please try again." };
   try {
     const info = await head(pathname, blobAuth());

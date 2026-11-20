@@ -132,7 +132,7 @@ export async function addPurchaseOrder(db: DB, input: AddPoInput, today: string)
   });
 }
 
-export async function registerFile(conn: Conn, f: { kind: "PO" | "INVOICE"; blobPath: string; fileName: string; size: number; mime: string }) {
+export async function registerFile(conn: Conn, f: { kind: "PO" | "INVOICE" | "BILL"; blobPath: string; fileName: string; size: number; mime: string }) {
   const [row] = await conn.insert(files).values(f).returning({ id: files.id });
   return row.id;
 }
