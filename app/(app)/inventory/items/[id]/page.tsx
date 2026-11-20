@@ -7,6 +7,7 @@ import { notFound } from "next/navigation";
 import { Suspense } from "react";
 import { FormSkeleton } from "@/components/common/form-skeleton";
 import { StatusChips } from "@/components/inventory/items-list";
+import { LabelButton } from "@/components/inventory/label-button";
 import { OrderedChip } from "@/components/inventory/ordered-chip";
 import { ClearOrdered } from "@/components/inventory/reorder-list";
 import { Button } from "@/components/ui/button";
@@ -93,6 +94,7 @@ async function Detail({ params }: { params: Promise<{ id: string }> }) {
             <SlidersHorizontal aria-hidden /> Adjust stock
           </Link>
         </Button>
+        <LabelButton itemId={i.id} />
       </div>
 
       <section className="grid grid-cols-2 gap-3 lg:grid-cols-4" aria-label="Stock">
@@ -175,6 +177,7 @@ async function Detail({ params }: { params: Promise<{ id: string }> }) {
                           {left < 0 ? "Expired" : left === 0 ? "Expires today" : `Expires in ${left} ${left === 1 ? "day" : "days"}`}
                         </span>
                       ) : null}
+                      <LabelButton itemId={i.id} batchId={b.id} batchNo={b.batchNo} size="sm" variant="ghost" />
                     </li>
                   );
                 })}

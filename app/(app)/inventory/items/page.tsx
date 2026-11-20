@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Plus } from "lucide-react";
+import { Plus, Upload } from "lucide-react";
 import Link from "next/link";
 import { Suspense } from "react";
 import { ListSkeleton } from "@/components/common/form-skeleton";
@@ -19,11 +19,18 @@ export default function ItemsPage() {
         title="Items"
         description="Materials and consumables, with stock, value and when they run out."
         actions={
-          <Button asChild variant="outline">
-            <Link href="/inventory/items/new">
-              <Plus aria-hidden /> Add item
-            </Link>
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button asChild variant="outline">
+              <Link href="/inventory/items/import">
+                <Upload aria-hidden /> Import items
+              </Link>
+            </Button>
+            <Button asChild variant="outline">
+              <Link href="/inventory/items/new">
+                <Plus aria-hidden /> Add item
+              </Link>
+            </Button>
+          </div>
         }
       />
       <QuickActions className="mb-6" />

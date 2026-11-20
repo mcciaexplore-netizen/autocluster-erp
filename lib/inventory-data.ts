@@ -31,6 +31,7 @@ import {
 import { deliveryLate, runsOutInDays, shouldOrder } from "@/lib/inventory/calc";
 import type { Material } from "@/lib/inventory/materials";
 import { suggestedQty } from "@/lib/inventory/reorder";
+import type { ItemImportLists } from "@/lib/inventory/import";
 import { D, valuePaise } from "@/lib/inventory/numbers";
 import { stockStatus, type StockStatus } from "@/lib/inventory/stock";
 import { financialYear } from "@/lib/pricing";
@@ -937,4 +938,24 @@ export async function getInvHomeStats() {
   const warnDays = set?.warn ?? 30;
   const [reorder, expiring] = await Promise.all([getReorderList(), expiringItemCount(addDays(todayInIndia(), warnDays))]);
   return { toReorder: reorder.groups.reduce((a, g) => a + g.items.length, 0), expiring, warnDays };
+}
+
+// ---- import items -----------------------------------------------------------------------------------
+
+/** What an item import row may use, plus existing names and codes (to catch duplicates). */
+export async function getItemImportLists(): Promise<ItemImportLists> {
+  await connection();
+  const [lists, sups, existing] = await Promise.all([
+    getInvLists(),
+    db.select({ id: invSuppliers.id, name: invSuppliers.name }).from(invSuppliers).where(eq(invSuppliers.isActive, true)).orderBy(asc(invSuppliers.name)),
+    db.select({ name: invItems.name, code: invItems.code }).from(invItems),
+  ]);
+  return {
+    categories: lists.categories.filter((c) => c.isActive),
+    units: lists.units.filter((u) => u.isActive),
+    suppliers: sups,
+    departments: lists.departments,
+    existingNames: new Set(existing.map((e) => e.name.trim().toLowerCase())),
+    existingCodes: new Set(existing.map((e) => e.code.toUpperCase())),
+  };
 }
