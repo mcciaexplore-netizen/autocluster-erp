@@ -1,7 +1,7 @@
 "use client";
 
 import { CalendarClock, Check, CheckCheck, Loader2, Mail, MapPin, MessageCircle, Phone, RotateCw, Users } from "lucide-react";
-import { useState, useTransition } from "react";
+import { useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
 import { Field } from "@/components/forms/field";
 import { Button } from "@/components/ui/button";
@@ -166,6 +166,8 @@ function PlanBody({ plan, team, onClose, onDone }: { plan: PlanFor; team: { id: 
   );
 }
 
+export const QUICK_OUTCOMES = ["No answer", "Call back later", "Interested", "Sent details", "Not interested"] as const;
+
 export type DoneFor = { id: string; type: ActivityType; leadId: string; title: string; assignedTo: string | null };
 
 /** "Mark done": asks for an outcome. "Done, plan next" then opens a new Plan activity form. */
@@ -179,6 +181,7 @@ export function DoneActivityDialog({ activity, onClose, onDone }: { activity: Do
 
 function DoneBody({ activity, onClose, onDone }: { activity: DoneFor; onClose: () => void; onDone: (planNext: boolean) => void }) {
   const [outcome, setOutcome] = useState("");
+  const textRef = useRef<HTMLTextAreaElement>(null);
   const [touched, setTouched] = useState(false);
   const [pending, start] = useTransition();
   const error = outcome.trim().length < 2 ? "Please write a short outcome." : undefined;
@@ -205,8 +208,33 @@ function DoneBody({ activity, onClose, onDone }: { activity: DoneFor; onClose: (
         <DialogTitle>Mark {ACTIVITY_TYPES[activity.type].toLowerCase()} as done</DialogTitle>
         <DialogDescription>For “{activity.title}”. What happened?</DialogDescription>
       </DialogHeader>
-      <Field label="Outcome" required helper="e.g. Spoke to Neha, she will send the drawings on Monday" error={touched ? error : undefined}>
-        {(p) => <Textarea {...p} rows={3} value={outcome} onChange={(e) => setOutcome(e.target.value)} maxLength={1000} autoFocus />}
+      <Field label="Outcome" required helper="Tap a quick outcome or write your own. You can add to it, e.g. “Call back later. Try after 4 pm”." error={touched ? error : undefined}>
+        {(p) => (
+          <div className="flex flex-col gap-2">
+            <div role="group" aria-label="Quick outcomes" className="flex flex-wrap gap-1.5">
+              {QUICK_OUTCOMES.map((q) => (
+                <button
+                  key={q}
+                  type="button"
+                  onClick={() => {
+                    // Empty box: fill it. Otherwise add to what's there, so nothing typed is lost.
+                    setOutcome((cur) => {
+                      const t = cur.trim();
+                      if (!t) return q;
+                      if (t.toLowerCase().includes(q.toLowerCase())) return cur;
+                      return `${t.replace(/[.\s]+$/, "")}. ${q}`;
+                    });
+                    textRef.current?.focus();
+                  }}
+                  className="h-9 rounded-full border bg-card px-3 text-sm font-medium hover:border-primary/40 hover:text-primary"
+                >
+                  {q}
+                </button>
+              ))}
+            </div>
+            <Textarea {...p} ref={textRef} rows={3} value={outcome} onChange={(e) => setOutcome(e.target.value)} maxLength={1000} autoFocus />
+          </div>
+        )}
       </Field>
       <DialogFooter className="gap-2 sm:gap-2">
         <Button type="button" variant="ghost" onClick={onClose}>
