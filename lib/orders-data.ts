@@ -71,6 +71,7 @@ async function lastContactByInvoice(invoiceIds: string[]) {
 }
 
 export async function invoiceSummaries(invoiceIds: string[]): Promise<Map<string, BoardInvoice>> {
+  await connection();
   const ids = [...new Set(invoiceIds)].filter((i) => /^[0-9a-f-]{36}$/i.test(i));
   if (!ids.length) return new Map();
   const [inv, pays, counts, nextFu, lastContact] = await Promise.all([
@@ -205,6 +206,7 @@ export type TicketDetail = NonNullable<Awaited<ReturnType<typeof getTicketDetail
 
 /** Small helper for the home page cards. */
 export async function getOrdersStats() {
+  await connection();
   const all = await getBoardTickets();
   const today = todayInIndia();
   const live = all.filter((t) => t.stage !== "CANCELLED");
