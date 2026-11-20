@@ -7,6 +7,8 @@ import { notFound } from "next/navigation";
 import { Suspense } from "react";
 import { FormSkeleton } from "@/components/common/form-skeleton";
 import { StatusChips } from "@/components/inventory/items-list";
+import { OrderedChip } from "@/components/inventory/ordered-chip";
+import { ClearOrdered } from "@/components/inventory/reorder-list";
 import { Button } from "@/components/ui/button";
 import { formatDate } from "@/lib/format";
 import { getDailyUse, getInvItem, getItemHistory, getItemPriceHistory, getItemUsageByMonth, type ItemHistoryRow } from "@/lib/inventory-data";
@@ -58,6 +60,12 @@ async function Detail({ params }: { params: Promise<{ id: string }> }) {
             ))}
             {!i.isActive ? <span className="rounded-full border px-2 py-0.5 text-xs">Inactive</span> : null}
           </p>
+          {d.ordered ? (
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <OrderedChip on={d.ordered.on} supplierName={d.ordered.supplierName} late={d.ordered.late} className="text-sm" />
+              <ClearOrdered itemId={i.id} name={i.name} />
+            </div>
+          ) : null}
         </div>
         <div className="flex flex-wrap gap-2">
           <Button asChild variant="outline">

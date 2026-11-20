@@ -98,3 +98,12 @@ export function pickBatches<T extends BatchLike>(batches: T[], need: Decimal.Val
   }
   return left.gt(0) ? null : picks;
 }
+
+/**
+ * An order is late when the lead time has passed since it was marked ordered and the stock
+ * hasn't arrived from that supplier (the mark is still there). No known lead time = never late.
+ */
+export function deliveryLate(orderedOn: string | null, leadTimeDays: number | null | undefined, today: string): boolean {
+  if (!orderedOn || leadTimeDays == null) return false;
+  return daysBetween(orderedOn, today) > leadTimeDays;
+}

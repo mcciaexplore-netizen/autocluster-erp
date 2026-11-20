@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { applyIn, applyOut, applyOutAtCost, averageDailyUse, pickBatches, runsOutInDays, shouldOrder, usableBatches } from "./calc";
+import { applyIn, applyOut, applyOutAtCost, averageDailyUse, pickBatches, runsOutInDays, shouldOrder, usableBatches, deliveryLate } from "./calc";
 import { valuePaise } from "./numbers";
 
 describe("weighted average cost", () => {
@@ -55,5 +55,15 @@ describe("batches", () => {
     expect(usableBatches(batches, today).map((b) => b.batchNo)).toEqual(["B", "A", "N"]);
     expect(pickBatches(batches, "650", today)?.map((p) => `${p.batch.batchNo}:${p.qty}`)).toEqual(["B:200", "A:450"]);
     expect(pickBatches(batches, "801", today)).toBeNull(); // 800 usable (the expired 800 doesn't count)
+  });
+});
+
+describe("deliveryLate", () => {
+  it("is late only once the lead time has passed since the order", () => {
+    expect(deliveryLate("2026-11-12", 7, "2026-11-19")).toBe(false); // due today
+    expect(deliveryLate("2026-11-12", 7, "2026-11-20")).toBe(true);
+    expect(deliveryLate("2026-11-12", 0, "2026-11-13")).toBe(true);
+    expect(deliveryLate("2026-11-12", null, "2026-12-30")).toBe(false); // no lead time known
+    expect(deliveryLate(null, 7, "2026-12-30")).toBe(false); // not ordered
   });
 });
