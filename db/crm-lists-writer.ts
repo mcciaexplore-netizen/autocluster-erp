@@ -1,17 +1,38 @@
 /**
- * Editing the CRM lists in Settings: enquiry sources, lost reasons, tags and team members.
+ * Editing the lists in Settings: CRM (enquiry sources, lost reasons, tags, team members)
+ * and Inventory (categories, units, internal use purposes, adjustment reasons).
  * Items in use are hidden instead of deleted, so old enquiries keep their values.
  */
 import { and, asc, eq, ne, sql } from "drizzle-orm";
 import type { DB, Tx } from "./client";
 import { UserFacingError } from "./quote-writer";
-import { crmActivities, crmLostReasons, crmSources, crmTags, leads, leadTags, teamMembers } from "./schema";
+import {
+  crmActivities,
+  crmLostReasons,
+  crmSources,
+  crmTags,
+  invAdjustReasons,
+  invCategories,
+  invDocuments,
+  invItems,
+  invMovements,
+  invPurposes,
+  invUnits,
+  leads,
+  leadTags,
+  teamMembers,
+} from "./schema";
 
 export const CRM_LISTS = {
   sources: { table: crmSources, label: "source" },
   lostReasons: { table: crmLostReasons, label: "lost reason" },
   tags: { table: crmTags, label: "tag" },
   team: { table: teamMembers, label: "team member" },
+  // Inventory (Settings > Inventory)
+  invCategories: { table: invCategories, label: "category" },
+  invUnits: { table: invUnits, label: "unit" },
+  invPurposes: { table: invPurposes, label: "purpose" },
+  invReasons: { table: invAdjustReasons, label: "reason" },
 } as const;
 export type CrmListKey = keyof typeof CRM_LISTS;
 
@@ -91,8 +112,17 @@ export async function listItemUses(db: DB | Tx, key: CrmListKey, id: string): Pr
     case "team":
       return (
         (await n(db.select({ n: c }).from(leads).where(eq(leads.assignedTo, id)))) +
-        (await n(db.select({ n: c }).from(crmActivities).where(eq(crmActivities.assignedTo, id))))
+        (await n(db.select({ n: c }).from(crmActivities).where(eq(crmActivities.assignedTo, id)))) +
+        (await n(db.select({ n: c }).from(invDocuments).where(eq(invDocuments.doneBy, id))))
       );
+    case "invCategories":
+      return n(db.select({ n: c }).from(invItems).where(eq(invItems.categoryId, id)));
+    case "invUnits":
+      return n(db.select({ n: c }).from(invItems).where(eq(invItems.unitId, id)));
+    case "invPurposes":
+      return n(db.select({ n: c }).from(invDocuments).where(eq(invDocuments.purposeId, id)));
+    case "invReasons":
+      return n(db.select({ n: c }).from(invMovements).where(eq(invMovements.reasonId, id)));
   }
 }
 

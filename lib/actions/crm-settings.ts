@@ -11,7 +11,7 @@ import { canManagePipeline } from "@/lib/crm/permissions";
 
 type Result<T> = { ok: true; data: T } | { ok: false; message: string };
 
-const listKey = z.enum(["sources", "lostReasons", "tags", "team"]);
+const listKey = z.enum(["sources", "lostReasons", "tags", "team", "invCategories", "invUnits", "invPurposes", "invReasons"]);
 const id = z.string().uuid();
 const item = z.object({ name: z.string().max(200), phone: z.string().max(30).nullish(), email: z.string().max(200).nullish() });
 

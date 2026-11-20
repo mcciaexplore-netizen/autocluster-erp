@@ -28,17 +28,24 @@ import {
   DEFAULT_LEAD_EMAIL_SUBJECT_TEMPLATE,
   DEFAULT_LEAD_WHATSAPP_TEMPLATE,
 } from "../lib/crm/templates";
+import {
+  DEFAULT_ORDER_EMAIL_BODY_TEMPLATE,
+  DEFAULT_ORDER_EMAIL_SUBJECT_TEMPLATE,
+  DEFAULT_ORDER_WHATSAPP_TEMPLATE,
+} from "../lib/inventory/templates";
 
 export const categoryEnum = pgEnum("company_category", ["OEM", "TIER1", "TIER2", "MSME"]);
 export const unitTypeEnum = pgEnum("unit_type", ["PER_CC", "PER_HOUR", "PER_SAMPLE", "PER_HOUR_3_SAMPLES"]);
 export const customerStatusEnum = pgEnum("customer_status", ["DRAFT", "ACTIVE"]);
 export const quotationStatusEnum = pgEnum("quotation_status", ["DRAFT", "SENT", "ACCEPTED", "REJECTED"]);
 export const ticketStageEnum = pgEnum("ticket_stage", ["WAITING_PO", "BILLING", "PAYMENT", "PAID", "CANCELLED"]);
-export const fileKindEnum = pgEnum("file_kind", ["PO", "INVOICE"]);
+export const fileKindEnum = pgEnum("file_kind", ["PO", "INVOICE", "BILL"]);
 export const paymentModeEnum = pgEnum("payment_mode", ["BANK", "UPI", "CHEQUE", "CASH"]);
 export const followUpMethodEnum = pgEnum("follow_up_method", ["CALL", "WHATSAPP", "EMAIL", "VISIT", "OTHER"]);
 export const exportMethodEnum = pgEnum("export_method", ["EXCEL_MANUAL", "TALLY"]);
 export const crmStageTypeEnum = pgEnum("crm_stage_type", ["OPEN", "WON", "LOST"]);
+export const invDocTypeEnum = pgEnum("inv_doc_type", ["IN", "OUT", "ADJ"]);
+export const invCountStatusEnum = pgEnum("inv_count_status", ["IN_PROGRESS", "COMPLETED"]);
 export const crmActivityTypeEnum = pgEnum("crm_activity_type", ["CALL", "MEETING", "EMAIL", "WHATSAPP", "SITE_VISIT", "FOLLOW_UP"]);
 
 const money = (name: string) => numeric(name, { precision: 14, scale: 2 });
@@ -261,6 +268,19 @@ export const settings = pgTable("settings", {
   leadEmailBodyTemplate: text("lead_email_body_template").notNull().default(DEFAULT_LEAD_EMAIL_BODY_TEMPLATE),
   /** Stage an enquiry moves to when a quotation is created from it. Empty = don't move. */
   quoteCreatedMoveToStageId: uuid("quote_created_move_to_stage_id"),
+  // Module 5: Inventory
+  invInPrefix: text("inv_in_prefix").notNull().default("ACDRI/IN"),
+  invOutPrefix: text("inv_out_prefix").notNull().default("ACDRI/OUT"),
+  invAdjPrefix: text("inv_adj_prefix").notNull().default("ACDRI/ADJ"),
+  invItemPrefix: text("inv_item_prefix").notNull().default("ITM"),
+  invExpiryWarningDays: integer("inv_expiry_warning_days").notNull().default(30),
+  invAvgUseDays: integer("inv_avg_use_days").notNull().default(90),
+  invSafetyDays: integer("inv_safety_days").notNull().default(7),
+  invPriceRiseAlertPct: integer("inv_price_rise_alert_pct").notNull().default(10),
+  invMaterialShareAlertPct: integer("inv_material_share_alert_pct").notNull().default(40),
+  invOrderWhatsappTemplate: text("inv_order_whatsapp_template").notNull().default(DEFAULT_ORDER_WHATSAPP_TEMPLATE),
+  invOrderEmailSubjectTemplate: text("inv_order_email_subject_template").notNull().default(DEFAULT_ORDER_EMAIL_SUBJECT_TEMPLATE),
+  invOrderEmailBodyTemplate: text("inv_order_email_body_template").notNull().default(DEFAULT_ORDER_EMAIL_BODY_TEMPLATE),
   updatedAt: timestamp("updated_at", { withTimezone: true })
     .notNull()
     .default(sql`now()`)
@@ -632,6 +652,242 @@ export const leadEvents = pgTable(
   },
   (t) => [index("lead_events_lead_idx").on(t.leadId, t.createdAt)],
 );
+
+// ---------------------------------------------------------------------------
+// Module 5: Inventory
+// Quantities numeric(14,3); unit costs numeric(14,4) in rupees; values integer paise.
+// ---------------------------------------------------------------------------
+
+const qty = (name: string) => numeric(name, { precision: 14, scale: 3 });
+const rate = (name: string) => numeric(name, { precision: 14, scale: 4 });
+const listTable = (name: string) =>
+  pgTable(name, {
+    id: uuid("id").primaryKey().defaultRandom(),
+    name: text("name").notNull(),
+    sortOrder: integer("sort_order").notNull().default(0),
+    isActive: boolean("is_active").notNull().default(true),
+  });
+
+export const invCategories = listTable("inv_categories");
+export const invUnits = listTable("inv_units");
+export const invPurposes = listTable("inv_purposes");
+export const invAdjustReasons = listTable("inv_adjust_reasons");
+
+/** Running numbers: "IN:2026-27", "OUT:2026-27", "ADJ:2026-27", "ITEM", "COUNT". Never go backwards. */
+export const invCounters = pgTable("inv_counters", {
+  key: text("key").primaryKey(),
+  lastSeq: integer("last_seq").notNull().default(0),
+});
+
+export const invSuppliers = pgTable(
+  "inv_suppliers",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    name: text("name").notNull(),
+    contactName: text("contact_name"),
+    phone: text("phone"),
+    email: text("email"),
+    gstin: text("gstin"),
+    address: text("address"),
+    notes: text("notes"),
+    isActive: boolean("is_active").notNull().default(true),
+    ...timestamps,
+  },
+  (t) => [index("inv_suppliers_name_idx").on(t.name)],
+);
+
+export const invItems = pgTable(
+  "inv_items",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    code: text("code").notNull(),
+    name: text("name").notNull(),
+    categoryId: uuid("category_id")
+      .notNull()
+      .references(() => invCategories.id),
+    unitId: uuid("unit_id")
+      .notNull()
+      .references(() => invUnits.id),
+    packName: text("pack_name"),
+    packSize: qty("pack_size"),
+    reorderLevel: qty("reorder_level").notNull().default("0"),
+    reorderQty: qty("reorder_qty").notNull().default("0"),
+    leadTimeDays: integer("lead_time_days"),
+    preferredSupplierId: uuid("preferred_supplier_id").references(() => invSuppliers.id),
+    storagePlace: text("storage_place"),
+    trackBatches: boolean("track_batches").notNull().default(false),
+    hsnCode: text("hsn_code"),
+    notes: text("notes"),
+    isActive: boolean("is_active").notNull().default(true),
+    /** Kept up to date in the same transaction as every movement (fast reads). */
+    qtyOnHand: qty("qty_on_hand").notNull().default("0"),
+    avgCost: rate("avg_cost").notNull().default("0"),
+    lastPurchaseRate: rate("last_purchase_rate"),
+    orderedOn: date("ordered_on"),
+    orderedSupplierId: uuid("ordered_supplier_id").references(() => invSuppliers.id),
+    ...timestamps,
+  },
+  (t) => [uniqueIndex("inv_items_code_idx").on(t.code), index("inv_items_name_idx").on(t.name)],
+);
+
+export const invItemDepartments = pgTable(
+  "inv_item_departments",
+  {
+    itemId: uuid("item_id")
+      .notNull()
+      .references(() => invItems.id, { onDelete: "cascade" }),
+    deptCode: text("dept_code")
+      .notNull()
+      .references(() => departments.code),
+  },
+  (t) => [primaryKey({ columns: [t.itemId, t.deptCode] })],
+);
+
+export const invSupplierItems = pgTable(
+  "inv_supplier_items",
+  {
+    supplierId: uuid("supplier_id")
+      .notNull()
+      .references(() => invSuppliers.id),
+    itemId: uuid("item_id")
+      .notNull()
+      .references(() => invItems.id),
+    lastRate: rate("last_rate"),
+    lastRateDate: date("last_rate_date"),
+    leadTimeDays: integer("lead_time_days"),
+  },
+  (t) => [primaryKey({ columns: [t.supplierId, t.itemId] })],
+);
+
+export const invBatches = pgTable(
+  "inv_batches",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    itemId: uuid("item_id")
+      .notNull()
+      .references(() => invItems.id),
+    batchNo: text("batch_no").notNull(),
+    expiryDate: date("expiry_date"),
+    qtyOnHand: qty("qty_on_hand").notNull().default("0"),
+    receivedOn: date("received_on").notNull(),
+  },
+  (t) => [uniqueIndex("inv_batches_item_batch_idx").on(t.itemId, t.batchNo), index("inv_batches_expiry_idx").on(t.expiryDate)],
+);
+
+export const invDocuments = pgTable(
+  "inv_documents",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    docNo: text("doc_no").notNull(),
+    fy: text("fy").notNull(),
+    seq: integer("seq").notNull(),
+    type: invDocTypeEnum("type").notNull(),
+    docDate: date("doc_date").notNull(),
+    supplierId: uuid("supplier_id").references(() => invSuppliers.id),
+    supplierBillNo: text("supplier_bill_no"),
+    supplierBillDate: date("supplier_bill_date"),
+    fileId: uuid("file_id").references(() => files.id),
+    ticketId: uuid("ticket_id").references(() => tickets.id),
+    purposeId: uuid("purpose_id").references(() => invPurposes.id),
+    reversesDocId: uuid("reverses_doc_id").references((): AnyPgColumn => invDocuments.id),
+    reversedByDocId: uuid("reversed_by_doc_id").references((): AnyPgColumn => invDocuments.id),
+    doneBy: uuid("done_by").references(() => teamMembers.id),
+    note: text("note"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("inv_documents_no_idx").on(t.docNo),
+    uniqueIndex("inv_documents_type_fy_seq_idx").on(t.type, t.fy, t.seq),
+    index("inv_documents_date_idx").on(t.docDate),
+    index("inv_documents_ticket_idx").on(t.ticketId),
+    index("inv_documents_supplier_idx").on(t.supplierId),
+  ],
+);
+
+export const invMovements = pgTable(
+  "inv_movements",
+  {
+    id: serial("id").primaryKey(),
+    documentId: uuid("document_id")
+      .notNull()
+      .references(() => invDocuments.id),
+    itemId: uuid("item_id")
+      .notNull()
+      .references(() => invItems.id),
+    batchId: uuid("batch_id").references(() => invBatches.id),
+    qtyIn: qty("qty_in").notNull().default("0"),
+    qtyOut: qty("qty_out").notNull().default("0"),
+    unitCost: rate("unit_cost").notNull(),
+    /** Value in paise (positive), saved at the moment of the movement so job costs never change later. */
+    value: bigint("value", { mode: "number" }).notNull(),
+    reasonId: uuid("reason_id").references(() => invAdjustReasons.id),
+    note: text("note"),
+    /** The item's stock right after this movement (the running balance). */
+    balanceAfter: qty("balance_after").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("inv_movements_item_idx").on(t.itemId, t.id), index("inv_movements_document_idx").on(t.documentId)],
+);
+
+/** Materials list of a rate-card service: how much of an item per billing unit (suggestions only). */
+export const invServiceMaterials = pgTable(
+  "inv_service_materials",
+  {
+    serviceId: integer("service_id")
+      .notNull()
+      .references(() => services.id),
+    itemId: uuid("item_id")
+      .notNull()
+      .references(() => invItems.id),
+    qtyPerUnit: rate("qty_per_unit").notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.serviceId, t.itemId] })],
+);
+
+export const invCounts = pgTable("inv_counts", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  countNo: text("count_no").notNull(),
+  status: invCountStatusEnum("status").notNull().default("IN_PROGRESS"),
+  filter: jsonb("filter").$type<Record<string, unknown>>(),
+  startedAt: timestamp("started_at", { withTimezone: true }).notNull().defaultNow(),
+  completedAt: timestamp("completed_at", { withTimezone: true }),
+  adjustmentDocId: uuid("adjustment_doc_id").references(() => invDocuments.id),
+  doneBy: uuid("done_by").references(() => teamMembers.id),
+});
+
+export const invCountLines = pgTable(
+  "inv_count_lines",
+  {
+    id: serial("id").primaryKey(),
+    countId: uuid("count_id")
+      .notNull()
+      .references(() => invCounts.id, { onDelete: "cascade" }),
+    itemId: uuid("item_id")
+      .notNull()
+      .references(() => invItems.id),
+    batchId: uuid("batch_id").references(() => invBatches.id),
+    systemQty: qty("system_qty").notNull(),
+    countedQty: qty("counted_qty"),
+    countedAt: timestamp("counted_at", { withTimezone: true }),
+  },
+  (t) => [index("inv_count_lines_count_idx").on(t.countId)],
+);
+
+export const invReorderSends = pgTable("inv_reorder_sends", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  supplierId: uuid("supplier_id").references(() => invSuppliers.id),
+  items: jsonb("items").$type<{ itemId: string; name: string; qty: string; unit: string }[]>().notNull(),
+  method: text("method").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  doneBy: uuid("done_by").references(() => teamMembers.id),
+});
+
+export type InvItem = typeof invItems.$inferSelect;
+export type InvSupplier = typeof invSuppliers.$inferSelect;
+export type InvBatch = typeof invBatches.$inferSelect;
+export type InvDocument = typeof invDocuments.$inferSelect;
+export type InvMovement = typeof invMovements.$inferSelect;
+export type InvDocType = (typeof invDocTypeEnum.enumValues)[number];
 
 export type Department = typeof departments.$inferSelect;
 export type Service = typeof services.$inferSelect;

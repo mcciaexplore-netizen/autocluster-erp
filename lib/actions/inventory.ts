@@ -1,0 +1,51 @@
+"use server";
+
+import { revalidatePath } from "next/cache";
+import { z } from "zod";
+import { db } from "@/db";
+import { createItem, createSupplier, updateItem, updateSupplier } from "@/db/inv-master-writer";
+import { UserFacingError } from "@/db/quote-writer";
+import { isSignedIn } from "@/lib/auth-guard";
+import { SIGNED_OUT_MESSAGE } from "@/lib/auth-messages";
+import { itemFormSchema, supplierFormSchema, type ItemFormValues, type SupplierFormValues } from "@/lib/validation/inventory";
+
+type Result<T> = { ok: true; data: T } | { ok: false; message: string };
+const id = z.string().uuid();
+
+async function run<T>(fn: () => Promise<T>): Promise<Result<T>> {
+  if (!(await isSignedIn())) return { ok: false, message: SIGNED_OUT_MESSAGE };
+  try {
+    const data = await fn();
+    revalidatePath("/", "layout");
+    return { ok: true, data };
+  } catch (e) {
+    if (e instanceof UserFacingError) return { ok: false, message: e.message };
+    if (e instanceof z.ZodError) return { ok: false, message: e.issues[0]?.message ?? "Please check the details." };
+    console.error("inventory", e);
+    return { ok: false, message: "We couldn't save that right now. Please try again." };
+  }
+}
+
+export async function saveItemAction(itemId: string | null, values: ItemFormValues, suggestedCode?: string) {
+  return run(async () => {
+    const v = itemFormSchema.parse(values);
+    if (itemId) {
+      await updateItem(db, id.parse(itemId), v);
+      return { id: itemId, code: v.code };
+    }
+    const item = await createItem(db, v, { suggestedCode });
+    return { id: item.id, code: item.code };
+  });
+}
+
+export async function saveSupplierAction(supplierId: string | null, values: SupplierFormValues) {
+  return run(async () => {
+    const v = supplierFormSchema.parse(values);
+    if (supplierId) {
+      await updateSupplier(db, id.parse(supplierId), v);
+      return { id: supplierId, name: v.name.trim() };
+    }
+    const s = await createSupplier(db, v);
+    return { id: s.id, name: s.name };
+  });
+}

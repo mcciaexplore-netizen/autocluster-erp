@@ -8,14 +8,15 @@ import { TALLY_CONNECTION } from "@/lib/tally";
 import { Plug } from "lucide-react";
 import { getSettings } from "@/lib/data";
 import { getCrmLists, getCrmStages } from "@/lib/crm-data";
-import { CrmListsSection } from "@/components/crm/crm-lists-section";
+import { CrmListsSection, InventoryListsSection } from "@/components/crm/crm-lists-section";
+import { getInvLists } from "@/lib/inventory-data";
 
 export const metadata: Metadata = { title: "Settings" };
 
 export default function SettingsPage() {
   return (
     <div className="mx-auto max-w-4xl">
-      <PageHeader title="Settings" description="Organisation details, discounts, tax, quotations, billing and CRM." />
+      <PageHeader title="Settings" description="Organisation details, discounts, tax, quotations, billing, CRM and inventory." />
       <Suspense fallback={<FormSkeleton />}>
         <Form />
       </Suspense>
@@ -23,10 +24,18 @@ export default function SettingsPage() {
         <Suspense fallback={<FormSkeleton />}>
           <CrmLists />
         </Suspense>
+        <Suspense fallback={<FormSkeleton />}>
+          <InvLists />
+        </Suspense>
         <TallySection />
       </div>
     </div>
   );
+}
+
+async function InvLists() {
+  const l = await getInvLists();
+  return <InventoryListsSection lists={{ invCategories: l.categories, invUnits: l.units, invPurposes: l.purposes, invReasons: l.reasons }} />;
 }
 
 async function CrmLists() {
@@ -61,6 +70,18 @@ async function Form() {
         leadEmailSubjectTemplate: s.leadEmailSubjectTemplate,
         leadEmailBodyTemplate: s.leadEmailBodyTemplate,
         quoteCreatedMoveToStageId: s.quoteCreatedMoveToStageId ?? "",
+        invInPrefix: s.invInPrefix,
+        invOutPrefix: s.invOutPrefix,
+        invAdjPrefix: s.invAdjPrefix,
+        invItemPrefix: s.invItemPrefix,
+        invExpiryWarningDays: s.invExpiryWarningDays,
+        invAvgUseDays: s.invAvgUseDays,
+        invSafetyDays: s.invSafetyDays,
+        invPriceRiseAlertPct: s.invPriceRiseAlertPct,
+        invMaterialShareAlertPct: s.invMaterialShareAlertPct,
+        invOrderWhatsappTemplate: s.invOrderWhatsappTemplate,
+        invOrderEmailSubjectTemplate: s.invOrderEmailSubjectTemplate,
+        invOrderEmailBodyTemplate: s.invOrderEmailBodyTemplate,
       }}
     />
   );

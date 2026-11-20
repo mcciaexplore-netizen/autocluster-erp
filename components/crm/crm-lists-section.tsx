@@ -14,28 +14,59 @@ import { addCrmListItem, deleteCrmListItem, moveCrmListItem, setCrmListItemActiv
 import type { CrmListItem, CrmLists } from "@/lib/crm-data";
 import { cn } from "@/lib/utils";
 
-type Key = "sources" | "lostReasons" | "tags" | "team";
+type Key = "sources" | "lostReasons" | "tags" | "team" | "invCategories" | "invUnits" | "invPurposes" | "invReasons";
+type ListConfig = { key: Key; tab: string; one: string; help: string; example: string };
 
-const LISTS: { key: Key; tab: string; one: string; help: string; example: string }[] = [
+const LISTS: ListConfig[] = [
   { key: "sources", tab: "Sources", one: "source", help: "Where enquiries come from. Every enquiry needs one.", example: "e.g. LinkedIn" },
   { key: "lostReasons", tab: "Lost reasons", one: "lost reason", help: "Asked for when an enquiry is marked as lost.", example: "e.g. Delivery time too long" },
   { key: "tags", tab: "Tags", one: "tag", help: "Optional labels to group enquiries.", example: "e.g. Export" },
   { key: "team", tab: "Team members", one: "team member", help: "People enquiries and activities can be assigned to. Names only, these are not sign-in accounts.", example: "e.g. Sneha Joshi" },
 ];
 
+const INV_LISTS: ListConfig[] = [
+  { key: "invCategories", tab: "Categories", one: "category", help: "Every item belongs to one category.", example: "e.g. Packing material" },
+  { key: "invUnits", tab: "Units", one: "unit", help: "The unit stock is counted in, e.g. ml or pcs.", example: "e.g. roll" },
+  { key: "invPurposes", tab: "Internal use", one: "purpose", help: "Asked for when stock is used for something other than a job.", example: "e.g. Calibration" },
+  { key: "invReasons", tab: "Adjust reasons", one: "reason", help: "Asked for when stock is added or removed by hand.", example: "e.g. Returned to supplier" },
+];
+
 /** Settings > CRM lists: add, rename, reorder, hide and delete. Each change saves straight away. */
 export function CrmListsSection({ lists }: { lists: CrmLists }) {
   return (
-    <FormSection title="CRM lists" description="Each change is saved straight away. Items already used on an enquiry are hidden instead of deleted." icon={<ListChecks className="size-5" />}>
-      <Tabs defaultValue="sources">
+    <ListsSection
+      title="CRM lists"
+      description="Each change is saved straight away. Items already used on an enquiry are hidden instead of deleted."
+      configs={LISTS}
+      lists={lists as unknown as Record<Key, CrmListItem[]>}
+    />
+  );
+}
+
+/** Settings > Inventory lists: categories, units, internal use purposes, adjustment reasons. */
+export function InventoryListsSection({ lists }: { lists: Record<"invCategories" | "invUnits" | "invPurposes" | "invReasons", CrmListItem[]> }) {
+  return (
+    <ListsSection
+      title="Inventory lists"
+      description="Each change is saved straight away. Items already in use are hidden instead of deleted, so old records keep them."
+      configs={INV_LISTS}
+      lists={lists as Record<Key, CrmListItem[]>}
+    />
+  );
+}
+
+function ListsSection({ title, description, configs, lists }: { title: string; description: string; configs: ListConfig[]; lists: Record<Key, CrmListItem[]> }) {
+  return (
+    <FormSection title={title} description={description} icon={<ListChecks className="size-5" />}>
+      <Tabs defaultValue={configs[0].key}>
         <TabsList className="grid w-full grid-cols-2 group-data-horizontal/tabs:h-auto sm:flex sm:justify-start">
-          {LISTS.map((l) => (
+          {configs.map((l) => (
             <TabsTrigger key={l.key} value={l.key}>
               {l.tab} <span className="text-muted-foreground">({lists[l.key].filter((i) => i.isActive).length})</span>
             </TabsTrigger>
           ))}
         </TabsList>
-        {LISTS.map((l) => (
+        {configs.map((l) => (
           <TabsContent key={l.key} value={l.key} className="mt-4">
             <p className="mb-3 text-sm text-muted-foreground">{l.help}</p>
             <ListEditor listKey={l.key} one={l.one} example={l.example} items={lists[l.key]} />

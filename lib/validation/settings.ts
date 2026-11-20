@@ -1,6 +1,17 @@
 import { z } from "zod";
 import { GSTIN_REGEX, stateByCode } from "@/lib/india";
 
+const prefix = (eg: string) =>
+  z
+    .string()
+    .trim()
+    .min(1, { message: `Please enter a prefix, e.g. ${eg}.` })
+    .max(30, { message: `Keep the prefix short, e.g. ${eg}.` })
+    .regex(/^[A-Za-z0-9/_-]+$/, { message: `Use letters, numbers, / - or _ only, e.g. ${eg}.` });
+const days = (eg: string, min: number, max: number) =>
+  z.number({ message: `Enter a number of days, ${eg}.` }).int({ message: "Use whole days." }).min(min, { message: `Use ${min} or more.` }).max(max, { message: `Use ${max} or less.` });
+const pct = (eg: string) => z.number({ message: `Enter a percentage, ${eg}.` }).int({ message: "Use a whole number." }).min(1, { message: "Use 1 or more." }).max(100, { message: "Use 100 or less." });
+
 export const settingsSchema = z.object({
   orgName: z.string().trim().min(1, { message: "Please enter the organisation name." }),
   orgAddress: z.string().trim().min(1, { message: "Please enter the address." }),
@@ -39,6 +50,19 @@ export const settingsSchema = z.object({
   leadWhatsappTemplate: z.string().trim().min(10, { message: "Please write the WhatsApp message." }).max(1000, { message: "Please keep the message under 1,000 characters." }),
   leadEmailSubjectTemplate: z.string().trim().min(3, { message: "Please write the email subject." }).max(200, { message: "Please keep the subject under 200 characters." }),
   leadEmailBodyTemplate: z.string().trim().min(10, { message: "Please write the email message." }).max(4000, { message: "Please keep the message under 4,000 characters." }),
+  // Inventory
+  invInPrefix: prefix("ACDRI/IN"),
+  invOutPrefix: prefix("ACDRI/OUT"),
+  invAdjPrefix: prefix("ACDRI/ADJ"),
+  invItemPrefix: prefix("ITM"),
+  invExpiryWarningDays: days("e.g. 30", 1, 365),
+  invAvgUseDays: days("e.g. 90", 7, 730),
+  invSafetyDays: days("e.g. 7", 0, 365),
+  invPriceRiseAlertPct: pct("e.g. 10"),
+  invMaterialShareAlertPct: pct("e.g. 40"),
+  invOrderWhatsappTemplate: z.string().trim().min(10, { message: "Please write the WhatsApp message." }).max(1500, { message: "Please keep the message under 1,500 characters." }),
+  invOrderEmailSubjectTemplate: z.string().trim().min(3, { message: "Please write the email subject." }).max(200, { message: "Please keep the subject under 200 characters." }),
+  invOrderEmailBodyTemplate: z.string().trim().min(10, { message: "Please write the email message." }).max(4000, { message: "Please keep the message under 4,000 characters." }),
   /** A stage id, or "" for "Don't move". */
   quoteCreatedMoveToStageId: z.union([z.literal(""), z.string().uuid({ message: "Please choose a stage." })]),
 });

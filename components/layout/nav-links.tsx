@@ -12,7 +12,7 @@ const STYLES = {
     off: "text-foreground/80 hover:bg-secondary hover:text-primary",
   },
   bottom: {
-    base: "flex h-16 min-w-0 flex-col items-center justify-center gap-1 text-[11px] font-medium",
+    base: "flex h-16 flex-col items-center justify-center gap-1 px-0.5 text-[10px] leading-tight font-medium tracking-tight whitespace-nowrap",
     on: "text-primary",
     off: "text-muted-foreground",
   },
@@ -33,13 +33,13 @@ export function NavLinkList({ variant, pathname }: { variant: "side" | "bottom";
         return (
           <Link key={href} href={href} aria-current={active ? "page" : undefined} className={cn(s.base, active ? s.on : s.off)}>
             {variant === "bottom" ? (
-              <span className={cn("grid h-7 w-11 place-items-center rounded-full", active && "bg-secondary")}>
+              <span className={cn("grid h-7 w-9 place-items-center rounded-full", active && "bg-secondary")}>
                 <Icon className="size-5" aria-hidden />
               </span>
             ) : (
               <Icon className="size-5" aria-hidden />
             )}
-            {variant === "bottom" ? (short ?? label) : label}
+            {variant === "bottom" ? <span>{short ?? label}</span> : label}
           </Link>
         );
       })}

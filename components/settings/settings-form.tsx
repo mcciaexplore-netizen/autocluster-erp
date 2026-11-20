@@ -1,7 +1,7 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import { BellRing, Building2, Handshake, FileText, ImageIcon, Loader2, Percent, Save, SquareKanban } from "lucide-react";
+import { BellRing, Building2, Handshake, Package, FileText, ImageIcon, Loader2, Percent, Save, SquareKanban } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useTransition } from "react";
 import { Controller, useForm, useWatch } from "react-hook-form";
@@ -26,6 +26,13 @@ import {
 } from "@/lib/reminder-templates";
 import { DEFAULT_TERMS } from "@/lib/settings-shared";
 import {
+  DEFAULT_ORDER_EMAIL_BODY_TEMPLATE,
+  DEFAULT_ORDER_EMAIL_SUBJECT_TEMPLATE,
+  DEFAULT_ORDER_WHATSAPP_TEMPLATE,
+  fillOrderTemplate,
+  ORDER_TEMPLATE_PLACEHOLDERS,
+} from "@/lib/inventory/templates";
+import {
   DEFAULT_LEAD_EMAIL_BODY_TEMPLATE,
   DEFAULT_LEAD_EMAIL_SUBJECT_TEMPLATE,
   DEFAULT_LEAD_WHATSAPP_TEMPLATE,
@@ -33,6 +40,13 @@ import {
   LEAD_TEMPLATE_PLACEHOLDERS,
 } from "@/lib/crm/templates";
 
+const ORDER_SAMPLE = {
+  supplier: "Deccan Resins & Polymers",
+  contact_name: "Mr. Kale",
+  items: "1. SLA resin, imported (grey): 3 bottles (3,000 ml)\n2. IPA for cleaning: 2 cans (10 L)",
+  org_name: "AutoCluster",
+  date: "20 Nov 2026",
+};
 const LEAD_SAMPLE = { contact_name: "Rohan Kulkarni", company: "Sahyadri Auto Components Pvt Ltd", enquiry_title: "3D printing of 20 prototype parts" };
 const DONT_MOVE = "none";
 
@@ -75,6 +89,11 @@ export function SettingsForm({ initial, stages }: { initial: SettingsInput; stag
   const leadPrefix = useWatch({ control, name: "leadPrefix" }) || "ACDRI/EN";
   const leadWhatsapp = useWatch({ control, name: "leadWhatsappTemplate" });
   const wonStage = stages.find((st) => st.type === "WON")?.name ?? "Won";
+  const invIn = useWatch({ control, name: "invInPrefix" }) || "ACDRI/IN";
+  const invOut = useWatch({ control, name: "invOutPrefix" }) || "ACDRI/OUT";
+  const invAdj = useWatch({ control, name: "invAdjPrefix" }) || "ACDRI/ADJ";
+  const invItem = useWatch({ control, name: "invItemPrefix" }) || "ITM";
+  const orderWa = useWatch({ control, name: "invOrderWhatsappTemplate" });
   const pct = useWatch({ control, name: "memberDiscountPct" });
   const applyNonMsme = useWatch({ control, name: "applyDiscountToNonMsme" });
 
@@ -354,6 +373,85 @@ export function SettingsForm({ initial, stages }: { initial: SettingsInput; stag
               When that quotation is <strong className="text-foreground">Accepted</strong>, the enquiry is always marked as <strong className="text-foreground">{wonStage}</strong>.
             </p>
           </div>
+        </div>
+      </FormSection>
+
+      <FormSection title="Inventory" description="Numbers, warnings and the supplier order message." icon={<Package className="size-5" />}>
+        <div className="flex flex-col gap-5">
+          <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
+            <Field label="Stock received number prefix" required error={e.invInPrefix?.message} helper={`e.g. ${formatQuoteNo(invIn.toUpperCase(), financialYear(new Date()), 1)}`}>
+              {(p) => <Input {...p} className="uppercase" {...register("invInPrefix")} />}
+            </Field>
+            <Field label="Stock used number prefix" required error={e.invOutPrefix?.message} helper={`e.g. ${formatQuoteNo(invOut.toUpperCase(), financialYear(new Date()), 1)}`}>
+              {(p) => <Input {...p} className="uppercase" {...register("invOutPrefix")} />}
+            </Field>
+            <Field label="Stock adjusted number prefix" required error={e.invAdjPrefix?.message} helper={`e.g. ${formatQuoteNo(invAdj.toUpperCase(), financialYear(new Date()), 1)}`}>
+              {(p) => <Input {...p} className="uppercase" {...register("invAdjPrefix")} />}
+            </Field>
+            <Field label="Item code prefix" required error={e.invItemPrefix?.message} helper={`New items get codes like ${invItem.toUpperCase()}-0001`}>
+              {(p) => <Input {...p} className="uppercase" {...register("invItemPrefix")} />}
+            </Field>
+            <Field label="Warn about expiry (days before)" required error={e.invExpiryWarningDays?.message} helper="Batches expiring within this many days show “Expiring soon”, e.g. 30">
+              {(p) => <Input {...p} type="number" min={1} max={365} step={1} inputMode="numeric" {...register("invExpiryWarningDays", num)} />}
+            </Field>
+            <Field label="Days used for average use" required error={e.invAvgUseDays?.message} helper="“Runs out in” is worked out from use over this many days, e.g. 90">
+              {(p) => <Input {...p} type="number" min={7} max={730} step={1} inputMode="numeric" {...register("invAvgUseDays", num)} />}
+            </Field>
+            <Field label="Safety days" required error={e.invSafetyDays?.message} helper="Extra days added to the supplier's delivery time before an item is put on the reorder list, e.g. 7">
+              {(p) => <Input {...p} type="number" min={0} max={365} step={1} inputMode="numeric" {...register("invSafetyDays", num)} />}
+            </Field>
+            <Field label="Price rise alert (%)" required error={e.invPriceRiseAlertPct?.message} helper="Flag items whose purchase rate rose more than this, e.g. 10">
+              {(p) => <Input {...p} type="number" min={1} max={100} step={1} inputMode="numeric" {...register("invPriceRiseAlertPct", num)} />}
+            </Field>
+            <Field label="High material share alert (%)" required error={e.invMaterialShareAlertPct?.message} helper="Flag services where materials take more than this share of the price, e.g. 40">
+              {(p) => <Input {...p} type="number" min={1} max={100} step={1} inputMode="numeric" {...register("invMaterialShareAlertPct", num)} />}
+            </Field>
+          </div>
+          <p className="text-sm text-muted-foreground">
+            In the supplier order messages, these words are filled in for you:{" "}
+            {ORDER_TEMPLATE_PLACEHOLDERS.map((ph) => (
+              <code key={ph} className="mr-1 rounded bg-muted px-1.5 py-0.5 text-xs text-foreground">
+                {ph}
+              </code>
+            ))}
+          </p>
+          <Field
+            label="WhatsApp message to suppliers"
+            required
+            error={e.invOrderWhatsappTemplate?.message}
+            helper={
+              <>
+                Preview: <span className="whitespace-pre-line text-foreground">{fillOrderTemplate(orderWa ?? "", ORDER_SAMPLE)}</span>{" "}
+                <button type="button" className="font-medium text-primary underline-offset-4 hover:underline" onClick={() => setValue("invOrderWhatsappTemplate", DEFAULT_ORDER_WHATSAPP_TEMPLATE, { shouldDirty: true, shouldValidate: true })}>
+                  Use the standard wording
+                </button>
+              </>
+            }
+          >
+            {(p) => <Textarea {...p} rows={5} {...register("invOrderWhatsappTemplate")} />}
+          </Field>
+          <Field label="Email subject to suppliers" required error={e.invOrderEmailSubjectTemplate?.message}>
+            {(p) => <Input {...p} {...register("invOrderEmailSubjectTemplate")} />}
+          </Field>
+          <Field
+            label="Email message to suppliers"
+            required
+            error={e.invOrderEmailBodyTemplate?.message}
+            helper={
+              <button
+                type="button"
+                className="font-medium text-primary underline-offset-4 hover:underline"
+                onClick={() => {
+                  setValue("invOrderEmailSubjectTemplate", DEFAULT_ORDER_EMAIL_SUBJECT_TEMPLATE, { shouldDirty: true, shouldValidate: true });
+                  setValue("invOrderEmailBodyTemplate", DEFAULT_ORDER_EMAIL_BODY_TEMPLATE, { shouldDirty: true, shouldValidate: true });
+                }}
+              >
+                Use the standard email
+              </button>
+            }
+          >
+            {(p) => <Textarea {...p} rows={8} {...register("invOrderEmailBodyTemplate")} />}
+          </Field>
         </div>
       </FormSection>
 

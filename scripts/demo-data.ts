@@ -8,6 +8,7 @@ import { createDb, createPool, type DB, type Tx } from "../db/client";
 import * as s from "../db/schema";
 import { createQuotation } from "../db/quote-writer";
 import { ensureCrmDefaults } from "../db/crm-defaults";
+import { ensureInventoryDefaults } from "../db/inv-defaults";
 import { loadCrmDemo } from "./demo-crm";
 import { DEFAULT_TERMS } from "../lib/settings-shared";
 import { loadDemoOrders, type DemoOrdersOptions } from "./demo-orders";
@@ -39,7 +40,7 @@ export async function isEmpty(db: DB | Tx) {
 
 export async function wipe(db: DB | Tx) {
   await db.execute(
-    sql`TRUNCATE lead_events, crm_activities, lead_tags, lead_services, lead_departments, leads, lead_counters, crm_stage_changes, crm_stages, crm_sources, crm_lost_reasons, crm_tags, team_members, ticket_events, follow_ups, payments, tickets, invoices, purchase_orders, billing_exports, files, ticket_counters, quotation_items, quotations, quote_counters, customer_services, customer_departments, customers, services, departments, settings RESTART IDENTITY CASCADE`,
+    sql`TRUNCATE inv_reorder_sends, inv_count_lines, inv_counts, inv_service_materials, inv_movements, inv_documents, inv_batches, inv_supplier_items, inv_item_departments, inv_items, inv_suppliers, inv_counters, inv_categories, inv_units, inv_purposes, inv_adjust_reasons, lead_events, crm_activities, lead_tags, lead_services, lead_departments, leads, lead_counters, crm_stage_changes, crm_stages, crm_sources, crm_lost_reasons, crm_tags, team_members, ticket_events, follow_ups, payments, tickets, invoices, purchase_orders, billing_exports, files, ticket_counters, quotation_items, quotations, quote_counters, customer_services, customer_departments, customers, services, departments, settings RESTART IDENTITY CASCADE`,
   );
 }
 
@@ -184,6 +185,7 @@ export async function loadDemoData(db: DB | Tx, opts: { quiet?: boolean; orders?
     defaultTerms: DEFAULT_TERMS,
   });
   await ensureCrmDefaults(db);
+  await ensureInventoryDefaults(db);
   await db.insert(s.departments).values(DEPARTMENTS);
   const svcRows = await db
     .insert(s.services)
