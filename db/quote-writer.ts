@@ -161,7 +161,7 @@ export const LOCKED_MESSAGE =
   "This quotation is locked because its tickets are open on the Orders & Billing board. To make changes, use “Duplicate as revised quotation”.";
 
 /** Updates a quotation's content. The number stays the same. Refused once tickets exist. */
-export async function updateQuotation(db: DB, id: string, input: QuotationInput) {
+export async function updateQuotation(db: DB | Tx, id: string, input: QuotationInput) {
   return db.transaction(async (tx) => {
     await tx.execute(sql`select id from quotations where id = ${id} for update`);
     const t = await tx.select({ id: tickets.id }).from(tickets).where(eq(tickets.quotationId, id)).limit(1);

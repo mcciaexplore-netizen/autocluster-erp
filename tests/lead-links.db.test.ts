@@ -1,6 +1,7 @@
 import { asc, eq } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
-import { createQuotationFromLead, linkLeadToCustomer } from "@/db/lead-links";
+import { createQuotationFromLead, linkLeadToCustomer, updateQuotationAndLead } from "@/db/lead-links";
+import { toPaise } from "@/lib/pricing";
 import { createLead, moveLead } from "@/db/lead-writer";
 import type { QuotationInput } from "@/db/quote-writer";
 import * as s from "@/db/schema";
@@ -47,7 +48,14 @@ describe.skipIf(skip)("enquiries linked to quotations and customers (database)",
     expect(q.movedTo).toBe("Negotiation");
     expect((await db.select().from(s.quotations).where(eq(s.quotations.id, q.id)))[0].leadId).toBe(lead.id);
     expect((await leadRow(lead.id)).stageId).toBe(by("Negotiation").id);
-    expect(await events(lead.id)).toEqual(["Enquiry created in New", `Quotation ${q.quoteNo} created`, `Moved from New to Negotiation: quotation ${q.quoteNo} created`]);
+    const [qr] = await db.select().from(s.quotations).where(eq(s.quotations.id, q.id));
+    const before = `₹${(toPaise(qr.taxableValue) / 100).toLocaleString("en-IN")}`;
+    expect(await events(lead.id)).toEqual([
+      "Enquiry created in New",
+      `Quotation ${q.quoteNo} created`,
+      `Expected value updated from not set to ${before} from quotation ${q.quoteNo}`,
+      `Moved from New to Negotiation: quotation ${q.quoteNo} created`,
+    ]);
   });
 
   it("'Don't move' leaves the stage alone, and a Won or Lost enquiry is never reopened", async () => {
@@ -124,5 +132,24 @@ describe.skipIf(skip)("enquiries linked to quotations and customers (database)",
     const { lead, input } = await setup();
     const [other] = (await db.select().from(s.customers)).filter((c) => c.companyName.startsWith("Sahyadri"));
     await expect(createQuotationFromLead(db, { ...input, customerId: other.id }, lead.id)).rejects.toThrow(/different customer/);
+  });
+
+  it("the enquiry's expected value follows the quotation amount before GST: on create, edit and revision", async () => {
+    const { lead, input } = await setup();
+    const q = await createQuotationFromLead(db, input, lead.id);
+    const taxable = async (id: string) => toPaise((await db.select().from(s.quotations).where(eq(s.quotations.id, id)))[0].taxableValue);
+    expect((await leadRow(lead.id)).expectedValue).toBe(await taxable(q.id));
+    // edited: 3 samples -> 5 samples
+    await updateQuotationAndLead(db, q.id, { ...input, lines: [{ ...input.lines[0], samples: 5 }] });
+    const after = await taxable(q.id);
+    expect((await leadRow(lead.id)).expectedValue).toBe(after);
+    expect((await events(lead.id)).at(-1)).toMatch(new RegExp(`^Expected value updated from ₹[\\d,]+ to ₹[\\d,]+ from quotation ${q.quoteNo.replace(/\//g, "\\/")}$`));
+    // saving with no change in amount adds no history line
+    const n = (await events(lead.id)).length;
+    await updateQuotationAndLead(db, q.id, { ...input, subject: "UTM tests, revised wording", lines: [{ ...input.lines[0], samples: 5 }] });
+    expect(await events(lead.id)).toHaveLength(n);
+    // a revision (new quotation from the same enquiry) with 2 samples updates it again
+    const rev = await createQuotationFromLead(db, { ...input, lines: [{ ...input.lines[0], samples: 2 }] }, lead.id);
+    expect((await leadRow(lead.id)).expectedValue).toBe(await taxable(rev.id));
   });
 });

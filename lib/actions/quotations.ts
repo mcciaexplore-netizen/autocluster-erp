@@ -7,11 +7,11 @@ import { and, eq, isNull } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { db } from "@/db";
-import { createQuotation, updateQuotation, UserFacingError, type QuotationInput } from "@/db/quote-writer";
-import { createQuotationFromLead } from "@/db/lead-links";
+import { createQuotation, UserFacingError, type QuotationInput } from "@/db/quote-writer";
+import { createQuotationFromLead, updateQuotationAndLead } from "@/db/lead-links";
 import { changeQuotationStatus, planStatusChange, type StatusChangePlan } from "@/db/ticket-writer";
 import { todayInIndia } from "@/lib/tickets";
-import { quotationItems, quotations, settings as settingsTable } from "@/db/schema";
+import { leads, quotationItems, quotations, settings as settingsTable } from "@/db/schema";
 import { addDaysIso, todayIso } from "@/lib/format";
 import { lineProblems, type DraftLine } from "@/lib/quote-calc";
 import { itemToDraft } from "@/lib/quote-items";
@@ -83,7 +83,7 @@ export async function saveQuotation(
   try {
     // An existing quotation keeps its enquiry link; a new one made from an enquiry gets it here.
     const { leadId, ...data } = c.data;
-    const q = id ? await updateQuotation(db, id, data) : leadId ? await createQuotationFromLead(db, data, leadId) : await createQuotation(db, data);
+    const q = id ? await updateQuotationAndLead(db, id, data) : leadId ? await createQuotationFromLead(db, data, leadId) : await createQuotation(db, data);
     refresh();
     return { ok: true, data: q };
   } catch (e) {
@@ -123,6 +123,11 @@ export async function setQuotationStatus(
  * Makes a new draft from an existing quotation: new number, today's date,
  * same customer and services at the SAME rates as the original.
  */
+async function liveLead(id: string) {
+  const [l] = await db.select({ id: leads.id }).from(leads).where(and(eq(leads.id, id), isNull(leads.deletedAt)));
+  return !!l;
+}
+
 export async function duplicateQuotation(id: string): Promise<Result<{ id: string; quoteNo: string }>> {
   if (!(await isSignedIn())) return { ok: false as const, message: SIGNED_OUT_MESSAGE };
   const [q] = await db.select().from(quotations).where(and(eq(quotations.id, id), isNull(quotations.deletedAt)));
@@ -141,6 +146,8 @@ export async function duplicateQuotation(id: string): Promise<Result<{ id: strin
       terms: q.terms,
       status: "DRAFT",
       lines,
+      // A revision stays linked to the same enquiry (and updates its expected value).
+      ...(q.leadId && (await liveLead(q.leadId)) ? { leadId: q.leadId } : {}),
     },
     null,
   );

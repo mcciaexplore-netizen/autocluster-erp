@@ -8,8 +8,9 @@
  */
 import { and, asc, eq, isNull } from "drizzle-orm";
 import type { DB, Tx } from "./client";
+import { formatINRShort, toPaise } from "@/lib/pricing";
 import { logLeadEvent, moveLead } from "./lead-writer";
-import { createQuotation, UserFacingError, type QuotationInput } from "./quote-writer";
+import { createQuotation, updateQuotation, UserFacingError, type QuotationInput } from "./quote-writer";
 import { crmStages, customers, leads, quotations, settings } from "./schema";
 
 async function lockLiveLead(tx: Tx, leadId: string) {
@@ -43,6 +44,7 @@ export async function createQuotationFromLead(db: DB, input: QuotationInput, lea
     const q = await createQuotation(tx, { ...input, leadId });
     if (!lead.customerId) await tx.update(leads).set({ customerId: input.customerId }).where(eq(leads.id, leadId));
     await logLeadEvent(tx, leadId, "QUOTATION", `Quotation ${q.quoteNo} created`, { quotationId: q.id });
+    await syncLeadValueFromQuotation(tx, q.id);
 
     let movedTo: string | null = null;
     const [set] = await tx.select({ to: settings.quoteCreatedMoveToStageId }).from(settings).where(eq(settings.id, 1));
@@ -55,6 +57,40 @@ export async function createQuotationFromLead(db: DB, input: QuotationInput, lea
       movedTo = target.name;
     }
     return { ...q, movedTo };
+  });
+}
+
+/**
+ * Sets the enquiry's expected value to the quotation amount before GST (its taxable value),
+ * with a history line. Used when a quotation from an enquiry is created, edited or revised.
+ */
+export async function syncLeadValueFromQuotation(tx: Tx, quotationId: string): Promise<boolean> {
+  const [q] = await tx
+    .select({ leadId: quotations.leadId, quoteNo: quotations.quoteNo, taxable: quotations.taxableValue })
+    .from(quotations)
+    .where(eq(quotations.id, quotationId));
+  if (!q?.leadId) return false;
+  const [lead] = await tx.select({ id: leads.id, value: leads.expectedValue, deletedAt: leads.deletedAt }).from(leads).where(eq(leads.id, q.leadId)).for("update");
+  if (!lead || lead.deletedAt) return false;
+  const value = toPaise(q.taxable);
+  if (lead.value === value) return false;
+  await tx.update(leads).set({ expectedValue: value }).where(eq(leads.id, lead.id));
+  const before = lead.value == null ? "not set" : formatINRShort(lead.value);
+  await logLeadEvent(tx, lead.id, "FIELD", `Expected value updated from ${before} to ${formatINRShort(value)} from quotation ${q.quoteNo}`, {
+    field: "expectedValue",
+    from: lead.value,
+    to: value,
+    quotationId,
+  });
+  return true;
+}
+
+/** Editing a quotation: saves it, then updates its enquiry's expected value (if it came from one). */
+export async function updateQuotationAndLead(db: DB, id: string, input: QuotationInput) {
+  return db.transaction(async (tx) => {
+    const q = await updateQuotation(tx, id, input);
+    await syncLeadValueFromQuotation(tx, id);
+    return q;
   });
 }
 

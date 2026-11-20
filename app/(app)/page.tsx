@@ -108,7 +108,7 @@ async function CrmStats() {
   const s = await getCrmHomeStats();
   const items = [
     { label: "New enquiries this month", value: s.newThisMonth.toLocaleString("en-IN"), icon: Inbox, href: "/crm?created=thisMonth", hint: "Enquiries added this month", sub: null as string | null, alert: false },
-    { label: "Open enquiries value", value: formatINRShort(s.openValuePaise), icon: Handshake, href: "/crm?state=open", hint: "Expected value of enquiries not yet won or lost", sub: `${s.openCount} open`, alert: false },
+    { label: "Open enquiries value (before GST)", value: formatINRShort(s.openValuePaise), icon: Handshake, href: "/crm?state=open", hint: "Expected value of enquiries not yet won or lost, before GST", sub: `${s.openCount} open`, alert: false },
     {
       label: "Activities due today",
       value: s.dueToday.toLocaleString("en-IN"),
@@ -118,7 +118,7 @@ async function CrmStats() {
       sub: s.overdue ? `${s.overdue} overdue` : "None overdue",
       alert: s.overdue > 0,
     },
-    { label: "Won this month", value: formatINRShort(s.wonValuePaise), icon: Trophy, href: "/crm?won=thisMonth", hint: "Expected value of enquiries won this month", sub: `${s.wonCount} won`, alert: false },
+    { label: "Won this month (before GST)", value: formatINRShort(s.wonValuePaise), icon: Trophy, href: "/crm?won=thisMonth", hint: "Enquiries won this month: the accepted quotation amount before GST, or the expected value when there is no quotation", sub: `${s.wonCount} won`, alert: false },
   ];
   return (
     <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">

@@ -359,7 +359,11 @@ export async function getCrmHomeStats() {
       (select count(*) from crm_activities a join leads l on l.id = a.lead_id where l.deleted_at is null and a.done_at is null and a.due_date < (select today from t)) as overdue,
       (select count(*) from leads l join crm_stages s on s.id = l.stage_id where l.deleted_at is null and s.type = 'WON'
          and date_trunc('month', l.won_at at time zone 'Asia/Kolkata') = date_trunc('month', (select today from t))) as won_count,
-      (select coalesce(sum(l.expected_value), 0) from leads l join crm_stages s on s.id = l.stage_id where l.deleted_at is null and s.type = 'WON'
+      -- Won value: the accepted quotation amount before GST when there is one, otherwise the expected value.
+      (select coalesce(sum(coalesce(
+          (select round(sum(q.taxable_value) * 100) from quotations q where q.lead_id = l.id and q.status = 'ACCEPTED' and q.deleted_at is null),
+          l.expected_value)), 0)
+         from leads l join crm_stages s on s.id = l.stage_id where l.deleted_at is null and s.type = 'WON'
          and date_trunc('month', l.won_at at time zone 'Asia/Kolkata') = date_trunc('month', (select today from t))) as won_value`);
   const x = r.rows[0];
   return {
