@@ -11,11 +11,12 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea";
 import { adjustStockAction, issueStockAction } from "@/lib/actions/stock";
 import { formatDate } from "@/lib/format";
-import type { StockFormData, StockFormItem } from "@/lib/inventory-data";
+import type { StockFormData, StockFormItem, TicketForUse } from "@/lib/inventory-data";
+import { suggestMaterials, type Material } from "@/lib/inventory/materials";
 import { D, formatQty, parseQty, parseRate, valuePaise } from "@/lib/inventory/numbers";
 import { formatINR } from "@/lib/pricing";
 import { cn } from "@/lib/utils";
-import { DoneBySelect, ItemPicker, useDoneBy } from "./pickers";
+import { DoneBySelect, ItemPicker, TicketPicker, useDoneBy } from "./pickers";
 
 const AUTO = "auto";
 let seq = 0;
@@ -27,17 +28,54 @@ function usable(item: StockFormItem) {
 
 // ---- Use stock ----------------------------------------------------------------------------------------
 
-type UseLine = { key: number; itemId: string; qty: string; batchId: string };
+type UseLine = { key: number; itemId: string; qty: string; batchId: string; explain?: string };
 const blankUse = (itemId = ""): UseLine => ({ key: ++seq, itemId, qty: "", batchId: AUTO });
 
-export function UseForm({ data, startItemId, jobPicker }: { data: StockFormData; startItemId?: string; jobPicker?: React.ReactNode }) {
+/** The suggested lines for a ticket: its service's materials x the ticket's billable quantity. */
+function suggestedLines(t: TicketForUse | undefined, materials: Record<number, Material[]>): UseLine[] {
+  if (!t?.serviceId) return [];
+  return suggestMaterials(t.billableQty, t.unitLabel, materials[t.serviceId] ?? []).map((s) => ({ key: ++seq, itemId: s.itemId, qty: s.qty, batchId: AUTO, explain: s.explain }));
+}
+
+export function UseForm({
+  data,
+  startItemId,
+  tickets,
+  materials,
+  startTicketId,
+}: {
+  data: StockFormData;
+  startItemId?: string;
+  tickets: TicketForUse[];
+  materials: Record<number, Material[]>;
+  startTicketId?: string;
+}) {
   const router = useRouter();
   const [pending, start] = useTransition();
-  const [mode, setMode] = useState<"job" | "internal">(jobPicker ? "job" : "internal");
+  const startTicket = tickets.find((t) => t.id === startTicketId);
+  const [mode, setMode] = useState<"job" | "internal">(startItemId && !startTicket ? "internal" : "job");
+  const [ticketId, setTicketId] = useState(startTicket?.id ?? "");
   const [purposeId, setPurposeId] = useState("");
   const [note, setNote] = useState("");
   const [doneBy, setDoneBy] = useDoneBy(data.team);
-  const [lines, setLines] = useState<UseLine[]>([blankUse(startItemId ?? "")]);
+  const [lines, setLines] = useState<UseLine[]>(() => {
+    const s = suggestedLines(startTicket, materials);
+    return s.length ? s : [blankUse(startItemId ?? "")];
+  });
+  const ticket = tickets.find((t) => t.id === ticketId);
+  const chooseTicket = (id: string) => {
+    setTicketId(id);
+    const s = suggestedLines(
+      tickets.find((t) => t.id === id),
+      materials,
+    );
+    // Suggestions replace the lines that are still empty; anything typed stays.
+    setLines((ls) => {
+      const typed = ls.filter((l) => l.itemId && !l.explain);
+      const next = [...typed, ...s.filter((x) => !typed.some((t) => t.itemId === x.itemId))];
+      return next.length ? next : [blankUse()];
+    });
+  };
   const itemOf = (id: string) => data.items.find((i) => i.id === id);
   const update = (key: number, patch: Partial<UseLine>) => setLines((ls) => ls.map((l) => (l.key === key ? { ...l, ...patch } : l)));
   const isOther = data.purposes.find((p) => p.id === purposeId)?.name.toLowerCase() === "other";
@@ -48,9 +86,9 @@ export function UseForm({ data, startItemId, jobPicker }: { data: StockFormData;
   }, 0);
 
   const save = () => {
-    if (mode === "job") return void toast.error("Choose the job first.");
-    if (!purposeId) return void toast.error("Please choose what the stock was used for.");
-    if (isOther && note.trim().length < 3) return void toast.error("Please write a short note about what the stock was used for.");
+    if (mode === "job" && !ticketId) return void toast.error("Please choose the job (ticket).");
+    if (mode === "internal" && !purposeId) return void toast.error("Please choose what the stock was used for.");
+    if (mode === "internal" && isOther && note.trim().length < 3) return void toast.error("Please write a short note about what the stock was used for.");
     const used = lines.filter((l) => l.itemId);
     if (!used.length) return void toast.error("Please add at least one item.");
     // The same "not enough stock" check the server does, shown before saving.
@@ -62,7 +100,7 @@ export function UseForm({ data, startItemId, jobPicker }: { data: StockFormData;
       if (D(q).gt(D(i.qty))) return void toast.error(`Only ${formatQty(i.qty, i.unit)} of ${i.name} in stock. You entered ${formatQty(q, i.unit)}.`);
     }
     start(async () => {
-      const r = await issueStockAction({ purposeId, note: note || null, doneBy: doneBy || null, lines: used.map((l) => ({ itemId: l.itemId, qty: l.qty, batchId: l.batchId === AUTO ? null : l.batchId })) });
+      const r = await issueStockAction({ ticketId: mode === "job" ? ticketId : null, purposeId: mode === "internal" ? purposeId : null, note: note || null, doneBy: doneBy || null, lines: used.map((l) => ({ itemId: l.itemId, qty: l.qty, batchId: l.batchId === AUTO ? null : l.batchId })) });
       if (!r.ok) return void toast.error(r.message);
       toast.success(`Stock used: ${r.data.docNo}`);
       router.push(`/inventory/movements/${r.data.id}`);
@@ -79,7 +117,19 @@ export function UseForm({ data, startItemId, jobPicker }: { data: StockFormData;
         </div>
         <div className="mt-5 grid grid-cols-1 gap-5 md:grid-cols-2">
           {mode === "job" ? (
-            <div className="md:col-span-2">{jobPicker ?? <p className="rounded-xl border border-dashed p-4 text-sm text-muted-foreground">Choosing a job is added in the next step. For now, use “Internal use”.</p>}</div>
+            <div className="flex flex-col gap-2 md:col-span-2">
+              <span className="text-base font-medium">
+                Job (ticket) <span className="text-destructive">*</span>
+              </span>
+              <TicketPicker tickets={tickets} value={ticketId} onChange={chooseTicket} />
+              {ticket ? (
+                <p className="text-sm text-muted-foreground">
+                  {ticket.description} · {ticket.quantityText}
+                  {ticket.recorded ? " · Materials already recorded for this job; this adds more." : ""}
+                  {ticket.serviceId && !(materials[ticket.serviceId]?.length) ? " · This service has no materials list yet, so add the items yourself." : ""}
+                </p>
+              ) : null}
+            </div>
           ) : (
             <Field label="Purpose" required>
               {(p) => (
@@ -123,7 +173,7 @@ export function UseForm({ data, startItemId, jobPicker }: { data: StockFormData;
                 </div>
                 {item ? (
                   <>
-                    <Field label="Quantity used" required helper={`In stock: ${formatQty(item.qty, item.unit)}`} error={tooMuch ? `Only ${formatQty(item.qty, item.unit)} of ${item.name} in stock. You entered ${formatQty(q!, item.unit)}.` : undefined}>
+                    <Field label="Quantity used" required helper={`${l.explain ? `Suggested: ${l.explain}. ` : ""}In stock: ${formatQty(item.qty, item.unit)}`} error={tooMuch ? `Only ${formatQty(item.qty, item.unit)} of ${item.name} in stock. You entered ${formatQty(q!, item.unit)}.` : undefined}>
                       {(p) => (
                         <div className="flex items-center gap-2">
                           <Input {...p} inputMode="decimal" value={l.qty} onChange={(e) => update(l.key, { qty: e.target.value })} className="min-w-0 flex-1" />

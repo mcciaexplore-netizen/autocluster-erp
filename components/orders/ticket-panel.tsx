@@ -14,6 +14,8 @@ import {
   Undo2,
   XCircle,
   Download,
+  FlaskConical,
+  PackageMinus,
 } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
@@ -25,6 +27,8 @@ import { formatDate, money } from "@/lib/format";
 import type { BoardTicket, TicketDetail } from "@/lib/orders-data";
 import { formatINR, toPaise } from "@/lib/pricing";
 import { invoiceChips, todayInIndia } from "@/lib/tickets";
+import { keptAfterMaterials } from "@/lib/inventory/materials";
+import { formatQty } from "@/lib/inventory/numbers";
 import { StageChip, ToneChip } from "./stage-chip";
 
 const PAYMENT_MODES: Record<string, string> = { BANK: "Bank transfer", UPI: "UPI", CHEQUE: "Cheque", CASH: "Cash" };
@@ -168,6 +172,8 @@ export function TicketPanel({
               ) : null}
             </section>
 
+            <MaterialsSection ticketId={t.id} m={d.materials} cancelled={t.stage === "CANCELLED"} />
+
             {d.po ? (
               <section className="rounded-xl border p-4">
                 <h3 className="mb-2 font-semibold">Purchase order</h3>
@@ -294,5 +300,58 @@ export function TicketPanel({
         ) : null}
       </SheetContent>
     </Sheet>
+  );
+}
+
+/** Materials used for this job, the material cost, and "Kept after materials". */
+function MaterialsSection({ ticketId, m, cancelled }: { ticketId: string; m: TicketDetail["materials"]; cancelled: boolean }) {
+  const kept = keptAfterMaterials(m.taxablePaise, m.costPaise);
+  return (
+    <section className="rounded-xl border p-4" aria-labelledby={`mat-${ticketId}`}>
+      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+        <h3 id={`mat-${ticketId}`} className="flex items-center gap-2 font-semibold">
+          <FlaskConical className="size-4 text-primary" aria-hidden /> Materials used
+        </h3>
+        {!cancelled ? (
+          <Link href={`/inventory/movements/new?type=out&ticket=${ticketId}`} className="inline-flex h-9 items-center gap-1.5 rounded-lg border px-3 text-sm font-medium hover:bg-secondary">
+            <PackageMinus className="size-4" aria-hidden /> Record materials
+          </Link>
+        ) : null}
+      </div>
+      {!m.recorded && m.hint ? (
+        <p className={`mb-2 rounded-lg px-3 py-2 text-sm ${m.hint.ok ? "bg-emerald-50 text-emerald-800" : "bg-amber-50 text-amber-900"}`}>{m.hint.text}</p>
+      ) : null}
+      {m.items.length ? (
+        <>
+          <ul className="divide-y text-sm">
+            {m.items.map((l) => (
+              <li key={l.itemId} className="flex justify-between gap-3 py-1.5">
+                <Link href={`/inventory/items/${l.itemId}`} className="min-w-0 hover:text-primary hover:underline">
+                  {l.name}
+                </Link>
+                <span className="shrink-0 tabular-nums">
+                  {formatQty(l.qty, l.unit)} · {formatINR(l.valuePaise)}
+                </span>
+              </li>
+            ))}
+          </ul>
+          <dl className="mt-2 grid grid-cols-[1fr_auto] gap-x-4 gap-y-1 border-t pt-2 text-sm">
+            <dt className="text-muted-foreground">Value before GST</dt>
+            <dd className="text-right tabular-nums">{formatINR(m.taxablePaise)}</dd>
+            <dt className="text-muted-foreground">Material cost</dt>
+            <dd className="text-right tabular-nums">- {formatINR(m.costPaise)}</dd>
+            <dt className="font-semibold">Kept after materials</dt>
+            <dd className="text-right font-semibold tabular-nums">
+              {formatINR(kept.keptPaise)}
+              {kept.pct != null ? <span className="ml-1 font-normal text-muted-foreground">({kept.pct}%)</span> : null}
+            </dd>
+          </dl>
+        </>
+      ) : (
+        <p className="text-sm text-muted-foreground">
+          {m.hasList ? "Not recorded yet. “Record materials” fills in the suggested quantities." : "No materials recorded for this job."}
+        </p>
+      )}
+    </section>
   );
 }

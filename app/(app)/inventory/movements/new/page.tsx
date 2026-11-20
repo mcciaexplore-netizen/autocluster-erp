@@ -5,7 +5,7 @@ import { PageHeader } from "@/components/common/page-header";
 import { ReceiveForm } from "@/components/inventory/receive-form";
 import { AdjustForm, UseForm } from "@/components/inventory/use-adjust-forms";
 import { blobEnv } from "@/lib/blob";
-import { getStockFormData } from "@/lib/inventory-data";
+import { getServiceMaterials, getStockFormData, getTicketsForUse } from "@/lib/inventory-data";
 import { UUID_RE } from "@/lib/inventory/uuid";
 
 export const metadata: Metadata = { title: "Stock in & out" };
@@ -35,13 +35,15 @@ async function Form({ searchParams }: { searchParams: Sp }) {
   const type = t === "out" || t === "adj" ? t : "in";
   const item = one("item");
   const startItemId = item && UUID_RE.test(item) ? item : undefined;
-  const data = await getStockFormData();
+  const ticket = one("ticket");
+  const startTicketId = ticket && UUID_RE.test(ticket) ? ticket : undefined;
+  const [data, tickets, materials] = await Promise.all([getStockFormData(), type === "out" ? getTicketsForUse() : Promise.resolve([]), type === "out" ? getServiceMaterials() : Promise.resolve({})]);
   const [title, description] = TITLES[type];
   return (
     <>
       <PageHeader title={title} description={description} />
       {type === "in" ? <ReceiveForm key="in" data={data} uploadEnv={blobEnv()} startItemId={startItemId} /> : null}
-      {type === "out" ? <UseForm key="out" data={data} startItemId={startItemId} /> : null}
+      {type === "out" ? <UseForm key={`out-${startTicketId ?? ""}`} data={data} startItemId={startItemId} tickets={tickets} materials={materials} startTicketId={startTicketId} /> : null}
       {type === "adj" ? <AdjustForm key="adj" data={data} startItemId={startItemId} /> : null}
     </>
   );

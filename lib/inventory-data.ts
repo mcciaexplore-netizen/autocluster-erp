@@ -7,6 +7,7 @@ import { and, asc, desc, eq, gt, sql } from "drizzle-orm";
 import { connection } from "next/server";
 import { db } from "@/db";
 import { ensureInventoryDefaults } from "@/db/inv-defaults";
+import { ticketMaterialCost } from "@/db/inv-jobs";
 import { previewItemCode } from "@/db/inv-master-writer";
 import {
   departments,
@@ -26,6 +27,7 @@ import {
   settings,
   teamMembers,
 } from "@/db/schema";
+import type { Material } from "@/lib/inventory/materials";
 import { valuePaise } from "@/lib/inventory/numbers";
 import { stockStatus, type StockStatus } from "@/lib/inventory/stock";
 import { financialYear } from "@/lib/pricing";
@@ -542,3 +544,57 @@ export async function getLinesForDocs(docIds: string[]) {
     order by m.id`);
   return rows.rows;
 }
+
+// ---- jobs: materials per service, tickets, material cost ------------------------------------------
+
+/** Each service's materials list, with the items' current stock. */
+export async function getServiceMaterials(): Promise<Record<number, Material[]>> {
+  await connection();
+  const rows = await db
+    .select({ serviceId: invServiceMaterials.serviceId, itemId: invItems.id, name: invItems.name, unit: invUnits.name, qtyPerUnit: invServiceMaterials.qtyPerUnit, inStock: invItems.qtyOnHand })
+    .from(invServiceMaterials)
+    .innerJoin(invItems, eq(invItems.id, invServiceMaterials.itemId))
+    .innerJoin(invUnits, eq(invUnits.id, invItems.unitId))
+    .orderBy(asc(invItems.name));
+  const out: Record<number, Material[]> = {};
+  for (const r of rows) (out[r.serviceId] ??= []).push({ itemId: r.itemId, name: r.name, unit: r.unit, qtyPerUnit: r.qtyPerUnit, inStock: r.inStock });
+  return out;
+}
+
+/** Tickets that stock can be used for (not cancelled), newest first, with what the suggestions need. */
+export async function getTicketsForUse() {
+  await connection();
+  const rows = await db.execute<{
+    id: string; ticket_no: string; company: string; description: string; stage: string; service_id: number | null; billable_qty: string; unit_label: string; recorded: boolean; quantity_text: string;
+  }>(sql`
+    select t.id, t.ticket_no, t.snapshot->>'companyName' as company, t.snapshot->>'description' as description, t.stage,
+      qi.service_id, t.snapshot->>'billableQty' as billable_qty, t.snapshot->>'unitLabel' as unit_label, t.snapshot->>'quantityText' as quantity_text,
+      exists(select 1 from inv_documents d where d.ticket_id = t.id and d.type = 'OUT' and d.reverses_doc_id is null and d.reversed_by_doc_id is null) as recorded
+    from tickets t join quotation_items qi on qi.id = t.quotation_item_id
+    where t.stage <> 'CANCELLED'
+    order by t.created_at desc, t.seq desc
+    limit 500`);
+  return rows.rows.map((r) => ({
+    id: r.id,
+    ticketNo: r.ticket_no,
+    company: r.company,
+    description: r.description,
+    stage: r.stage,
+    serviceId: r.service_id,
+    billableQty: r.billable_qty,
+    unitLabel: r.unit_label,
+    quantityText: r.quantity_text,
+    recorded: r.recorded,
+  }));
+}
+export type TicketForUse = Awaited<ReturnType<typeof getTicketsForUse>>[number];
+
+/**
+ * Materials recorded for a ticket: each item's net quantity and value (stock used minus any
+ * reversals), the records, and the total material cost.
+ */
+export async function getTicketMaterials(ticketId: string) {
+  await connection();
+  return ticketMaterialCost(db, ticketId);
+}
+export type TicketMaterials = Awaited<ReturnType<typeof getTicketMaterials>>;

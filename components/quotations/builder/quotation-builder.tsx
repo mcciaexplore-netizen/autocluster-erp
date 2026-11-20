@@ -1,20 +1,6 @@
 "use client";
 
-import {
-  ArrowLeft,
-  ArrowRight,
-  Download,
-  FileText,
-  Info,
-  Loader2,
-  Pencil,
-  Plus,
-  Printer,
-  RotateCcw,
-  Save,
-  Trash2,
-  UserPlus,
-  Zap, Handshake } from "lucide-react";
+import { ArrowLeft, ArrowRight, Download, FileText, Info, Loader2, Pencil, Plus, Printer, RotateCcw, Save, Trash2, UserPlus, Zap, Handshake, PackageCheck, AlertTriangle } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
@@ -38,6 +24,7 @@ import { priceQuotation, type DraftLine, type ServiceForPricing } from "@/lib/qu
 import { viewFromLive } from "@/lib/quote-view";
 import { toPricingSettings } from "@/lib/settings-shared";
 import { cn } from "@/lib/utils";
+import { stockHint, suggestMaterials, type Material } from "@/lib/inventory/materials";
 import { CustomerPicker } from "./customer-picker";
 import { ChangeRateDialog, CustomItemDialog } from "./line-dialogs";
 import { LiveSummaryBar, LiveSummaryCard } from "./live-summary";
@@ -92,6 +79,7 @@ export function QuotationBuilder({
   existing,
   nextQuoteNo,
   fromLead = null,
+  materials = {},
 }: {
   customers: BuilderCustomer[];
   departments: Department[];
@@ -103,6 +91,8 @@ export function QuotationBuilder({
   nextQuoteNo: string;
   /** "Create quotation" from a CRM enquiry: its services join the quick-add chips, and lead_id is saved. */
   fromLead?: { id: string; leadNo: string; title: string; serviceIds: number[] } | null;
+  /** Inventory: each service's materials list with current stock (for the stock hint under each line). */
+  materials?: Record<number, Material[]>;
 }) {
   const router = useRouter();
   const pricing = useMemo(() => toPricingSettings(settings), [settings]);
@@ -491,6 +481,7 @@ export function QuotationBuilder({
                           {l.discountPct > 0 ? (
                             <p className="mt-1 text-xs text-muted-foreground">{priceType.label}</p>
                           ) : null}
+                          <StockHintLine serviceId={l.draft.serviceId} billableQty={l.billableQty} unitLabel={l.draft.unitLabel} materials={materials} />
                           <div className="mt-3 flex flex-wrap gap-2">
                             <Button
                               variant="outline"
@@ -839,5 +830,18 @@ function CustomerCard({
       </dl>
       <p className="mt-4 rounded-xl bg-primary px-4 py-3 font-medium text-primary-foreground">Price type: {priceBadge}</p>
     </div>
+  );
+}
+
+/** Small hint under a line: green "Enough stock", or amber "Low stock: ...". Never blocks anything. */
+function StockHintLine({ serviceId, billableQty, unitLabel, materials }: { serviceId: number | null; billableQty: number; unitLabel: string; materials: Record<number, Material[]> }) {
+  if (serviceId == null || !(billableQty > 0)) return null;
+  const hint = stockHint(suggestMaterials(billableQty, unitLabel, materials[serviceId] ?? []));
+  if (!hint) return null;
+  return (
+    <p className={cn("mt-2 inline-flex items-start gap-1.5 rounded-lg px-2.5 py-1 text-xs font-medium", hint.ok ? "bg-emerald-50 text-emerald-800" : "bg-amber-50 text-amber-900")}>
+      {hint.ok ? <PackageCheck className="size-3.5 shrink-0" aria-hidden /> : <AlertTriangle className="mt-px size-3.5 shrink-0" aria-hidden />}
+      {hint.text}
+    </p>
   );
 }

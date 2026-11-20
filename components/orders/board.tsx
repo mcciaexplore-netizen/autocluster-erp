@@ -79,16 +79,19 @@ export function OrdersBoard({ tickets, customers, uploadEnv }: { tickets: BoardT
     followup: params.get("followup") === "1",
     cancelled: params.get("cancelled") === "1",
     stage: params.get("stage") as BoardStage | null,
+    noMaterials: params.get("materials") === "missing",
+    paidAll: params.get("paid") === "all",
   };
-  const anyFilter = !!(f.q || f.dept || f.customer || f.overdue || f.followup || f.cancelled || f.stage);
+  const anyFilter = !!(f.q || f.dept || f.customer || f.overdue || f.followup || f.cancelled || f.stage || f.noMaterials);
+  // The Paid column shows jobs paid in the last 30 days, unless "Show older paid" is on.
+  const paidRecently = (t: BoardTicket) => daysBetween(todayInIndia(new Date(t.stageChangedAt)), today) <= 30;
 
-  const visible = useMemo(
-    () =>
-      tickets.filter((t) => {
+  const visible = tickets.filter((t) => {
         if (f.cancelled ? t.stage !== "CANCELLED" : t.stage === "CANCELLED") return false;
         if (f.dept && t.deptCode !== f.dept) return false;
         if (f.customer && t.customerId !== f.customer) return false;
         if (f.stage && t.stage !== f.stage) return false;
+        if (f.noMaterials && !(t.hasMaterialsList && !t.materialsRecorded)) return false;
         if (f.overdue && !(t.stage === "PAYMENT" && t.invoice && t.invoice.leftPaise > 0 && daysBetween(today, t.invoice.dueDate) < 0)) return false;
         if (f.followup && !(t.stage === "PAYMENT" && t.invoice && followUpDue(t.invoice, today))) return false;
         if (f.q) {
@@ -96,10 +99,12 @@ export function OrdersBoard({ tickets, customers, uploadEnv }: { tickets: BoardT
           if (!hay.includes(f.q)) return false;
         }
         return true;
-      }),
-    [tickets, f.cancelled, f.dept, f.customer, f.stage, f.overdue, f.followup, f.q, today],
+      });
+  const olderPaid = visible.filter((t) => t.stage === "PAID" && !paidRecently(t)).length;
+  const byStage = (s: BoardStage) => visible.filter((t) => t.stage === s && (s !== "PAID" || f.paidAll || paidRecently(t)));
+  const paidToggle = (
+    <PaidToggle older={olderPaid} all={f.paidAll} onChange={(all) => set({ paid: all ? "all" : null })} />
   );
-  const byStage = (s: BoardStage) => visible.filter((t) => t.stage === s);
 
   // ---- selected ticket (detail panel) ------------------------------------------
   const selectedId = params.get("ticket");
@@ -204,7 +209,10 @@ export function OrdersBoard({ tickets, customers, uploadEnv }: { tickets: BoardT
             <Chip active={f.followup} onClick={() => set({ followup: f.followup ? null : "1", cancelled: null })}>
               Follow-up due today
             </Chip>
-            <Chip active={f.cancelled} onClick={() => set({ cancelled: f.cancelled ? null : "1", overdue: null, followup: null, stage: null })}>
+            <Chip active={f.noMaterials} onClick={() => set({ materials: f.noMaterials ? null : "missing", cancelled: null })}>
+              Materials not recorded
+            </Chip>
+            <Chip active={f.cancelled} onClick={() => set({ cancelled: f.cancelled ? null : "1", overdue: null, followup: null, stage: null, materials: null })}>
               Show cancelled
             </Chip>
             {f.stage ? (
@@ -217,7 +225,7 @@ export function OrdersBoard({ tickets, customers, uploadEnv }: { tickets: BoardT
                 type="button"
                 onClick={() => {
                   setQ("");
-                  set({ q: null, dept: null, customer: null, overdue: null, followup: null, cancelled: null, stage: null });
+                  set({ q: null, dept: null, customer: null, overdue: null, followup: null, cancelled: null, stage: null, materials: null });
                 }}
                 className="inline-flex h-10 items-center gap-1.5 rounded-full px-3 text-sm font-medium text-primary hover:underline"
               >
@@ -277,6 +285,7 @@ export function OrdersBoard({ tickets, customers, uploadEnv }: { tickets: BoardT
                 <TicketCard key={t.id} ticket={t} onAction={openAction} onMoveTo={moveTo} draggable={false} />
               ))}
               {!byStage(tab).length ? <p className="rounded-xl border border-dashed p-6 text-center text-muted-foreground">No cards in this step.</p> : null}
+              {tab === "PAID" ? paidToggle : null}
             </div>
           </div>
 
@@ -288,6 +297,7 @@ export function OrdersBoard({ tickets, customers, uploadEnv }: { tickets: BoardT
                   {byStage(s).map((t) => (
                     <TicketCard key={t.id} ticket={t} onAction={openAction} onMoveTo={moveTo} />
                   ))}
+                  {s === "PAID" ? paidToggle : null}
                 </Column>
               ))}
             </div>
@@ -350,6 +360,16 @@ export function OrdersBoard({ tickets, customers, uploadEnv }: { tickets: BoardT
       />
       <BoardForms action={action} tickets={tickets} uploadEnv={uploadEnv} onClose={closeAction} onDone={done} />
     </>
+  );
+}
+
+/** Under the Paid column: "Show older paid (N)" / "Show only the last 30 days". */
+function PaidToggle({ older, all, onChange }: { older: number; all: boolean; onChange: (all: boolean) => void }) {
+  if (!all && !older) return <p className="text-center text-xs text-muted-foreground">Paid in the last 30 days.</p>;
+  return (
+    <button type="button" onClick={() => onChange(!all)} className="min-h-11 rounded-xl px-3 text-sm font-medium text-primary hover:underline">
+      {all ? "Show only the last 30 days" : `Show older paid (${older})`}
+    </button>
   );
 }
 

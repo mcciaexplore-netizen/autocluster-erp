@@ -1,14 +1,16 @@
 import "server-only";
 import { getCustomersForPicker, getDepartments, getNextQuoteNoPreview, getServices, getSettings } from "@/lib/data";
+import { getServiceMaterials } from "@/lib/inventory-data";
 import type { BuilderCustomer } from "./quotation-builder";
 
 export async function loadBuilderData() {
-  const [customers, departments, services, settings, nextQuoteNo] = await Promise.all([
+  const [customers, departments, services, settings, nextQuoteNo, materials] = await Promise.all([
     getCustomersForPicker(),
     getDepartments(),
     getServices(),
     getSettings(),
     getNextQuoteNoPreview(),
+    getServiceMaterials(),
   ]);
   const builderCustomers: BuilderCustomer[] = customers.map((c) => ({
     id: c.id,
@@ -34,5 +36,5 @@ export async function loadBuilderData() {
     deptCodes: c.deptCodes,
     serviceIds: c.serviceIds,
   }));
-  return { customers: builderCustomers, departments, services, settings, nextQuoteNo };
+  return { customers: builderCustomers, departments, services, settings, nextQuoteNo, materials };
 }

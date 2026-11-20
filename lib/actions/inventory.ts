@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { db } from "@/db";
-import { createItem, createSupplier, updateItem, updateSupplier } from "@/db/inv-master-writer";
+import { createItem, createSupplier, setServiceMaterials, updateItem, updateSupplier } from "@/db/inv-master-writer";
 import { UserFacingError } from "@/db/quote-writer";
 import { isSignedIn } from "@/lib/auth-guard";
 import { SIGNED_OUT_MESSAGE } from "@/lib/auth-messages";
@@ -48,4 +48,14 @@ export async function saveSupplierAction(supplierId: string | null, values: Supp
     const s = await createSupplier(db, v);
     return { id: s.id, name: s.name };
   });
+}
+
+export async function setServiceMaterialsAction(serviceId: number, lines: { itemId: string; qtyPerUnit: string }[]) {
+  return run(() =>
+    setServiceMaterials(
+      db,
+      z.number().int().positive().parse(serviceId),
+      z.array(z.object({ itemId: z.string().uuid().or(z.literal("")), qtyPerUnit: z.string().max(20) })).max(30).parse(lines),
+    ),
+  );
 }

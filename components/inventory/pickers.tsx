@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import type { StockFormItem } from "@/lib/inventory-data";
+import type { StockFormItem, TicketForUse } from "@/lib/inventory-data";
 import { formatQty } from "@/lib/inventory/numbers";
 import { cn } from "@/lib/utils";
 
@@ -18,7 +18,7 @@ export function ItemPicker({
   label = "Item",
   invalid,
 }: {
-  items: StockFormItem[];
+  items: Pick<StockFormItem, "id" | "name" | "code" | "qty" | "unit">[];
   value: string;
   onChange: (id: string) => void;
   label?: string;
@@ -73,6 +73,66 @@ export function ItemPicker({
                     <span className="block truncate">{i.name}</span>
                     <span className="block text-xs text-muted-foreground">
                       {i.code} · {formatQty(i.qty, i.unit)}
+                    </span>
+                  </span>
+                </CommandItem>
+              ))}
+            </CommandGroup>
+          </CommandList>
+        </Command>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+const STAGE_NAMES: Record<string, string> = { WAITING_PO: "Waiting for PO", BILLING: "Billing", PAYMENT: "Payment follow-up", PAID: "Paid" };
+
+/** Searchable ticket list: ticket no., company or service. */
+export function TicketPicker({ tickets, value, onChange }: { tickets: TicketForUse[]; value: string; onChange: (id: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const sel = tickets.find((t) => t.id === value);
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button type="button" variant="outline" role="combobox" aria-expanded={open} aria-label="Job (ticket)" className="h-auto min-h-11 w-full justify-between gap-2 bg-card px-3 py-2 text-left font-normal whitespace-normal">
+          {sel ? (
+            <span className="min-w-0">
+              <span className="block truncate font-medium">
+                {sel.ticketNo} · {sel.company}
+              </span>
+              <span className="block truncate text-xs text-muted-foreground">{sel.description}</span>
+            </span>
+          ) : (
+            <span className="flex items-center gap-2 text-muted-foreground">
+              <Search className="size-4" aria-hidden /> Search by ticket no., company or service
+            </span>
+          )}
+          <ChevronsUpDown className="size-4 shrink-0 opacity-50" aria-hidden />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-(--radix-popover-trigger-width) min-w-[min(100vw-2rem,24rem)] p-0" align="start">
+        <Command filter={(v, s) => (v.toLowerCase().includes(s.toLowerCase().trim()) ? 1 : 0)}>
+          <CommandInput placeholder="Ticket no., company or service" />
+          <CommandList>
+            <CommandEmpty>No ticket found.</CommandEmpty>
+            <CommandGroup>
+              {tickets.map((t) => (
+                <CommandItem
+                  key={t.id}
+                  value={`${t.ticketNo} ${t.company} ${t.description} ${t.id}`}
+                  onSelect={() => {
+                    onChange(t.id);
+                    setOpen(false);
+                  }}
+                >
+                  <Check className={cn("size-4", value === t.id ? "opacity-100" : "opacity-0")} aria-hidden />
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate">
+                      {t.ticketNo} · {t.company}
+                    </span>
+                    <span className="block truncate text-xs text-muted-foreground">
+                      {t.description} · {STAGE_NAMES[t.stage] ?? t.stage}
+                      {t.recorded ? " · materials recorded" : ""}
                     </span>
                   </span>
                 </CommandItem>

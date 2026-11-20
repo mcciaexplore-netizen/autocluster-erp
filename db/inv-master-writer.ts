@@ -4,11 +4,11 @@
  */
 import { and, eq, inArray, ne, sql } from "drizzle-orm";
 import { normalizeMobile } from "@/lib/crm/contact";
-import { parseQty } from "@/lib/inventory/numbers";
+import { parseQty, parseRate } from "@/lib/inventory/numbers";
 import type { ItemFormValues, SupplierFormValues } from "@/lib/validation/inventory";
 import type { DB, Tx } from "./client";
 import { UserFacingError } from "./quote-writer";
-import { departments, invCategories, invCounters, invItemDepartments, invItems, invSuppliers, invUnits, settings } from "./schema";
+import { departments, invCategories, invCounters, invItemDepartments, invItems, invServiceMaterials, invSuppliers, invUnits, services, settings } from "./schema";
 
 /** Takes the next number for a counter key ("ITEM", "IN:2026-27", ...). Locked inside the transaction. */
 export async function nextInvSeq(tx: Tx | DB, key: string): Promise<number> {
@@ -152,4 +152,31 @@ export async function updateSupplier(db: DB, id: string, v: SupplierFormValues) 
   if (await supplierNameTaken(db, row.name, id)) throw new UserFacingError(`There is already a supplier called “${row.name}”.`);
   const r = await db.update(invSuppliers).set(row).where(eq(invSuppliers.id, id)).returning({ id: invSuppliers.id });
   if (!r.length) throw new UserFacingError("This supplier could not be found.");
+}
+
+// ---- materials per service (Rate Card > Materials used) ---------------------------------------
+
+/** Replaces a service's materials list. Only used for suggestions; actual use is always confirmed by staff. */
+export async function setServiceMaterials(db: DB, serviceId: number, lines: { itemId: string; qtyPerUnit: string }[]) {
+  return db.transaction(async (tx) => {
+    const [svc] = await tx.select({ id: services.id }).from(services).where(eq(services.id, serviceId));
+    if (!svc) throw new UserFacingError("This service could not be found.");
+    const seen = new Set<string>();
+    const rows: { serviceId: number; itemId: string; qtyPerUnit: string }[] = [];
+    for (const [n, l] of lines.entries()) {
+      if (!l.itemId) continue;
+      if (seen.has(l.itemId)) throw new UserFacingError(`Line ${n + 1}: this item is already in the list.`);
+      seen.add(l.itemId);
+      const q = parseRate(l.qtyPerUnit);
+      if (q == null || Number(q) <= 0) throw new UserFacingError(`Line ${n + 1}: enter how much is used per billing unit, e.g. 1.15 (up to 4 decimals).`);
+      rows.push({ serviceId, itemId: l.itemId, qtyPerUnit: q });
+    }
+    if (rows.length) {
+      const found = await tx.select({ id: invItems.id }).from(invItems).where(inArray(invItems.id, [...seen]));
+      if (found.length !== seen.size) throw new UserFacingError("One of the items could not be found.");
+    }
+    await tx.delete(invServiceMaterials).where(eq(invServiceMaterials.serviceId, serviceId));
+    if (rows.length) await tx.insert(invServiceMaterials).values(rows);
+    return { count: rows.length };
+  });
 }

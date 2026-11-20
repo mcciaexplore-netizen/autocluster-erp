@@ -10,11 +10,14 @@ import {
   invoices,
   payments,
   purchaseOrders,
+  quotationItems,
   quotations,
   ticketEvents,
   tickets,
   type TicketStage,
 } from "@/db/schema";
+import { getServiceMaterials, getTicketMaterials } from "@/lib/inventory-data";
+import { stockHint, suggestMaterials } from "@/lib/inventory/materials";
 import { toPaise } from "@/lib/pricing";
 import { amountLeft, daysBetween, todayInIndia } from "@/lib/tickets";
 
@@ -55,6 +58,10 @@ export interface BoardTicket {
   contact: { name: string; phone: string; email: string; creditDays: number; gstin: string | null };
   po: { id: string; number: string; date: string; amountPaise: number; fileId: string | null } | null;
   invoice: BoardInvoice | null;
+  /** Inventory: stock used for this job (net of reversals), and whether its service has a materials list. */
+  materialsRecorded: boolean;
+  materialCostPaise: number;
+  hasMaterialsList: boolean;
 }
 
 /** Last time someone contacted the customer about each invoice (note or reminder), as YYYY-MM-DD in India time. */
@@ -140,6 +147,7 @@ export async function getBoardTickets(customerId?: string): Promise<BoardTicket[
     .orderBy(asc(tickets.stageChangedAt), asc(tickets.seq));
 
   const inv = await invoiceSummaries(rows.map((r) => r.t.invoiceId).filter((x): x is string => !!x));
+  const mats = await materialsByTicket();
   return rows.map(({ t, c, po }) => ({
     id: t.id,
     ticketNo: t.ticketNo,
@@ -161,7 +169,28 @@ export async function getBoardTickets(customerId?: string): Promise<BoardTicket[
     contact: c,
     po: po?.id ? { id: po.id, number: po.number!, date: po.date!, amountPaise: toPaise(po.amount!), fileId: po.fileId } : null,
     invoice: t.invoiceId ? (inv.get(t.invoiceId) ?? null) : null,
+    materialsRecorded: mats.recorded.has(t.id),
+    materialCostPaise: mats.cost.get(t.id) ?? 0,
+    hasMaterialsList: mats.withList.has(t.quotationItemId),
   }));
+}
+
+/** Material cost per ticket (stock used minus reversals), and which ticket lines' services have a materials list. */
+async function materialsByTicket() {
+  const [costs, lists] = await Promise.all([
+    db.execute<{ ticket_id: string; cost: string; recorded: boolean }>(sql`
+      select d.ticket_id, sum(case when m.qty_out > 0 then m.value else -m.value end) as cost,
+        bool_or(d.reverses_doc_id is null and d.reversed_by_doc_id is null) as recorded
+      from inv_documents d join inv_movements m on m.document_id = d.id
+      where d.ticket_id is not null and d.type = 'OUT'
+      group by d.ticket_id`),
+    db.execute<{ id: number }>(sql`select qi.id from quotation_items qi where exists (select 1 from inv_service_materials sm where sm.service_id = qi.service_id)`),
+  ]);
+  return {
+    cost: new Map(costs.rows.map((r) => [r.ticket_id, Number(r.cost)])),
+    recorded: new Set(costs.rows.filter((r) => r.recorded).map((r) => r.ticket_id)),
+    withList: new Set(lists.rows.map((r) => r.id)),
+  };
 }
 
 export async function getTicketDetail(id: string) {
@@ -187,7 +216,21 @@ export async function getTicketDetail(id: string) {
     const f = fileRows.find((x) => x.id === fid);
     return f ? { id: f.id, name: f.fileName, size: f.size } : null;
   };
+  const [mats, svcMaterials, svcRow] = await Promise.all([
+    getTicketMaterials(id),
+    getServiceMaterials(),
+    db.select({ serviceId: quotationItems.serviceId }).from(quotationItems).where(eq(quotationItems.id, t.quotationItemId)),
+  ]);
+  const serviceId = svcRow[0]?.serviceId ?? null;
+  const suggestions = serviceId ? suggestMaterials(t.snapshot.billableQty, t.snapshot.unitLabel, svcMaterials[serviceId] ?? []) : [];
   return {
+    materials: {
+      ...mats,
+      taxablePaise: toPaise(t.taxableValue),
+      recorded: mats.docs.some((d) => !d.reverses && !d.reversedBy),
+      hint: stockHint(suggestions),
+      hasList: suggestions.length > 0,
+    },
     ticket: {
       ...t,
       stageChangedAt: t.stageChangedAt.toISOString(),

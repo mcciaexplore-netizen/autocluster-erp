@@ -17,6 +17,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
+import { MaterialsButton, type PickItem } from "@/components/inventory/materials-dialog";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import type { Department, Service } from "@/db/schema";
@@ -27,7 +28,18 @@ import { cn } from "@/lib/utils";
 
 type Edit = { msme: string; oem: string };
 
-export function RateCardEditor({ departments, services }: { departments: Department[]; services: Service[] }) {
+export function RateCardEditor({
+  departments,
+  services,
+  materials = {},
+  items = [],
+}: {
+  departments: Department[];
+  services: Service[];
+  /** Materials list per service (Inventory). */
+  materials?: Record<number, { itemId: string; qtyPerUnit: string }[]>;
+  items?: PickItem[];
+}) {
   const router = useRouter();
   const [editing, setEditing] = useState(false);
   const [edits, setEdits] = useState<Record<number, Edit>>({});
@@ -130,6 +142,9 @@ export function RateCardEditor({ departments, services }: { departments: Departm
                       <span className="col-span-2 font-medium md:col-span-1">
                         {s.name}
                         {!s.isActive ? <span className="ml-2 text-sm font-normal">(hidden)</span> : null}
+                        <span className="block">
+                          <MaterialsButton service={{ id: s.id, name: s.name, unitLabel: s.unitLabel }} current={materials[s.id] ?? []} items={items} />
+                        </span>
                       </span>
                       <span className="col-span-2 text-sm text-muted-foreground md:col-span-1">{UNIT_LABELS[s.unitType]}</span>
                       {(["msme", "oem"] as const).map((k) => (
