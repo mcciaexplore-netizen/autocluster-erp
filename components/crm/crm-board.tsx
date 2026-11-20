@@ -27,6 +27,7 @@ import { LeadPanel } from "./lead-panel";
 import { useLeadMove } from "./use-lead-move";
 import { useActivityFlow } from "./use-activity-flow";
 import { StageEditor } from "./stage-editor";
+import { CrmMoreMenu } from "./crm-more-menu";
 import { useStageActions } from "./stage-actions";
 import { useAutoRefresh } from "@/hooks/use-auto-refresh";
 import { matchesFilters, sortLeads, todayInIndia } from "@/lib/crm/leads";
@@ -203,11 +204,14 @@ export function CrmBoard({ stages, leads, options: pickers, canManage }: { stage
         pickers={pickers}
         onNew={() => openNew()}
         extra={
-          canManage ? (
-            <Button variant="outline" onClick={() => setEditingStages(true)} aria-label="Edit stages" title="Edit stages">
-              <Settings2 aria-hidden /> <span className="hidden sm:inline">Edit stages</span>
-            </Button>
-          ) : null
+          <>
+            {canManage ? (
+              <Button variant="outline" onClick={() => setEditingStages(true)} aria-label="Edit stages" title="Edit stages">
+                <Settings2 aria-hidden /> <span className="hidden sm:inline">Edit stages</span>
+              </Button>
+            ) : null}
+            <CrmMoreMenu />
+          </>
         }
       />
       {canManage ? <StageEditor open={editingStages} onOpenChange={setEditingStages} stages={stages} counts={counts} actions={stageTools.actions} onChanged={() => router.refresh()} /> : null}

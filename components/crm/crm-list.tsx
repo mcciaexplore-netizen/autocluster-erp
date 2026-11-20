@@ -12,6 +12,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { bulkAddTagAction, bulkAssignAction, bulkMoveAction, deleteLeadsAction, restoreLeadsAction } from "@/lib/actions/crm";
 import type { BoardLead, BoardStage, LeadFormOptions } from "@/lib/crm-data";
 import { LeadPanel } from "./lead-panel";
+import { CrmMoreMenu, DownloadExcelButton } from "./crm-more-menu";
 import { useAutoRefresh } from "@/hooks/use-auto-refresh";
 import { ACTIVITY_TYPES, activityDueLabel, activityStatus, matchesFilters, sortLeads, todayInIndia } from "@/lib/crm/leads";
 import { stageColor } from "@/lib/crm/stages";
@@ -166,7 +167,17 @@ export function CrmList({ stages, leads, options: pickers }: { stages: BoardStag
   return (
     <>
       {dialog}
-      <CrmToolbar view="list" pickers={pickers} onNew={() => set({ new: "1", lead: null, edit: null })} />
+      <CrmToolbar
+        view="list"
+        pickers={pickers}
+        onNew={() => set({ new: "1", lead: null, edit: null })}
+        extra={
+          <>
+            <DownloadExcelButton />
+            <CrmMoreMenu />
+          </>
+        }
+      />
 
       {ids.length ? (
         <div className="sticky top-16 z-20 mb-3 flex flex-wrap items-center gap-2 rounded-xl border bg-card p-2 shadow-md" aria-busy={pending}>

@@ -171,7 +171,7 @@ async function defaultSourceId(tx: Tx): Promise<string> {
 
 // ---- create ----------------------------------------------------------------------------
 
-export async function createLead(db: DB | Tx, input: LeadInput, opts: { createdAt?: Date } = {}) {
+export async function createLead(db: DB | Tx, input: LeadInput, opts: { createdAt?: Date; createdMessage?: string } = {}) {
   return db.transaction(async (tx) => {
     const { row, deptCodes, serviceIds, tagIds } = await cleanInput(tx, input);
     const stages = await stagesInOrder(tx);
@@ -207,7 +207,7 @@ export async function createLead(db: DB | Tx, input: LeadInput, opts: { createdA
     if (deptCodes.length) await tx.insert(leadDepartments).values(deptCodes.map((deptCode) => ({ leadId: lead.id, deptCode })));
     if (serviceIds.length) await tx.insert(leadServices).values(serviceIds.map((serviceId) => ({ leadId: lead.id, serviceId })));
     if (tagIds.length) await tx.insert(leadTags).values(tagIds.map((tagId) => ({ leadId: lead.id, tagId })));
-    await tx.insert(leadEvents).values({ leadId: lead.id, type: "CREATED", message: `Enquiry created in ${stage.name}`, createdBy: ACTOR, createdAt });
+    await tx.insert(leadEvents).values({ leadId: lead.id, type: "CREATED", message: opts.createdMessage ?? `Enquiry created in ${stage.name}`, createdBy: ACTOR, createdAt });
     return lead;
   });
 }
@@ -531,4 +531,23 @@ export async function findDuplicates(
   out.leads = out.leads.slice(0, 5);
   out.customers = out.customers.slice(0, 5);
   return out;
+}
+
+// ---- import -----------------------------------------------------------------------------------
+
+/**
+ * Imports checked rows in one transaction: either all of them are saved, or none
+ * (so a problem half-way never leaves a partial import).
+ */
+export async function importLeads(db: DB, rows: { rowNo: number; input: LeadInput }[], fileName: string) {
+  return db.transaction(async (tx) => {
+    const made: { rowNo: number; leadNo: string }[] = [];
+    for (const r of rows) {
+      const stages = await stagesInOrder(tx);
+      const stage = stages.find((s) => s.id === r.input.stageId);
+      const lead = await createLead(tx, r.input, { createdMessage: `Enquiry imported from Excel into ${stage?.name ?? "the board"} (${fileName}, row ${r.rowNo})` });
+      made.push({ rowNo: r.rowNo, leadNo: lead.leadNo });
+    }
+    return made;
+  });
 }

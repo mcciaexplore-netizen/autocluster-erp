@@ -403,3 +403,15 @@ export async function getTodaysActivities() {
   return rows;
 }
 export type TodaysActivity = Awaited<ReturnType<typeof getTodaysActivities>>[number];
+
+/** What imported rows are checked against (active items only). */
+export async function getImportLists() {
+  const [pickers, stages, depts] = await Promise.all([getCrmPickers(), getCrmStages(), db.select().from(departmentsTable).orderBy(asc(departmentsTable.sortOrder))]);
+  return {
+    sources: pickers.sources,
+    stages: stages.map((s) => ({ id: s.id, name: s.name, type: s.type })),
+    team: pickers.team,
+    tags: pickers.tags,
+    departments: depts.map((d) => ({ code: d.code, name: d.name })),
+  };
+}
