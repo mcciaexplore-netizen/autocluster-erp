@@ -25,6 +25,8 @@ import {
   files,
   invAdjustReasons,
   invBatches,
+  invCountLines,
+  invCounts,
   invDocuments,
   invItems,
   invMovements,
@@ -444,6 +446,64 @@ export async function adjustStock(db: DB | Tx, input: AdjustInput, opts: { today
     }
     await ledger.save(tx);
     return { id: doc.id, docNo: doc.docNo };
+  });
+}
+
+// ---- Complete a stock count ----------------------------------------------------------------------
+
+/** "2026-11-20" -> "20/11/2026" */
+export const ddmmyyyy = (iso: string) => `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(0, 4)}`;
+
+/**
+ * Turns a count's differences into one Stock adjusted record ("Stock count dd/mm/yyyy") and locks
+ * the count. Each counted line is compared with the stock now, which is the quantity frozen at
+ * the start plus or minus anything that moved since. Gains and losses are valued at the average
+ * cost, so the average doesn't change. Lines not counted are left as they are.
+ */
+export async function completeCount(db: DB | Tx, countId: string, opts: { doneBy?: string | null; today?: string } = {}) {
+  const today = opts.today ?? todayInIndia();
+  return db.transaction(async (tx) => {
+    const [count] = await tx.select().from(invCounts).where(eq(invCounts.id, countId)).for("update");
+    if (!count) throw new UserFacingError("That count could not be found.");
+    if (count.status !== "IN_PROGRESS") throw new UserFacingError(`Count ${count.countNo} is already complete.`);
+    const lines = (await tx.select().from(invCountLines).where(eq(invCountLines.countId, countId)).orderBy(asc(invCountLines.id))).filter((l) => l.countedQty != null);
+    if (!lines.length) throw new UserFacingError("Please count at least one item before completing the count.");
+    const doneBy = await checkDoneBy(tx, opts.doneBy);
+    const items = await lockItems(
+      tx,
+      lines.map((l) => l.itemId),
+    );
+    const batches = await lockBatches(tx, [...items.keys()]);
+    const ledger = new Ledger(items, batches);
+
+    const changes: { itemId: string; batchId: string | null; diff: Decimal }[] = [];
+    for (const l of lines) {
+      const item = items.get(l.itemId)!;
+      const now = l.batchId ? (ledger.batchQty.get(l.batchId) ?? D(0)) : ledger.qty(item.id);
+      const diff = D(l.countedQty!).sub(now);
+      if (diff.isZero()) continue;
+      if (diff.gt(0) && item.trackBatches && !l.batchId)
+        throw new UserFacingError(`${item.name} keeps batches. Add the ${formatQty(diff, item.unit)} found with Adjust stock (with its batch number and expiry), then count it here again.`);
+      if (diff.gt(0) && D(ledger.avg(item.id)).lte(0))
+        throw new UserFacingError(`${item.name} has no average cost yet, so the extra ${formatQty(diff, item.unit)} can't be valued. Add it with Adjust stock > Opening stock (with a rate), then count it here again.`);
+      changes.push({ itemId: item.id, batchId: l.batchId, diff });
+    }
+
+    let doc: { id: string; docNo: string } | null = null;
+    if (changes.length) {
+      doc = await newDocument(tx, "ADJ", { docDate: today, doneBy, note: `Stock count ${ddmmyyyy(today)} (${count.countNo})` });
+      for (const c of changes) {
+        const q = qtyText(c.diff.abs());
+        if (c.diff.gt(0)) ledger.in(doc.id, c.itemId, c.batchId, q, ledger.avg(c.itemId));
+        else ledger.out(doc.id, c.itemId, c.batchId, q);
+      }
+      await ledger.save(tx);
+    }
+    await tx
+      .update(invCounts)
+      .set({ status: "COMPLETED", completedAt: new Date(), adjustmentDocId: doc?.id ?? null, doneBy: doneBy ?? count.doneBy })
+      .where(eq(invCounts.id, countId));
+    return { countNo: count.countNo, adjustment: doc, changes: changes.length };
   });
 }
 

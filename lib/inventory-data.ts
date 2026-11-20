@@ -14,6 +14,7 @@ import {
   invAdjustReasons,
   invBatches,
   invCategories,
+  invCounts,
   invDocuments,
   invMovements,
   invItemDepartments,
@@ -28,7 +29,7 @@ import {
   teamMembers,
 } from "@/db/schema";
 import type { Material } from "@/lib/inventory/materials";
-import { valuePaise } from "@/lib/inventory/numbers";
+import { D, valuePaise } from "@/lib/inventory/numbers";
 import { stockStatus, type StockStatus } from "@/lib/inventory/stock";
 import { financialYear } from "@/lib/pricing";
 import { addDays, todayInIndia } from "@/lib/tickets";
@@ -430,7 +431,7 @@ export async function getInvDocument(id: string) {
       qtyOut: invMovements.qtyOut,
       unitCost: invMovements.unitCost,
       value: invMovements.value,
-      reason: sql<string | null>`case when ${invMovements.isOpening} then 'Opening stock' else ${invAdjustReasons.name} end`,
+      reason: sql<string | null>`case when ${invMovements.isOpening} then 'Opening stock' else coalesce(${sql.raw(countReason('"inv_movements"."document_id"'))}, ${invAdjustReasons.name}) end`,
       balanceAfter: invMovements.balanceAfter,
     })
     .from(invMovements)
@@ -444,6 +445,10 @@ export async function getInvDocument(id: string) {
 }
 export type InvDocDetail = NonNullable<Awaited<ReturnType<typeof getInvDocument>>>;
 
+/** A count's adjustment lines read "Stock count dd/mm/yyyy" (they have no reason from the list). */
+const countReason = (docCol: string) =>
+  `(select 'Stock count ' || to_char(cd.doc_date, 'DD/MM/YYYY') from inv_counts c join inv_documents cd on cd.id = c.adjustment_doc_id where c.adjustment_doc_id = ${docCol})`;
+
 // ---- item history, use per month, price history ---------------------------------------------------
 
 export async function getItemHistory(itemId: string, limit = 500) {
@@ -455,7 +460,7 @@ export async function getItemHistory(itemId: string, limit = 500) {
   }>(sql`
     select m.id, d.id as doc_id, d.doc_no, d.type, d.doc_date::text, m.qty_in, m.qty_out, m.value, m.unit_cost, m.balance_after, b.batch_no,
       s.name as supplier, d.supplier_bill_no as bill_no, d.ticket_id, t.ticket_no, p.name as purpose,
-      case when m.is_opening then 'Opening stock' else r.name end as reason, tm.name as done_by,
+      case when m.is_opening then 'Opening stock' else coalesce(${sql.raw(countReason("m.document_id"))}, r.name) end as reason, tm.name as done_by,
       m.note, d.note as doc_note, d.reverses_doc_id as reverses, d.reversed_by_doc_id as reversed_by
     from inv_movements m
     join inv_documents d on d.id = m.document_id
@@ -537,7 +542,7 @@ export async function getLinesForDocs(docIds: string[]) {
   if (!docIds.length) return [];
   const rows = await db.execute<{ document_id: string; item: string; code: string; unit: string; batch_no: string | null; qty_in: string; qty_out: string; unit_cost: string; value: string; reason: string | null; balance_after: string }>(sql`
     select m.document_id, i.name as item, i.code, u.name as unit, b.batch_no, m.qty_in, m.qty_out, m.unit_cost, m.value,
-      case when m.is_opening then 'Opening stock' else r.name end as reason, m.balance_after
+      case when m.is_opening then 'Opening stock' else coalesce(${sql.raw(countReason("m.document_id"))}, r.name) end as reason, m.balance_after
     from inv_movements m join inv_items i on i.id = m.item_id join inv_units u on u.id = i.unit_id
     left join inv_batches b on b.id = m.batch_id left join inv_adjust_reasons r on r.id = m.reason_id
     where m.document_id = any(${sql.param(docIds)}::uuid[])
@@ -598,3 +603,143 @@ export async function getTicketMaterials(ticketId: string) {
   return ticketMaterialCost(db, ticketId);
 }
 export type TicketMaterials = Awaited<ReturnType<typeof getTicketMaterials>>;
+
+// ---- stock counts -----------------------------------------------------------------------------------
+
+/** All counts, newest first, with progress and the value of what changed. */
+export async function listCounts() {
+  await connection();
+  const rows = await db.execute<{
+    id: string; count_no: string; status: "IN_PROGRESS" | "COMPLETED"; label: string | null; started_at: string; completed_at: string | null;
+    done_by: string | null; lines: string; counted: string; adj_id: string | null; adj_no: string | null; gain: string | null; loss: string | null;
+  }>(sql`
+    select c.id, c.count_no, c.status, c.filter->>'label' as label, c.started_at::text, c.completed_at::text, tm.name as done_by,
+      (select count(*) from inv_count_lines l where l.count_id = c.id) as lines,
+      (select count(*) from inv_count_lines l where l.count_id = c.id and l.counted_qty is not null) as counted,
+      d.id as adj_id, d.doc_no as adj_no,
+      (select sum(m.value) from inv_movements m where m.document_id = d.id and m.qty_in > 0) as gain,
+      (select sum(m.value) from inv_movements m where m.document_id = d.id and m.qty_out > 0) as loss
+    from inv_counts c
+    left join team_members tm on tm.id = c.done_by
+    left join inv_documents d on d.id = c.adjustment_doc_id
+    order by c.started_at desc
+    limit 200`);
+  return rows.rows.map((r) => ({
+    id: r.id,
+    countNo: r.count_no,
+    status: r.status,
+    label: r.label ?? "All items",
+    startedAt: r.started_at,
+    completedAt: r.completed_at,
+    doneBy: r.done_by,
+    lines: Number(r.lines),
+    counted: Number(r.counted),
+    adjustment: r.adj_id ? { id: r.adj_id, docNo: r.adj_no! } : null,
+    gainPaise: Number(r.gain ?? 0),
+    lossPaise: Number(r.loss ?? 0),
+  }));
+}
+export type CountListRow = Awaited<ReturnType<typeof listCounts>>[number];
+
+/**
+ * One count with its lines. While open, each counted line is compared with the stock now (the
+ * quantity frozen at the start plus or minus what moved since), valued at the average cost.
+ * Once complete, the difference and value come from its Stock adjusted record.
+ */
+export async function getCount(id: string) {
+  await connection();
+  const [c] = await db
+    .select({
+      id: invCounts.id,
+      countNo: invCounts.countNo,
+      status: invCounts.status,
+      filter: invCounts.filter,
+      startedAt: invCounts.startedAt,
+      completedAt: invCounts.completedAt,
+      adjustmentDocId: invCounts.adjustmentDocId,
+      doneBy: teamMembers.name,
+    })
+    .from(invCounts)
+    .leftJoin(teamMembers, eq(teamMembers.id, invCounts.doneBy))
+    .where(eq(invCounts.id, id));
+  if (!c) return null;
+  const adj = c.adjustmentDocId ? (await db.select({ id: invDocuments.id, docNo: invDocuments.docNo }).from(invDocuments).where(eq(invDocuments.id, c.adjustmentDocId)))[0] : null;
+  const rows = await db.execute<{
+    id: number; item_id: string; batch_id: string | null; system_qty: string; counted_qty: string | null; name: string; code: string; unit: string;
+    category: string; place: string | null; batch_no: string | null; expiry_date: string | null; now_qty: string; avg_cost: string;
+    adj_in: string | null; adj_out: string | null; adj_value: string | null;
+  }>(sql`
+    select l.id, l.item_id, l.batch_id, l.system_qty, l.counted_qty, i.name, i.code, u.name as unit, cat.name as category, i.storage_place as place,
+      b.batch_no, b.expiry_date::text, coalesce(b.qty_on_hand, i.qty_on_hand) as now_qty, i.avg_cost,
+      mv.qty_in as adj_in, mv.qty_out as adj_out, mv.value as adj_value
+    from inv_count_lines l
+    join inv_items i on i.id = l.item_id
+    join inv_units u on u.id = i.unit_id
+    join inv_categories cat on cat.id = i.category_id
+    left join inv_batches b on b.id = l.batch_id
+    left join lateral (
+      select sum(m.qty_in) as qty_in, sum(m.qty_out) as qty_out, sum(case when m.qty_in > 0 then m.value else -m.value end) as value
+      from inv_movements m
+      where m.document_id = ${c.adjustmentDocId} and m.item_id = l.item_id and m.batch_id is not distinct from l.batch_id
+    ) mv on true
+    where l.count_id = ${id}
+    order by cat.sort_order, cat.name, i.name, b.expiry_date nulls last, b.batch_no`);
+  const open = c.status === "IN_PROGRESS";
+  const lines = rows.rows.map((r) => {
+    let diff: string | null = null;
+    let valuePaise_ = 0;
+    let expected = r.now_qty;
+    if (open) {
+      if (r.counted_qty != null) {
+        const d = D(r.counted_qty).sub(D(r.now_qty));
+        diff = d.toFixed(3);
+        valuePaise_ = (d.isNeg() ? -1 : 1) * valuePaise(d.abs().toFixed(3), r.avg_cost);
+      }
+    } else if (r.counted_qty != null) {
+      const d = D(r.adj_in ?? 0).sub(D(r.adj_out ?? 0));
+      diff = d.toFixed(3);
+      valuePaise_ = Number(r.adj_value ?? 0);
+      expected = D(r.counted_qty).sub(d).toFixed(3);
+    }
+    return {
+      id: r.id,
+      itemId: r.item_id,
+      batchId: r.batch_id,
+      name: r.name,
+      code: r.code,
+      unit: r.unit,
+      category: r.category,
+      place: r.place,
+      batchNo: r.batch_no,
+      expiryDate: r.expiry_date,
+      systemQty: r.system_qty,
+      countedQty: r.counted_qty,
+      /** Stock now (open) or at completion (complete): frozen quantity ± what moved since the start. */
+      expectedQty: expected,
+      /** What moved since the start (only while open). */
+      movedQty: open ? D(r.now_qty).sub(D(r.system_qty)).toFixed(3) : "0.000",
+      diff,
+      valuePaise: valuePaise_,
+    };
+  });
+  return {
+    id: c.id,
+    countNo: c.countNo,
+    status: c.status,
+    label: (c.filter?.label as string | undefined) ?? "All items",
+    startedAt: c.startedAt.toISOString(),
+    completedAt: c.completedAt?.toISOString() ?? null,
+    doneBy: c.doneBy,
+    adjustment: adj ?? null,
+    lines,
+  };
+}
+export type CountDetail = NonNullable<Awaited<ReturnType<typeof getCount>>>;
+export type CountLine = CountDetail["lines"][number];
+
+/** The open count, if there is one (shown on the count list and the movement forms). */
+export async function getOpenCount() {
+  await connection();
+  const [c] = await db.select({ id: invCounts.id, countNo: invCounts.countNo }).from(invCounts).where(eq(invCounts.status, "IN_PROGRESS")).limit(1);
+  return c ?? null;
+}

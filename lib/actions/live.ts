@@ -33,7 +33,9 @@ export async function changedSinceAction(scope: LiveScope, since: string | null)
         : sql`select now()::text as at,
           exists(select 1 from inv_documents where created_at > ${t})
           or exists(select 1 from inv_items where updated_at > ${t})
-          or exists(select 1 from inv_suppliers where updated_at > ${t}) as changed`;
+          or exists(select 1 from inv_suppliers where updated_at > ${t})
+          or exists(select 1 from inv_counts where started_at > ${t} or completed_at > ${t})
+          or exists(select 1 from inv_count_lines where counted_at > ${t}) as changed`;
   const r = await db.execute<{ at: string; changed: boolean }>(query);
   return { changed: !!r.rows[0].changed, at: r.rows[0].at };
 }
