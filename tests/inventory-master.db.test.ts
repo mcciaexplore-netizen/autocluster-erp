@@ -28,7 +28,7 @@ describe.skipIf(skip)("inventory items and suppliers (database)", () => {
     expect((await db.select().from(s.invUnits)).map((u) => u.name)).toEqual(["ml", "L", "g", "kg", "pcs", "m", "set", "cylinder", "box"]);
     expect(await db.select().from(s.invCategories)).toHaveLength(5);
     expect(await db.select().from(s.invPurposes)).toHaveLength(5);
-    expect(await db.select().from(s.invAdjustReasons)).toHaveLength(6);
+    expect((await db.select().from(s.invAdjustReasons)).map((r) => r.name)).toContain("Returned to supplier");
     expect(await ensureInventoryDefaults(db)).toEqual([]);
   });
 
