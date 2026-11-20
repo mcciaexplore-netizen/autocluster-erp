@@ -20,12 +20,12 @@ describe.skipIf(skip)("enquiry details, history and duplicate check (database)",
 
   it("editing logs value, assignee and other changes in plain words", async () => {
     const l = await createLead(db, { ...base, expectedValuePaise: 50_000_00 });
-    const [m] = await db.insert(s.teamMembers).values({ name: "Rohan Kulkarni" }).returning();
+    const [m] = await db.insert(s.teamMembers).values({ name: "Rohan Deshpande" }).returning();
     const r = await updateLead(db, l.id, { ...base, expectedValuePaise: 75_000_00, assignedTo: m.id, city: "Pune", deptCodes: ["RPL"] });
     expect(r.changed).toBe(true);
     const msgs = (await events(l.id)).map((e) => e.message);
     expect(msgs).toContain("Expected value changed from ₹50,000 to ₹75,000");
-    expect(msgs).toContain("Assigned to changed from nobody to Rohan Kulkarni");
+    expect(msgs).toContain("Assigned to changed from nobody to Rohan Deshpande");
     expect(msgs).toContain("Details edited: city, departments");
     // saving again with nothing changed adds nothing
     const before = (await events(l.id)).length;

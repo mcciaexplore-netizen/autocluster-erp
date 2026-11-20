@@ -80,7 +80,7 @@ The demo data fills the Orders & Billing board with every situation:
 - 3 in **Payment follow-up**: due in 5 days, due today, and overdue by 12 days with a note and a part payment incl. TDS
 - 1 **Paid** and 1 **Cancelled**
 
-The CRM demo has 3 team members (Priya Shah, Rohan Kulkarni, Amit Patil) and 12 enquiries:
+The CRM demo has 3 team members (Priya Shah, Rohan Deshpande, Amit Patil) and 12 enquiries:
 - 3 **New**, 3 **Contacted**, 2 **Negotiation**, 2 **Won**, 2 **Lost** ("Price too high" and "No response"), using every source and priority.
 - Activities: 2 overdue, 2 due today, 3 upcoming; 2 open enquiries have nothing planned.
 - The Western Drive enquiry in **Negotiation** is linked to quotation ACDRI/QT/…/0002 (Sent). Mark that quotation **Accepted** to see the enquiry move to **Won** and its tickets open on the Orders & Billing board.

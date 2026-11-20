@@ -69,7 +69,7 @@ describe.skipIf(skip)("demo data (database)", () => {
     expect({ n: by("New"), c: by("Contacted"), g: by("Negotiation"), w: by("Won"), l: by("Lost") }).toEqual({ n: 3, c: 3, g: 2, w: 2, l: 2 });
     expect(new Set(leads.map((x) => x.l.sourceId)).size).toBe((await db.select().from(s.crmSources)).length);
     expect([...new Set(leads.map((x) => x.l.priority))].sort()).toEqual([0, 1, 2, 3]);
-    expect((await db.select().from(s.teamMembers)).map((m) => m.name)).toEqual(["Priya Shah", "Rohan Kulkarni", "Amit Patil"]);
+    expect((await db.select().from(s.teamMembers)).map((m) => m.name)).toEqual(["Priya Shah", "Rohan Deshpande", "Amit Patil"]);
     expect((await db.select().from(s.crmTags)).map((t) => t.name)).toEqual(["Urgent", "Repeat customer", "Government", "Startup"]);
     expect(leads.filter((x) => x.l.customerId).length).toBeGreaterThanOrEqual(4); // a mix of existing customers and new companies
 

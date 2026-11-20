@@ -14,7 +14,7 @@ import { toPaise } from "../lib/pricing";
 
 export const DEMO_TEAM = [
   { name: "Priya Shah", phone: "9822100011", email: "priya.shah@autocluster.example" },
-  { name: "Rohan Kulkarni", phone: "9822100022", email: "rohan.kulkarni@autocluster.example" },
+  { name: "Rohan Deshpande", phone: "9822100022", email: "rohan.deshpande@autocluster.example" },
   { name: "Amit Patil", phone: "9822100033", email: "amit.patil@autocluster.example" },
 ];
 
@@ -77,15 +77,15 @@ const LEADS: DemoLead[] = [
     key: "lumax", stage: "Contacted", source: "Phone call", priority: 3, title: "Dust and water spray tests for headlamps",
     company: "Lumen Auto Lights Pvt Ltd", contact: "Sunil Rao", designation: "QA Manager", phone: "9890044455", email: "sunil.rao@lumenauto.example",
     city: "Bhosari", category: "TIER1", member: true, depts: ["ENV"], services: ["Dust spray chamber", "Water spray chamber"], value: 1_20_000, closeIn: 10,
-    who: "Rohan Kulkarni", tags: ["Urgent"], createdDaysAgo: 9, stageDaysAgo: 6, notes: "IP6K5 and IP6K9K for a new headlamp. Launch date is close.",
-    activity: { type: "CALL", in: -2, time: "10:00", note: "Call back with chamber dates", who: "Rohan Kulkarni" },
+    who: "Rohan Deshpande", tags: ["Urgent"], createdDaysAgo: 9, stageDaysAgo: 6, notes: "IP6K5 and IP6K9K for a new headlamp. Launch date is close.",
+    activity: { type: "CALL", in: -2, time: "10:00", note: "Call back with chamber dates", who: "Rohan Deshpande" },
     done: { type: "CALL", daysAgo: 6, outcome: "Interested. Sending test plan and sample count" },
   },
   {
     key: "indus", stage: "Contacted", source: "Referral", priority: 1, title: "5-axis machining of turbine impellers",
     company: "Indus Forge Tier One Pvt Ltd", customer: "Indus Forge", contact: "Vikram Deshpande", phone: "9823012345", city: "Pune",
-    depts: ["PPF"], services: ["5-axis machining"], value: 90_000, closeIn: 20, who: "Rohan Kulkarni", createdDaysAgo: 12, stageDaysAgo: 5,
-    activity: { type: "MEETING", in: 0, time: "15:00", note: "Review drawings with their tooling team", who: "Rohan Kulkarni" },
+    depts: ["PPF"], services: ["5-axis machining"], value: 90_000, closeIn: 20, who: "Rohan Deshpande", createdDaysAgo: 12, stageDaysAgo: 5,
+    activity: { type: "MEETING", in: 0, time: "15:00", note: "Review drawings with their tooling team", who: "Rohan Deshpande" },
   },
   {
     key: "shree", stage: "Contacted", source: "Walk-in", priority: 0, title: "FTIR material check for a failed seal",
@@ -109,7 +109,7 @@ const LEADS: DemoLead[] = [
   {
     key: "sahyadri", stage: "Won", source: "Phone call", priority: 2, title: "5-axis finishing of mould inserts",
     company: "Sahyadri Auto Components Pvt Ltd", customer: "Sahyadri", contact: "Rohan Kulkarni", phone: "9822012345", city: "Pune",
-    depts: ["PPF"], services: ["5-axis machining"], value: 7_200, who: "Rohan Kulkarni", tags: ["Repeat customer"], createdDaysAgo: 75, stageDaysAgo: 3,
+    depts: ["PPF"], services: ["5-axis machining"], value: 7_200, who: "Rohan Deshpande", tags: ["Repeat customer"], createdDaysAgo: 75, stageDaysAgo: 3,
   },
   {
     key: "pune-moulds", stage: "Won", source: "Website", priority: 1, title: "Trial parts machined for a new mould",
@@ -121,7 +121,7 @@ const LEADS: DemoLead[] = [
   {
     key: "orbit", stage: "Lost", source: "Other", priority: 1, title: "High-low chamber test for an ECU housing",
     company: "Orbit Electronics", contact: "Rahul Nair", email: "rahul@orbitelectronics.example", city: "Talegaon",
-    depts: ["ENV"], services: ["High-low chamber"], value: 45_000, who: "Rohan Kulkarni", createdDaysAgo: 25, stageDaysAgo: 10,
+    depts: ["ENV"], services: ["High-low chamber"], value: 45_000, who: "Rohan Deshpande", createdDaysAgo: 25, stageDaysAgo: 10,
     lostReason: "Price too high", lostNote: "Went with a lab in Chakan at a lower rate.",
   },
   {
