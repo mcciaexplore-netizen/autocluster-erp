@@ -13,6 +13,7 @@ import { assignInventoryDoneBy, loadInventoryDemo } from "./demo-inventory";
 import { loadCrmDemo } from "./demo-crm";
 import { DEFAULT_TERMS } from "../lib/settings-shared";
 import { loadDemoOrders, type DemoOrdersOptions } from "./demo-orders";
+import { loadPlanningDemo } from "./demo-planning";
 
 config({ path: ".env.local", quiet: true });
 
@@ -41,7 +42,7 @@ export async function isEmpty(db: DB | Tx) {
 
 export async function wipe(db: DB | Tx) {
   await db.execute(
-    sql`TRUNCATE inv_reorder_sends, inv_count_lines, inv_counts, inv_service_materials, inv_movements, inv_documents, inv_batches, inv_supplier_items, inv_item_departments, inv_items, inv_suppliers, inv_counters, inv_categories, inv_units, inv_purposes, inv_adjust_reasons, lead_events, crm_activities, lead_tags, lead_services, lead_departments, leads, lead_counters, crm_stage_changes, crm_stages, crm_sources, crm_lost_reasons, crm_tags, team_members, ticket_events, follow_ups, payments, tickets, invoices, purchase_orders, billing_exports, files, ticket_counters, quotation_items, quotations, quote_counters, customer_services, customer_departments, customers, services, departments, settings RESTART IDENTITY CASCADE`,
+    sql`TRUNCATE job_time_logs, job_events, job_files, job_bookings, jobs, machine_blocks, machine_services, machines, holidays, inv_reorder_sends, inv_count_lines, inv_counts, inv_service_materials, inv_movements, inv_documents, inv_batches, inv_supplier_items, inv_item_departments, inv_items, inv_suppliers, inv_counters, inv_categories, inv_units, inv_purposes, inv_adjust_reasons, lead_events, crm_activities, lead_tags, lead_services, lead_departments, leads, lead_counters, crm_stage_changes, crm_stages, crm_sources, crm_lost_reasons, crm_tags, team_members, ticket_events, follow_ups, payments, tickets, invoices, purchase_orders, billing_exports, files, ticket_counters, quotation_items, quotations, quote_counters, customer_services, customer_departments, customers, services, departments, settings RESTART IDENTITY CASCADE`,
   );
 }
 
@@ -84,6 +85,18 @@ const SERVICES: [string, string, UnitType, number, number][] = [
   ["RPL", "QUV Weather-Ometer", "PER_HOUR_3_SAMPLES", 80, 100],
   ["RPL", "DSC", "PER_SAMPLE", 2700, 3200],
 ];
+
+/** Rate Card "Time needed" (setup minutes, minutes per unit), used to suggest job hours. Origin 1 SLA is left unset on purpose. */
+const TIME_NEEDED: Record<string, [number, number]> = {
+  "SLA - imported resin": [45, 0.6],
+  "SLA - local resin": [45, 0.6],
+  "Figure 4 Standalone Pro, black": [20, 0.4],
+  SLS: [90, 0.5],
+  UTM: [15, 20],
+  FTIR: [10, 15],
+  "Melt flow index": [20, 30],
+  DSC: [15, 45],
+};
 
 // Fictional companies. GST / PAN / TAN numbers are valid in format only.
 const CUSTOMERS = [
@@ -168,7 +181,7 @@ const CUSTOMERS = [
 ];
 
 /** `orders` also adds the Orders & Billing demo (tickets, POs, invoices, payments, sample PDFs). */
-export async function loadDemoData(db: DB | Tx, opts: { quiet?: boolean; orders?: DemoOrdersOptions; crm?: boolean; inventory?: boolean } = {}) {
+export async function loadDemoData(db: DB | Tx, opts: { quiet?: boolean; orders?: DemoOrdersOptions; crm?: boolean; inventory?: boolean; planning?: boolean; now?: Date } = {}) {
   const console = opts.quiet ? { log: () => {} } : globalThis.console;
   console.log("Adding settings, departments and the rate card...");
   await db.insert(s.settings).values({
@@ -201,6 +214,8 @@ export async function loadDemoData(db: DB | Tx, opts: { quiet?: boolean; orders?
         rateOem: oem.toFixed(2),
         effectiveFrom: "2025-11-01",
         sortOrder: i + 1,
+        setupMinutes: TIME_NEEDED[name]?.[0] ?? null,
+        minutesPerUnit: TIME_NEEDED[name] ? String(TIME_NEEDED[name][1]) : null,
       })),
     )
     .returning();
@@ -294,5 +309,10 @@ export async function loadDemoData(db: DB | Tx, opts: { quiet?: boolean; orders?
     await loadCrmDemo(db, { links: true, log: (m) => console.log(m) });
   }
   if (opts.inventory && opts.crm) await assignInventoryDoneBy(db);
+
+  if (opts.planning) {
+    console.log("Adding the Planning demo (33 machines, holidays, 8 weeks of jobs and the next 2 weeks)...");
+    return loadPlanningDemo(db, { log: (m) => console.log(m), now: opts.now, blobFolder: opts.orders?.blobFolder ?? "local", onUpload: opts.orders?.onUpload });
+  }
 
 }

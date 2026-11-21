@@ -46,8 +46,8 @@ describe.skipIf(skip)("jobs and booking machine time (database)", () => {
     ]);
     expect(js.map((x) => [x.job.status, x.job.hoursNeeded])).toEqual([
       ["TO_PLAN", "48.00"], // per-hour service: the billable hours
-      ["TO_PLAN", null], // no time settings on UTM yet
-      ["TO_PLAN", null],
+      ["TO_PLAN", "2.00"], // UTM: 15 min setup + 20 min x 5 samples = 1 h 55 min, rounded up to the half hour
+      ["TO_PLAN", "2.50"], // FTIR: 10 min + 15 min x 8 = 2 h 10 min
     ]);
     // the job uses the ticket number
     const m = await createMachine(db, { ...EMPTY_MACHINE_FORM, name: "Thermal Shock Test Chamber", deptCode: "ENV", runsNonstop: true });

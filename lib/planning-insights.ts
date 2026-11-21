@@ -255,13 +255,19 @@ export async function getPlanningInsights(f: PlanningInsightFilters) {
         code: m.code,
         name: m.name,
         deptCode: m.dept_code,
+        nonstop: m.runs_nonstop,
         ...inRange,
         nextBookedPct: ahead.bookedPct,
       };
     })
     .sort((a, b) => (b.bookedPct ?? -1) - (a.bookedPct ?? -1) || a.name.localeCompare(b.name));
   const busy = use.filter((m) => (m.nextBookedPct ?? 0) >= BUSY_PCT).sort((a, b) => b.nextBookedPct! - a.nextBookedPct!);
-  const quiet = use.filter((m) => m.availableHours > 0 && (m.actualPct ?? 0) < QUIET_PCT && range.start < now);
+  const past = range.start < now;
+  // Used a little (least used first); machines not used at all are counted separately.
+  const quiet = use
+    .filter((m) => past && m.availableHours > 0 && m.actualHours > 0 && (m.actualPct ?? 0) < QUIET_PCT && (m.bookedPct ?? 0) < QUIET_PCT)
+    .sort((a, b) => (a.actualPct ?? 0) - (b.actualPct ?? 0));
+  const unused = use.filter((m) => past && m.availableHours > 0 && m.actualHours === 0 && m.bookedHours === 0).length;
 
   // 2. Work waiting per department.
   const dayHours = hoursPerDay(pattern);
@@ -427,8 +433,9 @@ export async function getPlanningInsights(f: PlanningInsightFilters) {
     deptName: Object.fromEntries(deptName),
     alertPct,
     use,
-    busy: busy.map((m) => ({ name: m.name, pct: m.nextBookedPct! })),
+    busy: busy.map((m) => ({ name: m.name, pct: m.nextBookedPct!, nonstop: m.nonstop })),
     quiet: quiet.map((m) => ({ name: m.name, pct: m.actualPct ?? 0 })),
+    unused,
     waiting,
     quoted: {
       jobs: overQuoted.length,

@@ -329,7 +329,9 @@ export async function listJobs(f: JobFilters = {}, limit = 500) {
       checkWorkDone: r.check_work_done && open,
     };
   });
-  return list.filter((j) => (!f.late || j.late) && (!f.overQuoted || j.overQuoted));
+  // "Late" lists work still open; jobs already delivered late show in Insights.
+  const open = (j: (typeof list)[number]) => !["DONE", "HANDED_OVER", "CANCELLED"].includes(j.status);
+  return list.filter((j) => (!f.late || (j.late && open(j))) && (!f.overQuoted || j.overQuoted));
 }
 export type JobRow = Awaited<ReturnType<typeof listJobs>>[number];
 

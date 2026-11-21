@@ -20,7 +20,7 @@ async function main() {
     const uploaded: string[] = [];
     const blobFolder = scriptBlobFolder(process.env.DATABASE_URL_UNPOOLED || process.env.DATABASE_URL);
     try {
-      await db.transaction((tx) => loadDemoData(tx, { orders: { blobFolder, onUpload: (p) => uploaded.push(p) }, crm: true, inventory: true }));
+      await db.transaction((tx) => loadDemoData(tx, { orders: { blobFolder, onUpload: (p) => uploaded.push(p) }, crm: true, inventory: true, planning: true }));
     } catch (e) {
       await deleteStoredFiles(uploaded).catch(() => {});
       throw e;

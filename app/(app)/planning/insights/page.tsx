@@ -178,18 +178,23 @@ function UseLines({ d }: { d: PlanningInsights }) {
         d.busy.slice(0, 3).map((b) => (
           <p key={b.name} className="flex items-start gap-2 rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-950">
             <AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden />
-            {b.name} is {pct(b.pct)} booked for the next 2 weeks. Consider an extra shift.
+            {b.name} is {pct(b.pct)} booked for the next 2 weeks. {b.nonstop ? "Quote later start dates for new jobs, or consider more capacity." : "Consider an extra shift."}
           </p>
         ))
       ) : (
         <p className="text-sm text-muted-foreground">No machine is more than {BUSY_PCT}% booked for the next 2 weeks.</p>
       )}
-      {d.quiet.length ? (
+      {d.quiet.length || d.unused ? (
         <p className="flex items-start gap-2 rounded-xl border bg-secondary/50 px-3 py-2 text-sm">
           <Info className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-hidden />
           <span>
-            Rarely used in this period (ran less than {QUIET_PCT}% of the available time): {list(d.quiet.slice(0, 5).map((m) => `${m.name} (${pct(m.pct)})`))}
-            {d.quiet.length > 5 ? ` and ${d.quiet.length - 5} more` : ""}.
+            {d.quiet.length ? (
+              <>
+                Rarely used in this period (ran less than {QUIET_PCT}% of the available time): {list(d.quiet.slice(0, 4).map((m) => `${m.name} (${pct(m.pct)})`))}
+                {d.quiet.length > 4 ? ` and ${d.quiet.length - 4} more` : ""}.{" "}
+              </>
+            ) : null}
+            {d.unused ? `${d.unused} ${d.unused === 1 ? "machine was" : "machines were"} not used at all.` : null}
           </span>
         </p>
       ) : null}
