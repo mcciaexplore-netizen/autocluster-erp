@@ -10,7 +10,7 @@ import { StillBrokenDown } from "@/components/planning/still-broken";
 import { ClashActions } from "@/components/planning/clash-actions";
 import { Button } from "@/components/ui/button";
 import { UUID_RE } from "@/lib/inventory/uuid";
-import { getMachine, type MachineDetail } from "@/lib/planning-data";
+import { getMachine, getRecentInternalUse, type MachineDetail } from "@/lib/planning-data";
 import { dayPlus, formatHours, formatWhen, hhmm, istAt, istDate, istMinutes, segmentsOn } from "@/lib/planning/hours";
 import { BLOCK_TYPES } from "@/lib/validation/planning";
 import { cn } from "@/lib/utils";
@@ -40,7 +40,7 @@ async function Detail({ params, searchParams }: { params: Promise<{ id: string }
   const { id } = await params;
   if (!UUID_RE.test(id)) notFound();
   const sp = await searchParams;
-  const d = await getMachine(id, typeof sp.week === "string" ? sp.week : undefined);
+  const [d, stockRecords] = await Promise.all([getMachine(id, typeof sp.week === "string" ? sp.week : undefined), getRecentInternalUse()]);
   if (!d) notFound();
   const m = d.machine;
   return (
@@ -66,7 +66,7 @@ async function Detail({ params, searchParams }: { params: Promise<{ id: string }
               <Pencil aria-hidden /> Edit
             </Link>
           </Button>
-          <BlockTimeButton machineId={m.id} />
+          <BlockTimeButton machineId={m.id} stockRecords={stockRecords} />
           {m.status === "BREAKDOWN" ? <FixedButton machineId={m.id} /> : m.isActive ? <BreakdownButton machineId={m.id} machineName={m.name} /> : null}
         </div>
       </header>
@@ -225,6 +225,11 @@ function Week({ d }: { d: MachineDetail }) {
                         <span className="block font-medium">{BLOCK_TYPES[it.block.type]}</span>
                         {it.text}
                         {it.block.note ? <span className="block text-slate-600">{it.block.note}</span> : null}
+                        {it.block.invDocumentId ? (
+                          <Link href={`/inventory/movements/${it.block.invDocumentId}`} className="block font-medium underline">
+                            Spares used
+                          </Link>
+                        ) : null}
                       </span>
                       {it.block.endAt > new Date() ? <DeleteBlockButton blockId={it.block.id} label={BLOCK_TYPES[it.block.type].toLowerCase()} /> : null}
                     </li>

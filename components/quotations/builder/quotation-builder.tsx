@@ -25,6 +25,7 @@ import { viewFromLive } from "@/lib/quote-view";
 import { toPricingSettings } from "@/lib/settings-shared";
 import { cn } from "@/lib/utils";
 import { stockHint, suggestMaterials, type Material } from "@/lib/inventory/materials";
+import { SlotHint } from "@/components/planning/slot-hint";
 import { CustomerPicker } from "./customer-picker";
 import { ChangeRateDialog, CustomItemDialog } from "./line-dialogs";
 import { LiveSummaryBar, LiveSummaryCard } from "./live-summary";
@@ -482,6 +483,7 @@ export function QuotationBuilder({
                             <p className="mt-1 text-xs text-muted-foreground">{priceType.label}</p>
                           ) : null}
                           <StockHintLine serviceId={l.draft.serviceId} billableQty={l.billableQty} unitLabel={l.draft.unitLabel} materials={materials} />
+                          <SlotHint serviceId={l.draft.serviceId} billableQty={l.billableQty} />
                           <div className="mt-3 flex flex-wrap gap-2">
                             <Button
                               variant="outline"

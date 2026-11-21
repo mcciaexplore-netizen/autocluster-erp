@@ -62,6 +62,8 @@ export interface BoardTicket {
   materialsRecorded: boolean;
   materialCostPaise: number;
   hasMaterialsList: boolean;
+  /** Planning: the ticket's job, and its first booking still to come (or the latest). */
+  job: { id: string; status: string; bookedOn: string | null; machine: string | null; checkWorkDone: boolean } | null;
 }
 
 /** Last time someone contacted the customer about each invoice (note or reminder), as YYYY-MM-DD in India time. */
@@ -148,6 +150,15 @@ export async function getBoardTickets(customerId?: string): Promise<BoardTicket[
 
   const inv = await invoiceSummaries(rows.map((r) => r.t.invoiceId).filter((x): x is string => !!x));
   const mats = await materialsByTicket();
+  const jobRows = await db.execute<{ ticket_id: string; id: string; status: string; check_work_done: boolean; start_at: string | null; machine: string | null }>(sql`
+    select j.ticket_id, j.id, j.status, j.check_work_done, b.start_at::text, m.name as machine
+    from jobs j
+    left join lateral (
+      select * from job_bookings b where b.job_id = j.id and b.cancelled_at is null
+      order by (b.end_at > now()) desc, case when b.end_at > now() then b.start_at end asc, b.start_at desc limit 1
+    ) b on true
+    left join machines m on m.id = b.machine_id`);
+  const jobOf = new Map(jobRows.rows.map((r) => [r.ticket_id, r]));
   return rows.map(({ t, c, po }) => ({
     id: t.id,
     ticketNo: t.ticketNo,
@@ -172,6 +183,10 @@ export async function getBoardTickets(customerId?: string): Promise<BoardTicket[
     materialsRecorded: mats.recorded.has(t.id),
     materialCostPaise: mats.cost.get(t.id) ?? 0,
     hasMaterialsList: mats.withList.has(t.quotationItemId),
+    job: (() => {
+      const j = jobOf.get(t.id);
+      return j ? { id: j.id, status: j.status, bookedOn: j.start_at, machine: j.machine, checkWorkDone: j.check_work_done } : null;
+    })(),
   }));
 }
 

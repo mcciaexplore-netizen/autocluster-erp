@@ -20,6 +20,7 @@ import {
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { DeptChip } from "@/components/common/badges";
+import { JobChip } from "@/components/planning/job-chip";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Skeleton } from "@/components/ui/skeleton";
 import { loadTicketDetail } from "@/lib/actions/orders";
@@ -171,6 +172,21 @@ export function TicketPanel({
                 </p>
               ) : null}
             </section>
+
+            {ticket?.job && ticket.job.status !== "CANCELLED" ? (
+              <section className="rounded-xl border p-4">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <h3 className="font-semibold">Job</h3>
+                  <Link href={`/planning/jobs?job=${ticket.job.id}`} className="inline-flex h-9 items-center gap-1.5 rounded-lg border px-3 text-sm font-medium hover:bg-secondary">
+                    Open job
+                  </Link>
+                </div>
+                <p className="mt-2 text-sm">
+                  <JobChip job={ticket.job} />
+                </p>
+                {ticket.job.checkWorkDone ? <p className="mt-2 text-sm text-amber-900">Invoiced before planning started: check if work is done.</p> : null}
+              </section>
+            ) : null}
 
             <MaterialsSection ticketId={t.id} m={d.materials} cancelled={t.stage === "CANCELLED"} />
 

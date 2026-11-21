@@ -9,7 +9,7 @@ import { BlockTimeButton } from "@/components/planning/block-time";
 import { MachineChips, MachineStatusChip, pctText } from "@/components/planning/machine-bits";
 import { StillBrokenDown } from "@/components/planning/still-broken";
 import { Button } from "@/components/ui/button";
-import { listMachines } from "@/lib/planning-data";
+import { getRecentInternalUse, listMachines } from "@/lib/planning-data";
 import { formatWhen } from "@/lib/planning/hours";
 import { BLOCK_TYPES } from "@/lib/validation/planning";
 import { cn } from "@/lib/utils";
@@ -27,7 +27,7 @@ export default function MachinesPage() {
 }
 
 async function List() {
-  const { departments, machines } = await listMachines();
+  const [{ departments, machines }, stockRecords] = await Promise.all([listMachines(), getRecentInternalUse()]);
   const picks = machines.filter((m) => m.isActive).map((m) => ({ id: m.id, name: m.name, code: m.code, deptCode: m.deptCode }));
   return (
     <>
@@ -36,7 +36,7 @@ async function List() {
         description="Every machine, what it's doing now, and how busy it is this week."
         actions={
           <div className="flex flex-wrap gap-2">
-            <BlockTimeButton machines={picks} />
+            <BlockTimeButton machines={picks} stockRecords={stockRecords} />
             <Button asChild>
               <Link href="/planning/machines/new">
                 <Plus aria-hidden /> Add machine

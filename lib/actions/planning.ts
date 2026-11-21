@@ -51,12 +51,13 @@ const blockSchema = z.object({
   from: localDt,
   to: localDt,
   note: z.string().max(500).nullish(),
+  invDocumentId: z.string().uuid().nullish(),
 });
 
 export async function blockTimeAction(input: z.input<typeof blockSchema>) {
   return run(async () => {
     const v = blockSchema.parse(input);
-    const r = await blockMachine(db, { machineId: v.machineId, type: v.type, start: v.from, end: v.to, note: v.note });
+    const r = await blockMachine(db, { machineId: v.machineId, type: v.type, start: v.from, end: v.to, note: v.note, invDocumentId: v.invDocumentId ?? null });
     return { machine: r.machine.name, clashes: r.clashes.map((c) => ({ id: c.id, ticketNo: c.ticketNo, company: c.company, startAt: c.startAt.toISOString(), endAt: c.endAt.toISOString() })) };
   });
 }

@@ -79,9 +79,10 @@ export function OrdersBoard({ tickets, customers, uploadEnv, departments }: { ti
     cancelled: params.get("cancelled") === "1",
     stage: params.get("stage") as BoardStage | null,
     noMaterials: params.get("materials") === "missing",
+    workNotDone: params.get("work") === "notdone",
     paidAll: params.get("paid") === "all",
   };
-  const anyFilter = !!(f.q || f.dept || f.customer || f.overdue || f.followup || f.cancelled || f.stage || f.noMaterials);
+  const anyFilter = !!(f.q || f.dept || f.customer || f.overdue || f.followup || f.cancelled || f.stage || f.noMaterials || f.workNotDone);
   // The Paid column shows jobs paid in the last 30 days, unless "Show older paid" is on.
   const paidRecently = (t: BoardTicket) => daysBetween(todayInIndia(new Date(t.stageChangedAt)), today) <= 30;
 
@@ -91,6 +92,7 @@ export function OrdersBoard({ tickets, customers, uploadEnv, departments }: { ti
         if (f.customer && t.customerId !== f.customer) return false;
         if (f.stage && t.stage !== f.stage) return false;
         if (f.noMaterials && !(t.hasMaterialsList && !t.materialsRecorded)) return false;
+        if (f.workNotDone && (t.stage === "CANCELLED" || !t.job || ["DONE", "HANDED_OVER", "CANCELLED"].includes(t.job.status))) return false;
         if (f.overdue && !(t.stage === "PAYMENT" && t.invoice && t.invoice.leftPaise > 0 && daysBetween(today, t.invoice.dueDate) < 0)) return false;
         if (f.followup && !(t.stage === "PAYMENT" && t.invoice && followUpDue(t.invoice, today))) return false;
         if (f.q) {
@@ -208,10 +210,13 @@ export function OrdersBoard({ tickets, customers, uploadEnv, departments }: { ti
             <Chip active={f.followup} onClick={() => set({ followup: f.followup ? null : "1", cancelled: null })}>
               Follow-up due today
             </Chip>
+            <Chip active={f.workNotDone} onClick={() => set({ work: f.workNotDone ? null : "notdone", cancelled: null })}>
+              Work not done
+            </Chip>
             <Chip active={f.noMaterials} onClick={() => set({ materials: f.noMaterials ? null : "missing", cancelled: null })}>
               Materials not recorded
             </Chip>
-            <Chip active={f.cancelled} onClick={() => set({ cancelled: f.cancelled ? null : "1", overdue: null, followup: null, stage: null, materials: null })}>
+            <Chip active={f.cancelled} onClick={() => set({ cancelled: f.cancelled ? null : "1", overdue: null, followup: null, stage: null, materials: null, work: null })}>
               Show cancelled
             </Chip>
             {f.stage ? (
@@ -224,7 +229,7 @@ export function OrdersBoard({ tickets, customers, uploadEnv, departments }: { ti
                 type="button"
                 onClick={() => {
                   setQ("");
-                  set({ q: null, dept: null, customer: null, overdue: null, followup: null, cancelled: null, stage: null, materials: null });
+                  set({ q: null, dept: null, customer: null, overdue: null, followup: null, cancelled: null, stage: null, materials: null, work: null });
                 }}
                 className="inline-flex h-10 items-center gap-1.5 rounded-full px-3 text-sm font-medium text-primary hover:underline"
               >

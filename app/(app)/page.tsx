@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { Suspense } from "react";
-import { CalendarClock, Handshake, Inbox, ShoppingCart, Trophy } from "lucide-react";
+import { CalendarClock, Handshake, Inbox, Play, ShoppingCart, Trophy, Wrench } from "lucide-react";
 import { TodaysActivities } from "@/components/crm/todays-activities";
 import { getCrmHomeStats, getCrmPickers, getTodaysActivities } from "@/lib/crm-data";
 import { AlertTriangle, ArrowRight, Clock, FileClock, FilePlus2, FileText, IndianRupee, Receipt, UserPlus, Users, Wallet } from "lucide-react";
@@ -13,6 +13,7 @@ import { getDashboardStats, listQuotations } from "@/lib/data";
 import { formatDate, money } from "@/lib/format";
 import { getOrdersStats } from "@/lib/orders-data";
 import { getInvHomeStats } from "@/lib/inventory-data";
+import { getPlanningHomeStats } from "@/lib/planning-data";
 import { formatINRShort } from "@/lib/pricing";
 
 export default function HomePage() {
@@ -22,6 +23,21 @@ export default function HomePage() {
         <h1 className="font-title text-3xl text-primary md:text-4xl">Welcome</h1>
         <p className="mt-1.5 text-muted-foreground">What would you like to do today?</p>
       </div>
+
+      {/* Phones: operators go straight to their jobs. */}
+      <Link
+        href="/planning/today"
+        className="group mb-4 flex items-center gap-4 rounded-2xl bg-emerald-700 p-5 text-white shadow-md transition hover:bg-emerald-800 md:hidden"
+      >
+        <span className="grid size-14 place-items-center rounded-xl bg-white/15">
+          <Play className="size-7" aria-hidden />
+        </span>
+        <span className="flex-1">
+          <span className="block text-xl font-semibold">Today&apos;s jobs</span>
+          <span className="block text-sm text-white/80">Start, pause and finish your work</span>
+        </span>
+        <ArrowRight className="size-6" aria-hidden />
+      </Link>
 
       <div className="mb-8 grid gap-4 sm:grid-cols-2">
         <Link
@@ -85,6 +101,20 @@ export default function HomePage() {
         </div>
         <Suspense fallback={<StatsSkeleton />}>
           <OrderStats />
+        </Suspense>
+      </section>
+
+      <section className="mt-10" aria-labelledby="planning-heading">
+        <div className="mb-4 flex items-center justify-between">
+          <h2 id="planning-heading" className="text-xl font-semibold">Planning</h2>
+          <Button asChild variant="ghost" size="sm">
+            <Link href="/planning">
+              Open timeline <ArrowRight aria-hidden />
+            </Link>
+          </Button>
+        </div>
+        <Suspense fallback={<StatsSkeleton />}>
+          <PlanningStats />
         </Suspense>
       </section>
 
@@ -211,6 +241,33 @@ async function OrderStats() {
               <Icon className={`size-6 ${tone || "text-primary/70"}`} aria-hidden />
               <div>
                 <div className={`text-2xl font-semibold tabular-nums md:text-3xl ${tone || "text-primary"}`}>{value}</div>
+                <div className="text-sm text-muted-foreground">{label}</div>
+              </div>
+            </CardContent>
+          </Card>
+        </Link>
+      ))}
+    </div>
+  );
+}
+
+async function PlanningStats() {
+  const s = await getPlanningHomeStats();
+  const items = [
+    { label: "Jobs to plan", value: s.toPlan, icon: CalendarClock, href: "/planning/jobs?notplanned=1", hint: "Accepted services not booked on a machine yet", tone: "" },
+    { label: "Running now", value: s.running, icon: Play, href: "/planning/jobs?status=RUNNING", hint: "Jobs an operator has started", tone: s.running ? "text-emerald-700" : "" },
+    { label: "Late jobs", value: s.late, icon: AlertTriangle, href: "/planning/jobs?late=1", hint: "Past the promised date, or planned to finish after it", tone: s.late ? "text-destructive" : "" },
+    { label: "Machines not available", value: s.notAvailable, icon: Wrench, href: "/planning/machines", hint: "Broken down, under maintenance or blocked right now", tone: s.notAvailable ? "text-amber-700" : "" },
+  ];
+  return (
+    <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+      {items.map(({ label, value, icon: Icon, href, hint, tone }) => (
+        <Link key={label} href={href} className="rounded-2xl" title={hint}>
+          <Card className="h-full transition hover:border-primary/30">
+            <CardContent className="flex flex-col gap-3">
+              <Icon className={`size-6 ${tone || "text-primary/70"}`} aria-hidden />
+              <div>
+                <div className={`text-2xl font-semibold tabular-nums md:text-3xl ${tone || "text-primary"}`}>{value.toLocaleString("en-IN")}</div>
                 <div className="text-sm text-muted-foreground">{label}</div>
               </div>
             </CardContent>

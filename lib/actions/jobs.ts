@@ -7,7 +7,8 @@ import { db } from "@/db";
 import { bookTime, cancelBooking, extendHold, findFreeSlots, moveBooking, moveToNextFreeSlot, PastBookingError } from "@/db/booking-writer";
 import { addJobEvent, bulkMarkDone, bulkUpdateJobs, updateJobDetails } from "@/db/job-writer";
 import { UserFacingError } from "@/db/quote-writer";
-import { files, jobFiles, jobs } from "@/db/schema";
+import { files, jobFiles, jobs, machineServices, services } from "@/db/schema";
+import { suggestHours } from "@/lib/planning/time-needed";
 import { isSignedIn } from "@/lib/auth-guard";
 import { SIGNED_OUT_MESSAGE } from "@/lib/auth-messages";
 import { istAt } from "@/lib/planning/hours";
@@ -163,4 +164,25 @@ export async function loadBookJobAction(jobId: string) {
   const { getBookJob } = await import("@/lib/planning-data");
   const j = await getBookJob(z.string().uuid().parse(jobId));
   return j ? { ok: true as const, data: j } : { ok: false as const, message: "This job could not be found." };
+}
+
+/**
+ * Quotation builder hint: the earliest free slot for a service (on its machines), for the hours
+ * the quantity suggests (1 h when there's nothing to go on). Never blocks anything.
+ */
+export async function earliestSlotForServiceAction(serviceId: number, billableQty: number) {
+  if (!(await isSignedIn())) return null;
+  try {
+    const sid = z.number().int().positive().parse(serviceId);
+    const qty = z.number().min(0).max(1_000_000).parse(billableQty);
+    const [svc] = await db.select().from(services).where(eq(services.id, sid));
+    if (!svc) return null;
+    const ms = await db.select({ id: machineServices.machineId }).from(machineServices).where(eq(machineServices.serviceId, sid));
+    if (!ms.length) return { none: true as const };
+    const hours = suggestHours({ unitType: svc.unitType, billableQty: qty, setupMinutes: svc.setupMinutes, minutesPerUnit: svc.minutesPerUnit }) ?? 1;
+    const [slot] = await findFreeSlots(db, ms.map((m) => m.id), Math.min(hours, 2000), { limit: 1 });
+    return slot ? { none: false as const, start: slot.start.toISOString(), machine: slot.machine } : null;
+  } catch {
+    return null;
+  }
 }

@@ -708,3 +708,29 @@ export async function getToday() {
 }
 export type TodayData = Awaited<ReturnType<typeof getToday>>;
 export type TodayCard = TodayData["cards"][number];
+
+/** The 4 Planning cards on the home page. */
+export async function getPlanningHomeStats() {
+  await connection();
+  const now = new Date();
+  const [counts, late, blocked] = await Promise.all([
+    db.execute<{ to_plan: string; running: string }>(sql`select count(*) filter (where status = 'TO_PLAN') as to_plan, count(*) filter (where status = 'RUNNING') as running from jobs`),
+    listJobs({ late: true }, 1000),
+    db.execute<{ n: string }>(sql`
+      select count(*) as n from machines m
+      where m.is_active and (m.status in ('BREAKDOWN', 'MAINTENANCE') or exists (select 1 from machine_blocks b where b.machine_id = m.id and b.start_at <= ${now} and b.end_at > ${now}))`),
+  ]);
+  return { toPlan: Number(counts.rows[0].to_plan), running: Number(counts.rows[0].running), late: late.length, notAvailable: Number(blocked.rows[0].n) };
+}
+
+/** Internal-use stock records from the last 60 days, so a maintenance block can point to the spares used. */
+export async function getRecentInternalUse() {
+  await connection();
+  const rows = await db.execute<{ id: string; doc_no: string; doc_date: string; purpose: string; items: string | null }>(sql`
+    select d.id, d.doc_no, d.doc_date::text, p.name as purpose,
+      (select string_agg(i.name, ', ' order by i.name) from inv_movements m join inv_items i on i.id = m.item_id where m.document_id = d.id) as items
+    from inv_documents d join inv_purposes p on p.id = d.purpose_id
+    where d.type = 'OUT' and d.reversed_by_doc_id is null and d.reverses_doc_id is null and d.doc_date > current_date - 60
+    order by d.doc_date desc, d.seq desc limit 50`);
+  return rows.rows.map((r) => ({ id: r.id, label: `${r.doc_no} · ${r.purpose}${r.items ? `: ${r.items}` : ""}` }));
+}

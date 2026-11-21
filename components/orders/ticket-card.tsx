@@ -1,5 +1,6 @@
 "use client";
 
+import { JobChip } from "@/components/planning/job-chip";
 import { useDraggable } from "@dnd-kit/core";
 import { CSS } from "@dnd-kit/utilities";
 import {
@@ -148,6 +149,7 @@ export function TicketCard({
       ) : null}
 
       <div className="mt-2 flex flex-wrap gap-1.5">
+        {t.job ? <JobChip job={t.job} /> : null}
         {chips.map((c) => (
           <ToneChip key={c.label} tone={c.tone} className="text-xs">
             {c.label}

@@ -111,11 +111,15 @@ export function BlockTimeButton({
   machines,
   machineId,
   variant = "outline",
+  stockRecords = [],
 }: {
   machines?: Pick[];
   machineId?: string;
   variant?: "outline" | "default";
+  /** Recent internal-use stock records (spares used for maintenance). */
+  stockRecords?: { id: string; label: string }[];
 }) {
+  const [stockDoc, setStockDoc] = useState("");
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [machine, setMachine] = useState(machineId ?? "");
@@ -180,6 +184,7 @@ export function BlockTimeButton({
                     from,
                     to,
                     note,
+                    invDocumentId: stockDoc || null,
                   });
                   if (!r.ok) return void toast.error(r.message);
                   toast.success(
@@ -287,6 +292,25 @@ export function BlockTimeButton({
                   />
                 )}
               </Field>
+              {(type === "MAINTENANCE" || type === "BREAKDOWN") && stockRecords.length ? (
+                <Field label="Spares used (stock record)" optional helper="If spares were taken from the store for this, link the Use stock record.">
+                  {(p) => (
+                    <Select value={stockDoc || "none"} onValueChange={(v) => setStockDoc(v === "none" ? "" : v)}>
+                      <SelectTrigger id={p.id} className="w-full">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">None</SelectItem>
+                        {stockRecords.map((r) => (
+                          <SelectItem key={r.id} value={r.id}>
+                            {r.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
+                </Field>
+              ) : null}
               <DialogFooter>
                 <Button
                   type="button"
