@@ -4,6 +4,7 @@ import { PageHeader } from "@/components/common/page-header";
 import { OrdersBoard } from "@/components/orders/board";
 import { Skeleton } from "@/components/ui/skeleton";
 import { blobEnv } from "@/lib/blob";
+import { getDepartments } from "@/lib/data";
 import { getBoardTickets } from "@/lib/orders-data";
 
 export const metadata: Metadata = { title: "Orders & Billing" };
@@ -27,11 +28,11 @@ export default function OrdersPage() {
 }
 
 async function Board() {
-  const tickets = await getBoardTickets();
+  const [tickets, depts] = await Promise.all([getBoardTickets(), getDepartments()]);
   const customers = [...new Map(tickets.map((t) => [t.customerId, { id: t.customerId, name: t.companyName }])).values()].sort((a, b) =>
     a.name.localeCompare(b.name),
   );
-  return <OrdersBoard tickets={tickets} customers={customers} uploadEnv={blobEnv()} />;
+  return <OrdersBoard tickets={tickets} customers={customers} uploadEnv={blobEnv()} departments={depts.map((d) => d.code)} />;
 }
 
 function BoardSkeleton() {

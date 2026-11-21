@@ -11,7 +11,6 @@ import { ACTIVITY_FILTERS, CARD_FILTERS, CLOSE_FILTERS, PRIORITY_LABELS, SORTS }
 import { cn } from "@/lib/utils";
 import { useCrmFilters } from "./use-crm-filters";
 
-const DEPTS = ["RPT", "PPF", "ENV", "RPL"];
 const ALL = "all";
 
 export function CrmToolbar({
@@ -21,7 +20,7 @@ export function CrmToolbar({
   extra,
 }: {
   view: "board" | "list";
-  pickers: CrmPickers;
+  pickers: CrmPickers & { departments: { code: string; name: string }[] };
   onNew: () => void;
   /** Extra buttons on the right (e.g. Edit stages, More). */
   extra?: React.ReactNode;
@@ -83,7 +82,7 @@ export function CrmToolbar({
       <div className={cn("grid grid-cols-1 gap-2 sm:grid-cols-2 lg:flex lg:flex-wrap lg:items-center", !open && "hidden lg:flex")}>
         {pick("assigned", "Assigned to", [{ value: "none", label: "Not assigned" }, ...pickers.team.map((m) => ({ value: m.id, label: m.name }))], "Anyone")}
         {pick("source", "Source", pickers.sources.map((s) => ({ value: s.id, label: s.name })), "Any source")}
-        {pick("dept", "Department", DEPTS.map((d) => ({ value: d, label: d })), "Any department")}
+        {pick("dept", "Department", pickers.departments.map((d) => ({ value: d.code, label: d.code })), "Any department")}
         {pick("priority", "Priority", [3, 2, 1, 0].map((n) => ({ value: String(n), label: n ? `${"★".repeat(n)} ${PRIORITY_LABELS[n]}` : PRIORITY_LABELS[0] })), "Any priority")}
         {pick("tag", "Tag", pickers.tags.map((t) => ({ value: t.id, label: t.name })), "Any tag")}
         {pick("activity", "Activity", Object.entries(ACTIVITY_FILTERS).map(([value, label]) => ({ value, label })), "Any activity")}

@@ -1,4 +1,4 @@
-import { FileText, Handshake, Home, Package, Settings, SquareKanban, Tags, Users, type LucideIcon } from "lucide-react";
+import { CalendarClock, FileText, Handshake, Home, Package, Settings, SquareKanban, Tags, Users, type LucideIcon } from "lucide-react";
 
 /**
  * `short` is used in the phone bottom bar. `bar: true` items sit in the phone bottom bar;
@@ -10,6 +10,7 @@ export const NAV: { href: string; label: string; short?: string; icon: LucideIco
   { href: "/customers", label: "Customers", icon: Users },
   { href: "/quotations", label: "Quotations", icon: FileText },
   { href: "/orders", label: "Orders & Billing", short: "Orders", icon: SquareKanban, bar: true },
+  { href: "/planning", label: "Planning", icon: CalendarClock },
   { href: "/inventory", label: "Inventory", short: "Stock", icon: Package, bar: true },
   { href: "/rate-card", label: "Rate Card", icon: Tags },
   { href: "/settings", label: "Settings", icon: Settings },

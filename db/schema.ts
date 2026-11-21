@@ -33,18 +33,23 @@ import {
   DEFAULT_ORDER_EMAIL_SUBJECT_TEMPLATE,
   DEFAULT_ORDER_WHATSAPP_TEMPLATE,
 } from "../lib/inventory/templates";
+import { DEFAULT_READY_WHATSAPP_TEMPLATE } from "../lib/planning/templates";
 
 export const categoryEnum = pgEnum("company_category", ["OEM", "TIER1", "TIER2", "MSME"]);
 export const unitTypeEnum = pgEnum("unit_type", ["PER_CC", "PER_HOUR", "PER_SAMPLE", "PER_HOUR_3_SAMPLES"]);
 export const customerStatusEnum = pgEnum("customer_status", ["DRAFT", "ACTIVE"]);
 export const quotationStatusEnum = pgEnum("quotation_status", ["DRAFT", "SENT", "ACCEPTED", "REJECTED"]);
 export const ticketStageEnum = pgEnum("ticket_stage", ["WAITING_PO", "BILLING", "PAYMENT", "PAID", "CANCELLED"]);
-export const fileKindEnum = pgEnum("file_kind", ["PO", "INVOICE", "BILL"]);
+export const fileKindEnum = pgEnum("file_kind", ["PO", "INVOICE", "BILL", "JOB"]);
 export const paymentModeEnum = pgEnum("payment_mode", ["BANK", "UPI", "CHEQUE", "CASH"]);
 export const followUpMethodEnum = pgEnum("follow_up_method", ["CALL", "WHATSAPP", "EMAIL", "VISIT", "OTHER"]);
 export const exportMethodEnum = pgEnum("export_method", ["EXCEL_MANUAL", "TALLY"]);
 export const crmStageTypeEnum = pgEnum("crm_stage_type", ["OPEN", "WON", "LOST"]);
 export const invDocTypeEnum = pgEnum("inv_doc_type", ["IN", "OUT", "ADJ"]);
+export const machineStatusEnum = pgEnum("machine_status", ["AVAILABLE", "MAINTENANCE", "BREAKDOWN", "INACTIVE"]);
+export const machineBlockTypeEnum = pgEnum("machine_block_type", ["MAINTENANCE", "CALIBRATION", "BREAKDOWN", "INTERNAL", "OTHER"]);
+export const jobStatusEnum = pgEnum("job_status", ["TO_PLAN", "PLANNED", "RUNNING", "ON_HOLD", "DONE", "HANDED_OVER", "CANCELLED"]);
+export const jobPriorityEnum = pgEnum("job_priority", ["NORMAL", "URGENT"]);
 export const invCountStatusEnum = pgEnum("inv_count_status", ["IN_PROGRESS", "COMPLETED"]);
 export const crmActivityTypeEnum = pgEnum("crm_activity_type", ["CALL", "MEETING", "EMAIL", "WHATSAPP", "SITE_VISIT", "FOLLOW_UP"]);
 
@@ -78,6 +83,9 @@ export const services = pgTable(
     rateOem: money("rate_oem").notNull(),
     effectiveFrom: date("effective_from").notNull(),
     isActive: boolean("is_active").notNull().default(true),
+    /** Module 6: used only to suggest a job's time needed (setup + minutes per billing unit). */
+    setupMinutes: integer("setup_minutes"),
+    minutesPerUnit: numeric("minutes_per_unit", { precision: 10, scale: 2 }),
     sortOrder: integer("sort_order").notNull().default(0),
   },
   (t) => [index("services_dept_idx").on(t.deptCode)],
@@ -283,6 +291,17 @@ export const settings = pgTable("settings", {
   invOrderWhatsappTemplate: text("inv_order_whatsapp_template").notNull().default(DEFAULT_ORDER_WHATSAPP_TEMPLATE),
   invOrderEmailSubjectTemplate: text("inv_order_email_subject_template").notNull().default(DEFAULT_ORDER_EMAIL_SUBJECT_TEMPLATE),
   invOrderEmailBodyTemplate: text("inv_order_email_body_template").notNull().default(DEFAULT_ORDER_EMAIL_BODY_TEMPLATE),
+  // Module 6: Planning (working hours, India time)
+  /** ISO weekdays that are working days: 1 = Monday ... 7 = Sunday. */
+  workingDays: integer("working_days").array().notNull().default(sql`'{1,2,3,4,5,6}'::integer[]`),
+  shiftStart: text("shift_start").notNull().default("09:00"),
+  shiftEnd: text("shift_end").notNull().default("18:00"),
+  breakStart: text("break_start").default("13:00"),
+  breakEnd: text("break_end").default("13:30"),
+  tentativeHoldDays: integer("tentative_hold_days").notNull().default(7),
+  overrunWarningPct: integer("overrun_warning_pct").notNull().default(50),
+  actualVsQuotedAlertPct: integer("actual_vs_quoted_alert_pct").notNull().default(10),
+  readyWhatsappTemplate: text("ready_whatsapp_template").notNull().default(DEFAULT_READY_WHATSAPP_TEMPLATE),
   updatedAt: timestamp("updated_at", { withTimezone: true })
     .notNull()
     .default(sql`now()`)
@@ -885,6 +904,178 @@ export const invReorderSends = pgTable("inv_reorder_sends", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   doneBy: uuid("done_by").references(() => teamMembers.id),
 });
+
+// ---------------------------------------------------------------------------
+// Module 6: Planning (machines, jobs, bookings)
+// ---------------------------------------------------------------------------
+
+export const machines = pgTable(
+  "machines",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    code: text("code").notNull(),
+    name: text("name").notNull(),
+    deptCode: text("dept_code")
+      .notNull()
+      .references(() => departments.code),
+    location: text("location"),
+    makeModel: text("make_model"),
+    keySpecs: text("key_specs"),
+    testStandards: text("test_standards"),
+    nablAccredited: boolean("nabl_accredited").notNull().default(false),
+    status: machineStatusEnum("status").notNull().default("AVAILABLE"),
+    /** "Jobs at the same time". */
+    parallelJobs: integer("parallel_jobs").notNull().default(1),
+    /** "Runs day and night": ignores working hours and holidays. */
+    runsNonstop: boolean("runs_nonstop").notNull().default(false),
+    notes: text("notes"),
+    isActive: boolean("is_active").notNull().default(true),
+    sortOrder: integer("sort_order").notNull().default(0),
+    ...timestamps,
+  },
+  (t) => [uniqueIndex("machines_code_idx").on(t.code), index("machines_dept_idx").on(t.deptCode)],
+);
+
+export const machineServices = pgTable(
+  "machine_services",
+  {
+    machineId: uuid("machine_id")
+      .notNull()
+      .references(() => machines.id, { onDelete: "cascade" }),
+    serviceId: integer("service_id")
+      .notNull()
+      .references(() => services.id),
+  },
+  (t) => [primaryKey({ columns: [t.machineId, t.serviceId] })],
+);
+
+export const machineBlocks = pgTable(
+  "machine_blocks",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    machineId: uuid("machine_id")
+      .notNull()
+      .references(() => machines.id, { onDelete: "cascade" }),
+    type: machineBlockTypeEnum("type").notNull(),
+    startAt: timestamp("start_at", { withTimezone: true }).notNull(),
+    endAt: timestamp("end_at", { withTimezone: true }).notNull(),
+    note: text("note"),
+    invDocumentId: uuid("inv_document_id").references(() => invDocuments.id),
+    createdBy: text("created_by"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("machine_blocks_machine_idx").on(t.machineId, t.startAt)],
+);
+
+export const holidays = pgTable("holidays", {
+  id: serial("id").primaryKey(),
+  date: date("date").notNull().unique(),
+  name: text("name").notNull(),
+});
+
+export const jobs = pgTable(
+  "jobs",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    ticketId: uuid("ticket_id")
+      .notNull()
+      .unique()
+      .references(() => tickets.id),
+    status: jobStatusEnum("status").notNull().default("TO_PLAN"),
+    hoursNeeded: numeric("hours_needed", { precision: 10, scale: 2 }),
+    promisedDate: date("promised_date"),
+    priority: jobPriorityEnum("priority").notNull().default("NORMAL"),
+    operatorId: uuid("operator_id").references(() => teamMembers.id),
+    instructions: text("instructions"),
+    holdReason: text("hold_reason"),
+    doneAt: timestamp("done_at", { withTimezone: true }),
+    doneNote: text("done_note"),
+    qtyDone: text("qty_done"),
+    handedOverAt: date("handed_over_at"),
+    handedOverTo: text("handed_over_to"),
+    ...timestamps,
+  },
+  (t) => [index("jobs_status_idx").on(t.status)],
+);
+
+export const jobFiles = pgTable(
+  "job_files",
+  {
+    jobId: uuid("job_id")
+      .notNull()
+      .references(() => jobs.id, { onDelete: "cascade" }),
+    fileId: uuid("file_id")
+      .notNull()
+      .references(() => files.id),
+  },
+  (t) => [primaryKey({ columns: [t.jobId, t.fileId] })],
+);
+
+export const jobBookings = pgTable(
+  "job_bookings",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    jobId: uuid("job_id")
+      .notNull()
+      .references(() => jobs.id),
+    machineId: uuid("machine_id")
+      .notNull()
+      .references(() => machines.id),
+    startAt: timestamp("start_at", { withTimezone: true }).notNull(),
+    endAt: timestamp("end_at", { withTimezone: true }).notNull(),
+    /** Working hours booked (the end is worked out over working hours, or non-stop). */
+    hours: numeric("hours", { precision: 10, scale: 2 }).notNull(),
+    operatorId: uuid("operator_id").references(() => teamMembers.id),
+    isTentative: boolean("is_tentative").notNull().default(false),
+    holdUntil: date("hold_until"),
+    note: text("note"),
+    createdBy: text("created_by"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    cancelledAt: timestamp("cancelled_at", { withTimezone: true }),
+  },
+  (t) => [index("job_bookings_machine_idx").on(t.machineId, t.startAt), index("job_bookings_job_idx").on(t.jobId)],
+);
+
+export const jobTimeLogs = pgTable(
+  "job_time_logs",
+  {
+    id: serial("id").primaryKey(),
+    jobId: uuid("job_id")
+      .notNull()
+      .references(() => jobs.id),
+    bookingId: uuid("booking_id").references(() => jobBookings.id),
+    machineId: uuid("machine_id").references(() => machines.id),
+    operatorId: uuid("operator_id").references(() => teamMembers.id),
+    startedAt: timestamp("started_at", { withTimezone: true }).notNull(),
+    endedAt: timestamp("ended_at", { withTimezone: true }),
+    /** Why the running period ended with a pause (empty when it ended with Done). */
+    pauseReason: text("pause_reason"),
+  },
+  (t) => [index("job_time_logs_job_idx").on(t.jobId)],
+);
+
+export const jobEvents = pgTable(
+  "job_events",
+  {
+    id: serial("id").primaryKey(),
+    jobId: uuid("job_id")
+      .notNull()
+      .references(() => jobs.id),
+    type: text("type").notNull(),
+    message: text("message").notNull(),
+    data: jsonb("data").$type<Record<string, unknown>>(),
+    createdBy: text("created_by"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("job_events_job_idx").on(t.jobId, t.createdAt)],
+);
+
+export type Machine = typeof machines.$inferSelect;
+export type MachineStatus = (typeof machineStatusEnum.enumValues)[number];
+export type MachineBlockType = (typeof machineBlockTypeEnum.enumValues)[number];
+export type Job = typeof jobs.$inferSelect;
+export type JobStatus = (typeof jobStatusEnum.enumValues)[number];
+export type JobBooking = typeof jobBookings.$inferSelect;
 
 export type InvItem = typeof invItems.$inferSelect;
 export type InvSupplier = typeof invSuppliers.$inferSelect;

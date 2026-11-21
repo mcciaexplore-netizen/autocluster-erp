@@ -10,6 +10,7 @@ const prefix = (eg: string) =>
     .regex(/^[A-Za-z0-9/_-]+$/, { message: `Use letters, numbers, / - or _ only, e.g. ${eg}.` });
 const days = (eg: string, min: number, max: number) =>
   z.number({ message: `Enter a number of days, ${eg}.` }).int({ message: "Use whole days." }).min(min, { message: `Use ${min} or more.` }).max(max, { message: `Use ${max} or less.` });
+const time = (eg: string) => z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, { message: `Enter a time, ${eg}.` });
 const pct = (eg: string) => z.number({ message: `Enter a percentage, ${eg}.` }).int({ message: "Use a whole number." }).min(1, { message: "Use 1 or more." }).max(100, { message: "Use 100 or less." });
 
 export const settingsSchema = z.object({
@@ -66,5 +67,24 @@ export const settingsSchema = z.object({
   invOrderEmailBodyTemplate: z.string().trim().min(10, { message: "Please write the email message." }).max(4000, { message: "Please keep the message under 4,000 characters." }),
   /** A stage id, or "" for "Don't move". */
   quoteCreatedMoveToStageId: z.union([z.literal(""), z.string().uuid({ message: "Please choose a stage." })]),
+  // Planning
+  workingDays: z.array(z.number().int().min(1).max(7)).min(1, { message: "Please choose at least one working day." }),
+  shiftStart: time("e.g. 09:00"),
+  shiftEnd: time("e.g. 18:00"),
+  /** "" = no break. */
+  breakStart: z.union([z.literal(""), time("e.g. 13:00")]),
+  breakEnd: z.union([z.literal(""), time("e.g. 13:30")]),
+  tentativeHoldDays: days("e.g. 7", 1, 90),
+  overrunWarningPct: z.number({ message: "Enter a percentage, e.g. 50." }).int({ message: "Use a whole number." }).min(1, { message: "Use 1 or more." }).max(500, { message: "Use 500 or less." }),
+  actualVsQuotedAlertPct: pct("e.g. 10"),
+  readyWhatsappTemplate: z.string().trim().min(10, { message: "Please write the WhatsApp message." }).max(1500, { message: "Please keep the message under 1,500 characters." }),
+}).superRefine((v, ctx) => {
+  const m = (t: string) => Number(t.slice(0, 2)) * 60 + Number(t.slice(3, 5));
+  if (m(v.shiftEnd) <= m(v.shiftStart)) ctx.addIssue({ code: "custom", path: ["shiftEnd"], message: "The shift should end after it starts, e.g. 09:00 to 18:00." });
+  if (!!v.breakStart !== !!v.breakEnd) ctx.addIssue({ code: "custom", path: [v.breakStart ? "breakEnd" : "breakStart"], message: "Enter both break times, or leave both empty for no break." });
+  else if (v.breakStart && v.breakEnd) {
+    if (m(v.breakEnd) <= m(v.breakStart)) ctx.addIssue({ code: "custom", path: ["breakEnd"], message: "The break should end after it starts, e.g. 13:00 to 13:30." });
+    else if (m(v.breakStart) <= m(v.shiftStart) || m(v.breakEnd) >= m(v.shiftEnd)) ctx.addIssue({ code: "custom", path: ["breakStart"], message: "The break should be inside the shift." });
+  }
 });
 export type SettingsInput = z.input<typeof settingsSchema>;

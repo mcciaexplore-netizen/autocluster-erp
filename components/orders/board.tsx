@@ -35,7 +35,6 @@ export interface BoardCustomer {
   name: string;
 }
 
-const DEPTS = ["RPT", "PPF", "ENV", "RPL"];
 
 function useFilters() {
   const router = useRouter();
@@ -54,7 +53,7 @@ function useFilters() {
   return { params, set };
 }
 
-export function OrdersBoard({ tickets, customers, uploadEnv }: { tickets: BoardTicket[]; customers: BoardCustomer[]; uploadEnv: BlobEnv }) {
+export function OrdersBoard({ tickets, customers, uploadEnv, departments }: { tickets: BoardTicket[]; customers: BoardCustomer[]; uploadEnv: BlobEnv; departments: string[] }) {
   const router = useRouter();
   const { params, set } = useFilters();
   const today = todayInIndia();
@@ -178,7 +177,7 @@ export function OrdersBoard({ tickets, customers, uploadEnv }: { tickets: BoardT
         <div className="flex flex-col gap-3 xl:flex-row xl:flex-wrap xl:items-center">
           <div role="group" aria-label="Department" className="flex flex-wrap items-center gap-2">
             <span className="mr-1 text-sm font-medium text-muted-foreground">Department:</span>
-            {DEPTS.map((d) => (
+            {departments.map((d) => (
               <Chip key={d} active={f.dept === d} onClick={() => set({ dept: f.dept === d ? null : d })}>
                 {d}
               </Chip>

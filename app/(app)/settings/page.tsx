@@ -10,13 +10,16 @@ import { getSettings } from "@/lib/data";
 import { getCrmLists, getCrmStages } from "@/lib/crm-data";
 import { CrmListsSection, InventoryListsSection } from "@/components/crm/crm-lists-section";
 import { getInvLists } from "@/lib/inventory-data";
+import { HolidaysSection } from "@/components/planning/holidays-section";
+import { listHolidays } from "@/lib/planning-data";
+import { todayInIndia } from "@/lib/tickets";
 
 export const metadata: Metadata = { title: "Settings" };
 
 export default function SettingsPage() {
   return (
     <div className="mx-auto max-w-4xl">
-      <PageHeader title="Settings" description="Organisation details, discounts, tax, quotations, billing, CRM and inventory." />
+      <PageHeader title="Settings" description="Organisation details, discounts, tax, quotations, billing, CRM, inventory and planning." />
       <Suspense fallback={<FormSkeleton />}>
         <Form />
       </Suspense>
@@ -27,10 +30,18 @@ export default function SettingsPage() {
         <Suspense fallback={<FormSkeleton />}>
           <InvLists />
         </Suspense>
+        <Suspense fallback={<FormSkeleton />}>
+          <Holidays />
+        </Suspense>
         <TallySection />
       </div>
     </div>
   );
+}
+
+async function Holidays() {
+  const hs = await listHolidays();
+  return <HolidaysSection holidays={hs} today={todayInIndia()} />;
 }
 
 async function InvLists() {
@@ -83,6 +94,15 @@ async function Form() {
         invOrderWhatsappTemplate: s.invOrderWhatsappTemplate,
         invOrderEmailSubjectTemplate: s.invOrderEmailSubjectTemplate,
         invOrderEmailBodyTemplate: s.invOrderEmailBodyTemplate,
+        workingDays: s.workingDays,
+        shiftStart: s.shiftStart,
+        shiftEnd: s.shiftEnd,
+        breakStart: s.breakStart ?? "",
+        breakEnd: s.breakEnd ?? "",
+        tentativeHoldDays: s.tentativeHoldDays,
+        overrunWarningPct: s.overrunWarningPct,
+        actualVsQuotedAlertPct: s.actualVsQuotedAlertPct,
+        readyWhatsappTemplate: s.readyWhatsappTemplate,
       }}
     />
   );

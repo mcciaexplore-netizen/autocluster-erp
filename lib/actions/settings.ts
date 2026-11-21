@@ -32,6 +32,9 @@ export async function saveSettings(input: SettingsInput) {
       invItemPrefix: v.invItemPrefix.toUpperCase(),
       quoteCreatedMoveToStageId: v.quoteCreatedMoveToStageId || null,
       memberDiscountPct: String(v.memberDiscountPct),
+      workingDays: [...new Set(v.workingDays)].sort(),
+      breakStart: v.breakStart || null,
+      breakEnd: v.breakEnd || null,
       gstPct: String(v.gstPct),
     })
     .where(eq(settings.id, 1));

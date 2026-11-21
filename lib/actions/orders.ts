@@ -62,7 +62,7 @@ export async function cancelTicketAction(ticketId: string, why: string) {
 const uploadInput = z.object({
   pathname: z.string().min(1).max(200),
   fileName: z.string().trim().min(1).max(200),
-  kind: z.enum(["PO", "INVOICE", "BILL"]),
+  kind: z.enum(["PO", "INVOICE", "BILL", "JOB"]),
 });
 
 /** Records a file the browser just uploaded to Blob, after checking it really is there and allowed. */

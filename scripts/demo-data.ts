@@ -52,6 +52,7 @@ const DEPARTMENTS = [
   { code: "PPF", name: "Prototype Production Facility", description: "CNC machining (5-axis, 3+1 axis), charged per hour", sortOrder: 2 },
   { code: "ENV", name: "Environmental Testing", description: "Thermal shock, water spray, dust, high-low, salt spray chambers", sortOrder: 3 },
   { code: "RPL", name: "Rubber & Polymer Lab", description: "UTM, FTIR, DSC, melt flow, ozone, oven, xenon, QUV", sortOrder: 4 },
+  { code: "MET", name: "Metrology & CMM", description: "Large-bed measurement of dies, auto and mechanical parts", sortOrder: 5 },
 ];
 
 const UNIT_LABEL: Record<UnitType, string> = {

@@ -10,7 +10,7 @@ import { PageHeader } from "@/components/common/page-header";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { listCustomers } from "@/lib/data";
+import { getDepartments, listCustomers } from "@/lib/data";
 
 export const metadata: Metadata = { title: "Customers" };
 
@@ -33,11 +33,7 @@ export default function CustomersPage({ searchParams }: PageProps<"/customers">)
         <Suspense>
           <SearchBox label="Search customers" placeholder="Search by company, contact person, phone or GST number" />
           <div className="flex flex-col gap-3 lg:flex-row lg:flex-wrap lg:items-center lg:gap-x-6">
-            <ChipGroup
-              label="Department"
-              name="dept"
-              options={["RPT", "PPF", "ENV", "RPL"].map((d) => ({ value: d, label: d }))}
-            />
+            <DeptChips />
             <ChipGroup
               label="Category"
               name="category"
@@ -66,6 +62,12 @@ export default function CustomersPage({ searchParams }: PageProps<"/customers">)
       </Suspense>
     </>
   );
+}
+
+/** Department filter: every department in the table. */
+async function DeptChips() {
+  const depts = await getDepartments();
+  return <ChipGroup label="Department" name="dept" options={depts.map((d) => ({ value: d.code, label: d.code }))} />;
 }
 
 async function CustomerResults({ searchParams }: { searchParams: PageProps<"/customers">["searchParams"] }) {

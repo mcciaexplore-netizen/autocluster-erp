@@ -1,7 +1,7 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import { BellRing, Building2, Handshake, Package, FileText, ImageIcon, Loader2, Percent, Save, SquareKanban } from "lucide-react";
+import { BellRing, Building2, CalendarClock, Handshake, Package, FileText, ImageIcon, Loader2, Percent, Save, SquareKanban } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useTransition } from "react";
 import { Controller, useForm, useWatch } from "react-hook-form";
@@ -32,6 +32,7 @@ import {
   fillOrderTemplate,
   ORDER_TEMPLATE_PLACEHOLDERS,
 } from "@/lib/inventory/templates";
+import { DEFAULT_READY_WHATSAPP_TEMPLATE, fillReadyTemplate, READY_TEMPLATE_PLACEHOLDERS } from "@/lib/planning/templates";
 import {
   DEFAULT_LEAD_EMAIL_BODY_TEMPLATE,
   DEFAULT_LEAD_EMAIL_SUBJECT_TEMPLATE,
@@ -49,6 +50,8 @@ const ORDER_SAMPLE = {
 };
 const LEAD_SAMPLE = { contact_name: "Rohan Kulkarni", company: "Sahyadri Auto Components Pvt Ltd", enquiry_title: "3D printing of 20 prototype parts" };
 const DONT_MOVE = "none";
+const READY_SAMPLE = { contact_name: "Rohan Kulkarni", company: "Sahyadri Auto Components Pvt Ltd", job_no: "ACDRI/TK/2026-27/0051", service: "SLA - imported resin", org_name: "ACDRI" };
+const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
 const SAMPLE_VALUES: TemplateValues = {
   company: "Sahyadri Auto Components Pvt Ltd",
@@ -94,6 +97,7 @@ export function SettingsForm({ initial, stages }: { initial: SettingsInput; stag
   const invAdj = useWatch({ control, name: "invAdjPrefix" }) || "ACDRI/ADJ";
   const invItem = useWatch({ control, name: "invItemPrefix" }) || "ITM";
   const orderWa = useWatch({ control, name: "invOrderWhatsappTemplate" });
+  const readyWa = useWatch({ control, name: "readyWhatsappTemplate" });
   const pct = useWatch({ control, name: "memberDiscountPct" });
   const applyNonMsme = useWatch({ control, name: "applyDiscountToNonMsme" });
 
@@ -454,6 +458,85 @@ export function SettingsForm({ initial, stages }: { initial: SettingsInput; stag
             }
           >
             {(p) => <Textarea {...p} rows={8} {...register("invOrderEmailBodyTemplate")} />}
+          </Field>
+        </div>
+      </FormSection>
+
+      <FormSection title="Planning" description="Working hours for machines that need an operator, and job reminders." icon={<CalendarClock className="size-5" />}>
+        <div className="flex flex-col gap-5">
+          <Field label="Working days" required error={e.workingDays?.message} helper="Machines that run day and night ignore working days and holidays.">
+            {(p) => (
+              <Controller
+                control={control}
+                name="workingDays"
+                render={({ field }) => (
+                  <div id={p.id} role="group" aria-label="Working days" className="flex flex-wrap gap-2">
+                    {WEEKDAYS.map((d, i) => {
+                      const on = field.value?.includes(i + 1);
+                      return (
+                        <button
+                          key={d}
+                          type="button"
+                          aria-pressed={on}
+                          onClick={() => field.onChange(on ? field.value.filter((x) => x !== i + 1) : [...(field.value ?? []), i + 1].sort())}
+                          className={`h-11 min-w-14 rounded-xl border px-3 text-sm font-medium ${on ? "border-primary bg-primary text-primary-foreground" : "hover:bg-secondary"}`}
+                        >
+                          {d}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              />
+            )}
+          </Field>
+          <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
+            <Field label="Shift starts" required error={e.shiftStart?.message}>
+              {(p) => <Input {...p} type="time" step={1800} {...register("shiftStart")} />}
+            </Field>
+            <Field label="Shift ends" required error={e.shiftEnd?.message}>
+              {(p) => <Input {...p} type="time" step={1800} {...register("shiftEnd")} />}
+            </Field>
+            <Field label="Break starts" optional error={e.breakStart?.message}>
+              {(p) => <Input {...p} type="time" step={900} {...register("breakStart")} />}
+            </Field>
+            <Field label="Break ends" optional error={e.breakEnd?.message} helper="Leave both empty for no break.">
+              {(p) => <Input {...p} type="time" step={900} {...register("breakEnd")} />}
+            </Field>
+          </div>
+          <div className="grid gap-5 sm:grid-cols-3">
+            <Field label="Hold tentative bookings for (days)" required error={e.tentativeHoldDays?.message} helper="Bookings for jobs still waiting for a PO, e.g. 7">
+              {(p) => <Input {...p} type="number" min={1} max={90} step={1} inputMode="numeric" {...register("tentativeHoldDays", num)} />}
+            </Field>
+            <Field label="Still-running warning (%)" required error={e.overrunWarningPct?.message} helper="Warn when a job runs this much past its booked end, e.g. 50">
+              {(p) => <Input {...p} type="number" min={1} max={500} step={1} inputMode="numeric" {...register("overrunWarningPct", num)} />}
+            </Field>
+            <Field label="Took longer than quoted alert (%)" required error={e.actualVsQuotedAlertPct?.message} helper="Flag per-hour jobs that took this much longer than quoted, e.g. 10">
+              {(p) => <Input {...p} type="number" min={1} max={100} step={1} inputMode="numeric" {...register("actualVsQuotedAlertPct", num)} />}
+            </Field>
+          </div>
+          <p className="text-sm text-muted-foreground">
+            In the &ldquo;ready&rdquo; message, these words are filled in for you:{" "}
+            {READY_TEMPLATE_PLACEHOLDERS.map((ph) => (
+              <code key={ph} className="mr-1 rounded bg-muted px-1.5 py-0.5 text-xs text-foreground">
+                {ph}
+              </code>
+            ))}
+          </p>
+          <Field
+            label="WhatsApp message: job ready"
+            required
+            error={e.readyWhatsappTemplate?.message}
+            helper={
+              <>
+                Preview: <span className="whitespace-pre-line text-foreground">{fillReadyTemplate(readyWa ?? "", READY_SAMPLE)}</span>{" "}
+                <button type="button" className="font-medium text-primary underline-offset-4 hover:underline" onClick={() => setValue("readyWhatsappTemplate", DEFAULT_READY_WHATSAPP_TEMPLATE, { shouldDirty: true, shouldValidate: true })}>
+                  Use the standard wording
+                </button>
+              </>
+            }
+          >
+            {(p) => <Textarea {...p} rows={5} {...register("readyWhatsappTemplate")} />}
           </Field>
         </div>
       </FormSection>

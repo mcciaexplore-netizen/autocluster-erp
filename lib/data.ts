@@ -79,6 +79,7 @@ export async function listCustomers(f: CustomerFilters = {}) {
   }
 
   const rows = await db.select().from(customers).where(and(...where)).orderBy(asc(customers.companyName));
+  const deptSort = await deptSorter();
   const depts = rows.length
     ? await db.select().from(customerDepartments).where(inArray(customerDepartments.customerId, rows.map((r) => r.id)))
     : [];
@@ -88,8 +89,11 @@ export async function listCustomers(f: CustomerFilters = {}) {
   }));
 }
 
-const DEPT_ORDER = ["RPT", "PPF", "ENV", "RPL"];
-export const deptSort = (a: string, b: string) => DEPT_ORDER.indexOf(a) - DEPT_ORDER.indexOf(b);
+/** Departments in the order of the departments table (any number of them). */
+async function deptSorter() {
+  const order = new Map((await db.select({ code: departments.code, n: departments.sortOrder }).from(departments)).map((d) => [d.code, d.n]));
+  return (a: string, b: string) => (order.get(a) ?? 999) - (order.get(b) ?? 999) || a.localeCompare(b);
+}
 
 export async function getCustomer(id: string, opts: { includeDrafts?: boolean } = {}) {
   await connection();
@@ -99,9 +103,10 @@ export async function getCustomer(id: string, opts: { includeDrafts?: boolean } 
     .from(customers)
     .where(and(eq(customers.id, id), isNull(customers.deletedAt), opts.includeDrafts ? undefined : eq(customers.status, "ACTIVE")));
   if (!row) return null;
-  const [depts, svcs] = await Promise.all([
+  const [depts, svcs, deptSort] = await Promise.all([
     db.select().from(customerDepartments).where(eq(customerDepartments.customerId, id)),
     db.select({ serviceId: customerServices.serviceId }).from(customerServices).where(eq(customerServices.customerId, id)),
+    deptSorter(),
   ]);
   return {
     ...row,
@@ -121,9 +126,10 @@ export async function getCustomersForPicker() {
     .orderBy(asc(customers.companyName));
   if (!rows.length) return [];
   const ids = rows.map((r) => r.id);
-  const [depts, svcs] = await Promise.all([
+  const [depts, svcs, deptSort] = await Promise.all([
     db.select().from(customerDepartments).where(inArray(customerDepartments.customerId, ids)),
     db.select().from(customerServices).where(inArray(customerServices.customerId, ids)),
+    deptSorter(),
   ]);
   return rows.map((r) => ({
     ...r,
