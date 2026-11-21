@@ -101,12 +101,36 @@ function machineUseFor(m: { id: string; runsNonstop: boolean; parallelJobs: numb
   });
 }
 
+/**
+ * Machines still marked Breakdown after their expected end (the breakdown block has ended):
+ * "Still broken down? Expected back ...". Map of machine id -> expected end.
+ */
+async function overdueBreakdowns(now: Date): Promise<Map<string, Date>> {
+  const rows = await db.execute<{ id: string; expected: string }>(sql`
+    select m.id, max(b.end_at)::text as expected
+    from machines m join machine_blocks b on b.machine_id = m.id and b.type = 'BREAKDOWN'
+    where m.status = 'BREAKDOWN'
+    group by m.id
+    having max(b.end_at) <= ${now}`);
+  return new Map(rows.rows.map((r) => [r.id, new Date(r.expected)]));
+}
+
+/** For "Needs attention": machines still broken down after their expected end. */
+export async function listOverdueBreakdowns() {
+  await connection();
+  const now = new Date();
+  const map = await overdueBreakdowns(now);
+  if (!map.size) return [];
+  const rows = await db.select({ id: machines.id, name: machines.name, code: machines.code }).from(machines).where(sql`${machines.id} = any(${sql.param([...map.keys()])}::uuid[])`);
+  return rows.map((m) => ({ ...m, expectedEnd: map.get(m.id)! })).sort((a, b) => a.expectedEnd.getTime() - b.expectedEnd.getTime());
+}
+
 /** Machines with their services, what's running now, the next booking and use % this week. */
 export async function listMachines() {
   await connection();
   const now = new Date();
   const week = weekWindow(istDate(now));
-  const [plan, rows, links, depts, weekBookings, weekBlocks, upcoming, blockedNow] = await Promise.all([
+  const [plan, rows, links, depts, weekBookings, weekBlocks, upcoming, blockedNow, overdue] = await Promise.all([
     getPlanningSettings(),
     db.select().from(machines).orderBy(asc(machines.sortOrder), asc(machines.name)),
     db.select({ machineId: machineServices.machineId, serviceId: services.id, name: services.name }).from(machineServices).innerJoin(services, eq(services.id, machineServices.serviceId)),
@@ -115,6 +139,7 @@ export async function listMachines() {
     blocksBetween(week.start, week.end),
     bookingsBetween(now, new Date(now.getTime() + 120 * 86_400_000)),
     blocksBetween(now, new Date(now.getTime() + 1)),
+    overdueBreakdowns(now),
   ]);
   const list = rows.map((m) => {
     const mine = upcoming.filter((b) => b.machineId === m.id);
@@ -124,6 +149,7 @@ export async function listMachines() {
       now: mine.filter((b) => b.startAt <= now && b.endAt > now),
       next: mine.find((b) => b.startAt > now) ?? null,
       blockedNow: blockedNow.find((b) => b.machineId === m.id) ?? null,
+      overdueBreakdown: overdue.get(m.id) ?? null,
       use: machineUseFor(m, week, plan.pattern, weekBookings, weekBlocks),
     };
   });
@@ -140,7 +166,7 @@ export async function getMachine(id: string, weekOf?: string) {
   const week = weekWindow(weekOf && /^\d{4}-\d{2}-\d{2}$/.test(weekOf) ? weekOf : istDate(now));
   const month = monthWindow(istDate(now));
   const thisWeek = weekWindow(istDate(now));
-  const [plan, svcs, dept, wb, wbl, mb, mbl, twb, twbl, history] = await Promise.all([
+  const [plan, svcs, dept, wb, wbl, mb, mbl, twb, twbl, history, overdue] = await Promise.all([
     getPlanningSettings(),
     db.select({ id: services.id, name: services.name, deptCode: services.deptCode }).from(machineServices).innerJoin(services, eq(services.id, machineServices.serviceId)).where(eq(machineServices.machineId, id)).orderBy(asc(services.sortOrder)),
     db.select().from(departments).where(eq(departments.code, m.deptCode)),
@@ -160,6 +186,7 @@ export async function getMachine(id: string, weekOf?: string) {
       .groupBy(jobs.id, tickets.ticketNo, tickets.snapshot, jobs.status)
       .orderBy(sql`min(${jobBookings.startAt}) desc`)
       .limit(50),
+    overdueBreakdowns(now),
   ]);
   return {
     machine: m,
@@ -170,6 +197,7 @@ export async function getMachine(id: string, weekOf?: string) {
     useMonth: machineUseFor(m, month, plan.pattern, mb, mbl),
     history: history.map((h) => ({ ...h, startAt: new Date(h.startAt), endAt: new Date(h.endAt) })),
     pattern: plan.pattern,
+    overdueBreakdown: overdue.get(id) ?? null,
   };
 }
 export type MachineDetail = NonNullable<Awaited<ReturnType<typeof getMachine>>>;

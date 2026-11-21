@@ -6,6 +6,7 @@ import { Suspense } from "react";
 import { FormSkeleton } from "@/components/common/form-skeleton";
 import { BlockTimeButton, BreakdownButton, DeleteBlockButton, FixedButton } from "@/components/planning/block-time";
 import { MachineChips, MachineStatusChip, pctText } from "@/components/planning/machine-bits";
+import { StillBrokenDown } from "@/components/planning/still-broken";
 import { Button } from "@/components/ui/button";
 import { UUID_RE } from "@/lib/inventory/uuid";
 import { getMachine, type MachineDetail } from "@/lib/planning-data";
@@ -68,6 +69,8 @@ async function Detail({ params, searchParams }: { params: Promise<{ id: string }
           {m.status === "BREAKDOWN" ? <FixedButton machineId={m.id} /> : m.isActive ? <BreakdownButton machineId={m.id} machineName={m.name} /> : null}
         </div>
       </header>
+
+      {d.overdueBreakdown ? <StillBrokenDown machineId={m.id} machineName={m.name} expectedEnd={d.overdueBreakdown.toISOString()} /> : null}
 
       <section className="grid grid-cols-2 gap-3 lg:grid-cols-4" aria-label="Machine use">
         {[

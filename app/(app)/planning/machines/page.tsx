@@ -7,6 +7,7 @@ import { ListSkeleton } from "@/components/common/form-skeleton";
 import { PageHeader } from "@/components/common/page-header";
 import { BlockTimeButton } from "@/components/planning/block-time";
 import { MachineChips, MachineStatusChip, pctText } from "@/components/planning/machine-bits";
+import { StillBrokenDown } from "@/components/planning/still-broken";
 import { Button } from "@/components/ui/button";
 import { listMachines } from "@/lib/planning-data";
 import { formatWhen } from "@/lib/planning/hours";
@@ -60,8 +61,8 @@ async function List() {
                   {list.map((m) => {
                     const pct = m.use.bookedPct;
                     return (
-                      <li key={m.id}>
-                        <Link href={`/planning/machines/${m.id}`} className={cn("flex h-full flex-col gap-2 rounded-2xl border bg-card p-4 transition hover:border-primary/30", !m.isActive && "opacity-70")}>
+                      <li key={m.id} className={cn("flex h-full flex-col rounded-2xl border bg-card transition hover:border-primary/30", !m.isActive && "opacity-70")}>
+                        <Link href={`/planning/machines/${m.id}`} className="flex flex-1 flex-col gap-2 rounded-2xl p-4">
                           <span className="flex items-start justify-between gap-2">
                             <span className="min-w-0">
                               <span className="block font-semibold">{m.name}</span>
@@ -90,6 +91,11 @@ async function List() {
                             <span className="text-sm whitespace-nowrap text-muted-foreground">Machine use this week: {pctText(pct)}</span>
                           </span>
                         </Link>
+                        {m.overdueBreakdown ? (
+                          <div className="px-4 pb-4">
+                            <StillBrokenDown compact machineId={m.id} machineName={m.name} expectedEnd={m.overdueBreakdown.toISOString()} />
+                          </div>
+                        ) : null}
                       </li>
                     );
                   })}

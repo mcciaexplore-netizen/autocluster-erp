@@ -141,6 +141,30 @@ export async function markBreakdown(db: DB | Tx, machineId: string, until: Date,
   });
 }
 
+/**
+ * "Extend": the machine is still broken down. Its latest breakdown block now lasts until the new
+ * time (continuing from where it ended), and bookings that clash are listed again.
+ */
+export async function extendBreakdown(db: DB | Tx, machineId: string, until: Date, opts: { now?: Date } = {}) {
+  const now = opts.now ?? new Date();
+  if (!(until > now)) throw new UserFacingError("Please choose when the machine should be working again (later than now).");
+  return db.transaction(async (tx) => {
+    const [m] = await tx.select().from(machines).where(eq(machines.id, machineId)).for("update");
+    if (!m) throw new UserFacingError("That machine could not be found.");
+    if (m.status !== "BREAKDOWN") throw new UserFacingError(`${m.name} isn't marked as broken down.`);
+    const [b] = await tx
+      .select()
+      .from(machineBlocks)
+      .where(and(eq(machineBlocks.machineId, machineId), eq(machineBlocks.type, "BREAKDOWN")))
+      .orderBy(sql`${machineBlocks.endAt} desc`)
+      .limit(1);
+    if (!b) throw new UserFacingError(`${m.name} has no breakdown to extend. Use “Mark breakdown”.`);
+    const oldEnd = b.endAt;
+    await tx.update(machineBlocks).set({ endAt: until }).where(eq(machineBlocks.id, b.id));
+    return { machine: m, from: oldEnd, clashes: await clashingBookings(tx, machineId, oldEnd < now ? now : oldEnd, until) };
+  });
+}
+
 /** "Working again": back to Available; a breakdown block still running ends now. */
 export async function markFixed(db: DB | Tx, machineId: string, opts: { now?: Date } = {}) {
   const now = opts.now ?? new Date();

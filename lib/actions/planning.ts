@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { db } from "@/db";
-import { addHoliday, blockMachine, createMachine, deleteBlock, deleteHoliday, importHolidays, markBreakdown, markFixed, updateMachine } from "@/db/machine-writer";
+import { addHoliday, blockMachine, createMachine, deleteBlock, deleteHoliday, extendBreakdown, importHolidays, markBreakdown, markFixed, updateMachine } from "@/db/machine-writer";
 import { UserFacingError } from "@/db/quote-writer";
 import { services } from "@/db/schema";
 import { isSignedIn } from "@/lib/auth-guard";
@@ -64,6 +64,13 @@ export async function blockTimeAction(input: z.input<typeof blockSchema>) {
 export async function markBreakdownAction(machineId: string, until: string, note: string | null) {
   return run(async () => {
     const r = await markBreakdown(db, id.parse(machineId), localDt.parse(until), z.string().max(500).nullable().parse(note));
+    return { machine: r.machine.name, clashes: r.clashes.map((c) => ({ id: c.id, ticketNo: c.ticketNo, company: c.company, startAt: c.startAt.toISOString(), endAt: c.endAt.toISOString() })) };
+  });
+}
+
+export async function extendBreakdownAction(machineId: string, until: string) {
+  return run(async () => {
+    const r = await extendBreakdown(db, id.parse(machineId), localDt.parse(until));
     return { machine: r.machine.name, clashes: r.clashes.map((c) => ({ id: c.id, ticketNo: c.ticketNo, company: c.company, startAt: c.startAt.toISOString(), endAt: c.endAt.toISOString() })) };
   });
 }

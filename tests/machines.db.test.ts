@@ -1,6 +1,6 @@
 import { eq } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
-import { addHoliday, blockMachine, createMachine, deleteBlock, importHolidays, markBreakdown, markFixed, nextMachineCode, updateMachine } from "@/db/machine-writer";
+import { addHoliday, blockMachine, createMachine, deleteBlock, extendBreakdown, importHolidays, markBreakdown, markFixed, nextMachineCode, updateMachine } from "@/db/machine-writer";
 import * as s from "@/db/schema";
 import { istAt } from "@/lib/planning/hours";
 import { EMPTY_MACHINE_FORM } from "@/lib/validation/planning";
@@ -45,6 +45,11 @@ describe.skipIf(skip)("machines, blocked time and holidays (database)", () => {
     await expect(markBreakdown(db, m.id, at("2026-11-20", "10:00"), null, { now })).rejects.toThrow(/later than now/);
     await markBreakdown(db, m.id, at("2026-11-22", "18:00"), "Spindle noise", { now });
     expect((await db.select().from(s.machines).where(eq(s.machines.id, m.id)))[0].status).toBe("BREAKDOWN");
+    // still broken down after the expected end: Extend makes the same breakdown last longer
+    await extendBreakdown(db, m.id, at("2026-11-23", "17:00"), { now: at("2026-11-22", "19:00") });
+    const [ext] = await db.select().from(s.machineBlocks).where(eq(s.machineBlocks.type, "BREAKDOWN"));
+    expect(ext.endAt).toEqual(at("2026-11-23", "17:00"));
+    await expect(extendBreakdown(db, m.id, at("2026-11-22", "18:00"), { now: at("2026-11-22", "19:00") })).rejects.toThrow(/later than now/);
     const fixedAt = at("2026-11-21", "15:00");
     await markFixed(db, m.id, { now: fixedAt });
     const blocks = await db.select().from(s.machineBlocks).where(eq(s.machineBlocks.type, "BREAKDOWN"));

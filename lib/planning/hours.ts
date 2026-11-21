@@ -173,3 +173,6 @@ export function formatHours(h: number): string {
   if (h > 0 && h < 1) return `${Math.round(h * 60)} min`;
   return `${Number(h.toFixed(1)).toLocaleString("en-IN")} h`;
 }
+
+/** "22 Nov, 17:00" (India time, no weekday). */
+export const formatDayTime = (d: Date) => formatWhen(d).replace(/^\w{3} /, "");
