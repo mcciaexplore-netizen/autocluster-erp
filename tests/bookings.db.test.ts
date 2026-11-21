@@ -2,6 +2,8 @@ import { and, eq } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { bookTime, cancelBooking, extendHold, findFreeSlots, moveBooking, moveToNextFreeSlot, PastBookingError } from "@/db/booking-writer";
 import { addHoliday, blockMachine, createMachine, markBreakdown, updateMachine } from "@/db/machine-writer";
+import { backfillJobs, bulkMarkDone } from "@/db/job-writer";
+import { sql } from "drizzle-orm";
 import { addPurchaseOrder } from "@/db/po-writer";
 import * as s from "@/db/schema";
 import { cancelTicket, changeQuotationStatus } from "@/db/ticket-writer";
@@ -152,5 +154,32 @@ describe.skipIf(skip)("jobs and booking machine time (database)", () => {
     const longer = await moveBooking(db, r.booking.id, { hours: 6 }, { now: later });
     expect(longer.end).toEqual(at("2026-11-27", "15:30"));
     await expect(cancelBooking(db, r.booking.id, "Removed", { now: later })).rejects.toThrow(/already started/);
+  });
+
+  it("backfill: Paid tickets' jobs are Done; Billing and Payment follow-up are To plan with 'check if work is done'; bulk Mark done clears it", async () => {
+    const js = await acceptedJobs("Western", [
+      { name: "UTM", q: { samples: 1 } },
+      { name: "UTM", q: { samples: 2 } },
+      { name: "UTM", q: { samples: 3 } },
+      { name: "UTM", q: { samples: 4 } },
+    ]);
+    await db.execute(sql`delete from job_events`);
+    await db.execute(sql`delete from jobs`);
+    const stages = ["WAITING_PO", "BILLING", "PAYMENT", "PAID"];
+    for (const [i, x] of js.entries()) await db.update(s.tickets).set({ stage: stages[i] as "PAID" }).where(eq(s.tickets.id, x.ticket.id));
+    expect((await backfillJobs(db)).created).toBe(4);
+    const rows = await db.select({ t: s.tickets.stage, status: s.jobs.status, check: s.jobs.checkWorkDone, id: s.jobs.id }).from(s.jobs).innerJoin(s.tickets, eq(s.tickets.id, s.jobs.ticketId));
+    const by = (st: string) => rows.find((r) => r.t === st)!;
+    expect([by("WAITING_PO"), by("BILLING"), by("PAYMENT"), by("PAID")].map((r) => [r.status, r.check])).toEqual([
+      ["TO_PLAN", false],
+      ["TO_PLAN", true],
+      ["TO_PLAN", true],
+      ["DONE", false],
+    ]);
+    expect((await backfillJobs(db)).created).toBe(0); // safe to run again
+    await expect(bulkMarkDone(db, [by("BILLING").id, by("PAYMENT").id], "ok")).rejects.toThrow(/short completion note/);
+    expect(await bulkMarkDone(db, [by("BILLING").id, by("PAYMENT").id, by("PAID").id], "Work was done before planning started")).toBe(2); // the Paid one was already done
+    const after = await db.select().from(s.jobs).where(eq(s.jobs.id, by("BILLING").id));
+    expect(after[0]).toMatchObject({ status: "DONE", checkWorkDone: false, doneNote: "Work was done before planning started" });
   });
 });

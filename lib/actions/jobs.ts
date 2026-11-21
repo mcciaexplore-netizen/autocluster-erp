@@ -5,7 +5,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { db } from "@/db";
 import { bookTime, cancelBooking, extendHold, findFreeSlots, moveBooking, moveToNextFreeSlot, PastBookingError } from "@/db/booking-writer";
-import { addJobEvent, bulkUpdateJobs, updateJobDetails } from "@/db/job-writer";
+import { addJobEvent, bulkMarkDone, bulkUpdateJobs, updateJobDetails } from "@/db/job-writer";
 import { UserFacingError } from "@/db/quote-writer";
 import { files, jobFiles, jobs } from "@/db/schema";
 import { isSignedIn } from "@/lib/auth-guard";
@@ -52,6 +52,10 @@ export async function bulkJobsAction(jobIds: string[], change: { operatorId?: st
     const c = z.object({ operatorId: id.nullable().optional(), priority: z.enum(["NORMAL", "URGENT"]).optional() }).parse(change);
     return { updated: await bulkUpdateJobs(db, ids, c) };
   });
+}
+
+export async function bulkMarkDoneAction(jobIds: string[], note: string) {
+  return run(async () => ({ done: await bulkMarkDone(db, z.array(id).min(1).max(500).parse(jobIds), z.string().max(2000).parse(note)) }));
 }
 
 const bookSchema = z.object({

@@ -230,6 +230,8 @@ export interface JobFilters {
   late?: boolean;
   notPlanned?: boolean;
   overQuoted?: boolean;
+  /** "Invoiced before planning started: check if work is done". */
+  check?: boolean;
 }
 
 export function jobFiltersFromParams(sp: Record<string, string | string[] | undefined>): JobFilters {
@@ -245,6 +247,7 @@ export function jobFiltersFromParams(sp: Record<string, string | string[] | unde
     late: one("late") === "1",
     notPlanned: one("notplanned") === "1",
     overQuoted: one("over") === "1",
+    check: one("check") === "1",
   };
 }
 
@@ -268,13 +271,14 @@ export async function listJobs(f: JobFilters = {}, limit = 500) {
   if (f.operator) where.push(sql`j.operator_id = ${f.operator}`);
   if (f.promisedBy) where.push(sql`j.promised_date <= ${f.promisedBy}`);
   if (f.notPlanned) where.push(sql`j.status = 'TO_PLAN'`);
+  if (f.check) where.push(sql`j.check_work_done and j.status not in ('DONE', 'HANDED_OVER', 'CANCELLED')`);
   const rows = await db.execute<{
     id: string; ticket_id: string; ticket_no: string; company: string; service: string; dept: string | null; status: JobStatusName; priority: "NORMAL" | "URGENT";
     promised_date: string | null; hours_needed: string | null; planned: string | null; first_start: string | null; last_end: string | null; machines: string[] | null;
-    operator: string | null; operator_id: string | null; actual: string; per_hour: boolean; billable: string; done_at: string | null; stage: string;
+    operator: string | null; operator_id: string | null; actual: string; per_hour: boolean; billable: string; done_at: string | null; stage: string; check_work_done: boolean;
   }>(sql`
     select j.id, t.id as ticket_id, t.ticket_no, t.snapshot->>'companyName' as company, t.snapshot->>'description' as service, t.snapshot->>'deptCode' as dept,
-      j.status, j.priority, j.promised_date::text, j.hours_needed, j.operator_id, tm.name as operator, j.done_at::text, t.stage,
+      j.status, j.priority, j.promised_date::text, j.hours_needed, j.operator_id, tm.name as operator, j.done_at::text, t.stage, j.check_work_done,
       (select sum(b.hours) from job_bookings b where b.job_id = j.id and b.cancelled_at is null) as planned,
       (select min(b.start_at)::text from job_bookings b where b.job_id = j.id and b.cancelled_at is null) as first_start,
       (select max(b.end_at)::text from job_bookings b where b.job_id = j.id and b.cancelled_at is null) as last_end,
@@ -318,6 +322,7 @@ export async function listJobs(f: JobFilters = {}, limit = 500) {
       operator: r.operator,
       operatorId: r.operator_id,
       late,
+      checkWorkDone: r.check_work_done && open,
     };
   });
   return list.filter((j) => (!f.late || j.late) && (!f.overQuoted || j.overQuoted));

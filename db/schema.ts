@@ -993,6 +993,8 @@ export const jobs = pgTable(
     qtyDone: text("qty_done"),
     handedOverAt: date("handed_over_at"),
     handedOverTo: text("handed_over_to"),
+    /** Backfill: the ticket was already in Billing or Payment follow-up. "Check if work is done" until it is marked done. */
+    checkWorkDone: boolean("check_work_done").notNull().default(false),
     ...timestamps,
   },
   (t) => [index("jobs_status_idx").on(t.status)],

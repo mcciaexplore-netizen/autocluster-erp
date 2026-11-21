@@ -179,6 +179,9 @@ function Body({ data, reload, env, openMove }: { data: JobPanelData; reload: () 
         </SheetDescription>
       </SheetHeader>
 
+      {j.checkWorkDone && open ? (
+        <p className="mx-5 mt-4 rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950">Invoiced before planning started: check if work is done.</p>
+      ) : null}
       {j.status === "ON_HOLD" && j.holdReason ? (
         <p className="mx-5 mt-4 rounded-xl border border-orange-300 bg-orange-50 p-3 text-sm text-orange-950">On hold: {j.holdReason}</p>
       ) : null}

@@ -1,6 +1,6 @@
 "use client";
 
-import { Download, Search, X } from "lucide-react";
+import { CheckCheck, Download, Loader2, Search, X } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState, useTransition } from "react";
@@ -9,7 +9,9 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { bulkJobsAction } from "@/lib/actions/jobs";
+import { bulkJobsAction, bulkMarkDoneAction } from "@/lib/actions/jobs";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Textarea } from "@/components/ui/textarea";
 import { formatDate } from "@/lib/format";
 import type { JobRow } from "@/lib/planning-data";
 import { formatHours, formatWhen } from "@/lib/planning/hours";
@@ -26,6 +28,8 @@ export function JobsList({ jobs, departments, machines, team }: { jobs: JobRow[]
   const [q, setQ] = useState(params.get("q") ?? "");
   const [picked, setPicked] = useState<string[]>([]);
   const [pending, start] = useTransition();
+  const [doneOpen, setDoneOpen] = useState(false);
+  const [doneNote, setDoneNote] = useState("");
   const set = (patch: Record<string, string | null>) => {
     const p = new URLSearchParams(params);
     for (const [k, v] of Object.entries(patch)) {
@@ -71,7 +75,7 @@ export function JobsList({ jobs, departments, machines, team }: { jobs: JobRow[]
       </button>
     );
   };
-  const any = ["q", "status", "dept", "machine", "operator", "promised", "late", "notplanned", "over"].some((k) => params.get(k));
+  const any = ["q", "status", "dept", "machine", "operator", "promised", "late", "notplanned", "over", "check"].some((k) => params.get(k));
   const bulk = (change: { operatorId?: string | null; priority?: "NORMAL" | "URGENT" }) =>
     start(async () => {
       const r = await bulkJobsAction(picked, change);
@@ -103,6 +107,7 @@ export function JobsList({ jobs, departments, machines, team }: { jobs: JobRow[]
           {chip("late", "Late")}
           {chip("notplanned", "Not planned")}
           {chip("over", "Actual over quoted")}
+          {chip("check", "Check if work is done")}
           {any ? (
             <Button variant="ghost" size="sm" onClick={() => (setQ(""), router.replace(pathname, { scroll: false }))}>
               <X aria-hidden /> Clear filters
@@ -141,6 +146,9 @@ export function JobsList({ jobs, departments, machines, team }: { jobs: JobRow[]
               <SelectItem value="URGENT">Urgent</SelectItem>
             </SelectContent>
           </Select>
+          <Button size="sm" variant="outline" onClick={() => setDoneOpen(true)} disabled={pending}>
+            <CheckCheck aria-hidden /> Mark done
+          </Button>
           <Button variant="ghost" size="sm" onClick={() => setPicked([])}>
             Untick all
           </Button>
@@ -220,6 +228,42 @@ export function JobsList({ jobs, departments, machines, team }: { jobs: JobRow[]
           </ul>
         </>
       )}
+      <Dialog open={doneOpen} onOpenChange={setDoneOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>
+              Mark {picked.length} {picked.length === 1 ? "job" : "jobs"} as done?
+            </DialogTitle>
+            <DialogDescription>One completion note for all of them. Their future bookings are freed.</DialogDescription>
+          </DialogHeader>
+          <label className="flex flex-col gap-1.5 text-sm font-medium">
+            Completion note
+            <Textarea rows={3} value={doneNote} onChange={(e) => setDoneNote(e.target.value)} placeholder="e.g. Work was done before planning started" maxLength={2000} autoFocus />
+          </label>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDoneOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              disabled={pending || doneNote.trim().length < 3}
+              onClick={() =>
+                start(async () => {
+                  const r = await bulkMarkDoneAction(picked, doneNote);
+                  if (!r.ok) return void toast.error(r.message);
+                  toast.success(`${r.data.done} ${r.data.done === 1 ? "job" : "jobs"} marked done`);
+                  setPicked([]);
+                  setDoneNote("");
+                  setDoneOpen(false);
+                  router.refresh();
+                })
+              }
+            >
+              {pending ? <Loader2 className="animate-spin" aria-hidden /> : <CheckCheck aria-hidden />} Mark done
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <p className="text-sm text-muted-foreground">
         {jobs.length} {jobs.length === 1 ? "job" : "jobs"}
         {jobs.length >= 500 ? " (the first 500; narrow the filters to see others)" : ""}.{" "}
@@ -239,6 +283,7 @@ function Chips({ j }: { j: JobRow }) {
       {j.priority === "URGENT" ? <span className="rounded-full border border-red-300 bg-red-50 px-2 py-0.5 text-xs font-semibold text-red-800">Urgent</span> : null}
       {j.late ? <span className="rounded-full border border-red-300 bg-red-50 px-2 py-0.5 text-xs font-semibold text-red-800">Late</span> : null}
       {j.overQuoted ? <span className="rounded-full border border-red-200 bg-white px-2 py-0.5 text-xs font-medium text-red-800">Over quoted</span> : null}
+      {j.checkWorkDone ? <span className="rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-900">Invoiced before planning started: check if work is done</span> : null}
     </span>
   );
 }

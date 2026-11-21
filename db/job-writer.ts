@@ -49,16 +49,27 @@ export async function ensureJobsForTickets(conn: Conn, ticketIds: string[], opts
     const j = have.find((x) => x.ticketId === t.id);
     if (!j) {
       const h = hours.get(t.id);
-      // Backfill: a ticket already invoiced or paid was worked on before Planning started.
-      const done = !!opts.invoicedAreDone && (t.stage === "PAYMENT" || t.stage === "PAID");
+      // Backfill: a Paid ticket was worked on before Planning started; Billing / Payment follow-up
+      // tickets are probably done too, so they're flagged "check if work is done".
+      const done = !!opts.invoicedAreDone && t.stage === "PAID";
+      const check = !!opts.invoicedAreDone && (t.stage === "BILLING" || t.stage === "PAYMENT");
       const [row] = await conn
         .insert(jobs)
-        .values({ ticketId: t.id, status: done ? "DONE" : "TO_PLAN", hoursNeeded: h == null ? null : String(h), ...(done ? { doneNote: "Done before Planning started" } : {}) })
+        .values({ ticketId: t.id, status: done ? "DONE" : "TO_PLAN", hoursNeeded: h == null ? null : String(h), checkWorkDone: check, ...(done ? { doneNote: "Done before Planning started" } : {}) })
         .onConflictDoNothing({ target: jobs.ticketId })
         .returning({ id: jobs.id });
       if (row) {
         created++;
-        await addJobEvent(conn, row.id, "OPENED", done ? `Job added for ticket ${t.ticketNo}: already invoiced, so marked Done (work done before Planning started)` : `Job opened from ticket ${t.ticketNo}${h != null ? `: about ${h} h needed` : ""}`);
+        await addJobEvent(
+          conn,
+          row.id,
+          "OPENED",
+          done
+            ? `Job added for ticket ${t.ticketNo}: already paid, so marked Done (done before Planning started)`
+            : check
+              ? `Job added for ticket ${t.ticketNo}: invoiced before planning started, check if the work is done`
+              : `Job opened from ticket ${t.ticketNo}${h != null ? `: about ${h} h needed` : ""}`,
+        );
       }
     } else if (j.status === "CANCELLED") {
       await conn.update(jobs).set({ status: "TO_PLAN" }).where(eq(jobs.id, j.id));
@@ -162,6 +173,28 @@ export async function bulkUpdateJobs(db: Conn, jobIds: string[], v: { operatorId
     if (v.priority) set.priority = v.priority;
     const rows = await tx.update(jobs).set(set).where(and(inArray(jobs.id, jobIds), sql`${jobs.status} <> 'CANCELLED'`)).returning({ id: jobs.id });
     for (const r of rows) await addJobEvent(tx, r.id, "DETAILS", v.priority ? `Priority set to ${v.priority === "URGENT" ? "Urgent" : "Normal"}` : "Operator changed (several jobs at once)");
+    return rows.length;
+  });
+}
+
+/** Bulk "Mark done" (Jobs list): one completion note for all the selected jobs. */
+export async function bulkMarkDone(db: Conn, jobIds: string[], note: string, opts: { now?: Date; by?: string | null } = {}) {
+  const n = note.trim();
+  if (n.length < 3) throw new UserFacingError("Please write a short completion note, e.g. “Work was done before planning started”.");
+  if (!jobIds.length) throw new UserFacingError("Please tick at least one job.");
+  const now = opts.now ?? new Date();
+  return db.transaction(async (tx) => {
+    const rows = await tx
+      .update(jobs)
+      .set({ status: "DONE", doneAt: now, doneNote: n, checkWorkDone: false, holdReason: null })
+      .where(and(inArray(jobs.id, jobIds), sql`${jobs.status} not in ('DONE', 'HANDED_OVER', 'CANCELLED')`))
+      .returning({ id: jobs.id });
+    for (const r of rows) {
+      await tx.update(jobTimeLogs).set({ endedAt: now }).where(and(eq(jobTimeLogs.jobId, r.id), isNull(jobTimeLogs.endedAt)));
+      // future bookings are no longer needed
+      await tx.update(jobBookings).set({ cancelledAt: now }).where(and(eq(jobBookings.jobId, r.id), isNull(jobBookings.cancelledAt), gt(jobBookings.startAt, now)));
+      await addJobEvent(tx, r.id, "DONE", `Marked done (several jobs at once): ${n}`, undefined, opts.by);
+    }
     return rows.length;
   });
 }
