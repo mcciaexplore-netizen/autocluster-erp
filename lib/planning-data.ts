@@ -419,3 +419,196 @@ export async function getJobDetail(id: string) {
   };
 }
 export type JobDetail = NonNullable<Awaited<ReturnType<typeof getJobDetail>>>;
+
+// ---- timeline -----------------------------------------------------------------------------------------
+
+export type TimelineView = "day" | "week" | "2w";
+export interface TimelineFilters {
+  view: TimelineView;
+  date: string;
+  dept?: string;
+  machine?: string;
+  operator?: string;
+  customer?: string;
+  late?: boolean;
+  tentative?: boolean;
+}
+
+export async function timelineFiltersFromParams(sp: Record<string, string | string[] | undefined>): Promise<TimelineFilters> {
+  await connection();
+  const one = (k: string) => (typeof sp[k] === "string" ? (sp[k] as string) : "");
+  const uuid = (v: string) => (/^[0-9a-f-]{36}$/i.test(v) ? v : undefined);
+  const view = (["day", "week", "2w"] as const).find((v) => v === one("view")) ?? "week";
+  const today = istDate(new Date());
+  let date = /^\d{4}-\d{2}-\d{2}$/.test(one("date")) ? one("date") : today;
+  if (view !== "day") date = weekStart(date); // weeks start on Monday
+  return {
+    view,
+    date,
+    dept: /^[A-Z]{2,6}$/.test(one("dept")) ? one("dept") : undefined,
+    machine: uuid(one("machine")),
+    operator: uuid(one("operator")),
+    customer: uuid(one("customer")),
+    late: one("late") === "1",
+    tentative: one("tentative") === "1",
+  };
+}
+
+export const VIEW_DAYS: Record<TimelineView, number> = { day: 1, week: 7, "2w": 14 };
+
+/** Machines, bookings and blocked time in the window, and the jobs still to plan. */
+export async function getTimeline(f: TimelineFilters) {
+  await connection();
+  const start = istAt(f.date, 0);
+  const end = istAt(dayPlus(f.date, VIEW_DAYS[f.view]), 0);
+  const today = istDate(new Date());
+  const [ms, bookingRows, blocks, toPlan, options, customers] = await Promise.all([
+    db.select().from(machines).where(eq(machines.isActive, true)).orderBy(asc(machines.sortOrder), asc(machines.name)),
+    db.execute<{
+      id: string; job_id: string; machine_id: string; start_at: string; end_at: string; hours: string; is_tentative: boolean; hold_until: string | null; note: string | null;
+      ticket_no: string; company: string; service: string; status: JobStatusName; promised_date: string | null; operator_id: string | null; operator: string | null; customer_id: string; priority: string;
+    }>(sql`
+      select b.id, b.job_id, b.machine_id, b.start_at::text, b.end_at::text, b.hours, b.is_tentative, b.hold_until::text, b.note,
+        t.ticket_no, t.snapshot->>'companyName' as company, t.snapshot->>'description' as service, j.status, j.promised_date::text,
+        coalesce(b.operator_id, j.operator_id) as operator_id, tm.name as operator, t.customer_id, j.priority
+      from job_bookings b join jobs j on j.id = b.job_id join tickets t on t.id = j.ticket_id
+      left join team_members tm on tm.id = coalesce(b.operator_id, j.operator_id)
+      where b.cancelled_at is null and b.start_at < ${end} and b.end_at > ${start}
+      order by b.start_at`),
+    db.select().from(machineBlocks).where(and(lt(machineBlocks.startAt, end), gt(machineBlocks.endAt, start))),
+    db.execute<{ id: string; ticket_no: string; company: string; service: string; dept: string | null; priority: "NORMAL" | "URGENT"; promised_date: string | null; hours_needed: string | null; planned: string | null; stage: string }>(sql`
+      select j.id, t.ticket_no, t.snapshot->>'companyName' as company, t.snapshot->>'description' as service, t.snapshot->>'deptCode' as dept, j.priority,
+        j.promised_date::text, j.hours_needed, t.stage,
+        (select sum(b.hours) from job_bookings b where b.job_id = j.id and b.cancelled_at is null) as planned
+      from jobs j join tickets t on t.id = j.ticket_id
+      where j.status = 'TO_PLAN' ${f.dept ? sql`and t.snapshot->>'deptCode' = ${f.dept}` : sql``}
+      order by j.priority desc, coalesce(j.promised_date, '9999-12-31'), t.ticket_no`),
+    getBookingOptions(),
+    db.execute<{ id: string; name: string }>(sql`select distinct c.id, c.company_name as name from tickets t join customers c on c.id = t.customer_id join jobs j on j.ticket_id = t.id order by 2`),
+  ]);
+  const machineList = ms.filter((m) => (!f.dept || m.deptCode === f.dept) && (!f.machine || m.id === f.machine));
+  const bookings = bookingRows.rows
+    .map((b) => {
+      const endAt = new Date(b.end_at);
+      const open = !["DONE", "HANDED_OVER", "CANCELLED"].includes(b.status);
+      return {
+        id: b.id,
+        jobId: b.job_id,
+        machineId: b.machine_id,
+        start: b.start_at,
+        end: b.end_at,
+        hours: Number(b.hours),
+        tentative: b.is_tentative,
+        holdExpired: b.is_tentative && !!b.hold_until && b.hold_until < today,
+        holdUntil: b.hold_until,
+        note: b.note,
+        ticketNo: b.ticket_no,
+        company: b.company,
+        service: b.service,
+        status: b.status,
+        operator: b.operator,
+        operatorId: b.operator_id,
+        customerId: b.customer_id,
+        urgent: b.priority === "URGENT",
+        late: !!b.promised_date && open && (today > b.promised_date || istDate(endAt) > b.promised_date),
+      };
+    })
+    .filter((b) => (!f.operator || b.operatorId === f.operator) && (!f.customer || b.customerId === f.customer) && (!f.late || b.late) && (!f.tentative || b.tentative));
+  return {
+    window: { start: start.toISOString(), end: end.toISOString(), days: VIEW_DAYS[f.view] },
+    departments: options.departments,
+    machines: machineList.map((m) => ({ id: m.id, name: m.name, code: m.code, deptCode: m.deptCode, status: m.status, runsNonstop: m.runsNonstop, parallelJobs: m.parallelJobs })),
+    allMachines: ms.map((m) => ({ id: m.id, name: m.name })),
+    bookings,
+    blocks: blocks.map((b) => ({ id: b.id, machineId: b.machineId, type: b.type, start: b.startAt.toISOString(), end: b.endAt.toISOString(), note: b.note })),
+    toPlan: toPlan.rows.map((j) => {
+      const needed = j.hours_needed == null ? null : Number(j.hours_needed);
+      return {
+        id: j.id,
+        ticketNo: j.ticket_no,
+        company: j.company,
+        service: j.service,
+        deptCode: j.dept,
+        urgent: j.priority === "URGENT",
+        promisedDate: j.promised_date,
+        late: !!j.promised_date && j.promised_date < today,
+        hoursNeeded: needed,
+        unplanned: needed == null ? null : Math.max(0, needed - Number(j.planned ?? 0)),
+        waitingForPo: j.stage === "WAITING_PO",
+      };
+    }),
+    options,
+    customers: customers.rows,
+  };
+}
+export type TimelineData = Awaited<ReturnType<typeof getTimeline>>;
+
+/** For booking from the timeline: one job's details for the Book time form. */
+export async function getBookJob(jobId: string) {
+  await connection();
+  const d = await getJobDetail(jobId);
+  if (!d) return null;
+  return {
+    id: d.job.id,
+    ticketNo: d.ticket.ticketNo,
+    company: d.ticket.company,
+    service: d.ticket.service,
+    serviceId: d.serviceId,
+    isCustomItem: d.isCustomItem,
+    waitingForPo: d.ticket.stage === "WAITING_PO",
+    promisedDate: d.job.promisedDate,
+    operatorId: d.job.operatorId,
+    unplannedHours: d.job.hoursNeeded != null ? Math.max(0, Number(d.job.hoursNeeded) - d.plannedHours) : 0,
+  };
+}
+
+// ---- needs attention ----------------------------------------------------------------------------------
+
+/** "Needs attention" (top of the Timeline): everything someone should act on now. */
+export async function getNeedsAttention() {
+  await connection();
+  const now = new Date();
+  const today = istDate(now);
+  const [[set], late, holds, running, unplannedLate, clashes, broken] = await Promise.all([
+    db.select({ pct: settings.overrunWarningPct }).from(settings).where(eq(settings.id, 1)),
+    listJobs({ late: true }, 200),
+    db.execute<{ booking_id: string; job_id: string; ticket_no: string; company: string; machine: string; hold_until: string; start_at: string }>(sql`
+      select b.id as booking_id, b.job_id, t.ticket_no, t.snapshot->>'companyName' as company, m.name as machine, b.hold_until::text, b.start_at::text
+      from job_bookings b join jobs j on j.id = b.job_id join tickets t on t.id = j.ticket_id join machines m on m.id = b.machine_id
+      where b.cancelled_at is null and b.is_tentative and b.hold_until < ${today} and j.status not in ('CANCELLED', 'DONE', 'HANDED_OVER')
+      order by b.hold_until`),
+    db.execute<{ job_id: string; ticket_no: string; company: string; machine: string | null; started_at: string; booked_start: string | null; booked_end: string | null }>(sql`
+      select j.id as job_id, t.ticket_no, t.snapshot->>'companyName' as company, m.name as machine,
+        (select min(l.started_at) from job_time_logs l where l.job_id = j.id)::text as started_at,
+        b.start_at::text as booked_start, b.end_at::text as booked_end
+      from jobs j join tickets t on t.id = j.ticket_id
+      left join lateral (select * from job_bookings b where b.job_id = j.id and b.cancelled_at is null order by b.end_at desc limit 1) b on true
+      left join machines m on m.id = b.machine_id
+      where j.status = 'RUNNING'`),
+    db.execute<{ id: string; ticket_no: string; company: string; promised_date: string }>(sql`
+      select j.id, t.ticket_no, t.snapshot->>'companyName' as company, j.promised_date::text
+      from jobs j join tickets t on t.id = j.ticket_id
+      where j.status = 'TO_PLAN' and j.promised_date < ${today} order by j.promised_date`),
+    bookingsClashingWithBlocks(db, now),
+    listOverdueBreakdowns(),
+  ]);
+  const pct = set?.pct ?? 50;
+  const overruns = running.rows
+    .filter((r) => r.booked_start && r.booked_end)
+    .map((r) => {
+      const bs = new Date(r.booked_start!);
+      const be = new Date(r.booked_end!);
+      const limit = be.getTime() + ((be.getTime() - bs.getTime()) * pct) / 100;
+      return { jobId: r.job_id, ticketNo: r.ticket_no, company: r.company, machine: r.machine, startedAt: r.started_at ? new Date(r.started_at) : bs, bookedEnd: be, over: now.getTime() > limit };
+    })
+    .filter((r) => r.over);
+  return {
+    late: late.filter((j) => j.status !== "TO_PLAN" || !j.promisedDate || j.promisedDate >= today),
+    expiredHolds: holds.rows.map((h) => ({ bookingId: h.booking_id, jobId: h.job_id, ticketNo: h.ticket_no, company: h.company, machine: h.machine, holdUntil: h.hold_until, start: new Date(h.start_at) })),
+    overruns,
+    unplannedLate: unplannedLate.rows,
+    clashes,
+    broken,
+  };
+}
+export type NeedsAttention = Awaited<ReturnType<typeof getNeedsAttention>>;

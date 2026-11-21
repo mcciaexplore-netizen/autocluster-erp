@@ -1,14 +1,35 @@
 import type { Metadata } from "next";
+import { Suspense } from "react";
 import { PageHeader } from "@/components/common/page-header";
-import { ComingNext } from "@/components/inventory/coming-next";
+import { NeedsAttentionPanel } from "@/components/planning/needs-attention";
+import { Timeline } from "@/components/planning/timeline";
+import { Skeleton } from "@/components/ui/skeleton";
+import { getNeedsAttention, getTimeline, timelineFiltersFromParams } from "@/lib/planning-data";
 
 export const metadata: Metadata = { title: "Machine timeline" };
 
-export default function Page() {
+type Sp = Promise<Record<string, string | string[] | undefined>>;
+
+export default function TimelinePage({ searchParams }: { searchParams: Sp }) {
   return (
-    <div>
-      <PageHeader title="Machine timeline" description="Every machine's bookings over time. Drag jobs onto machines to book them." />
-      <ComingNext what="The machine timeline is built in step 3." />
+    <div className="flex flex-col gap-4">
+      <PageHeader title="Machine timeline" description="Every machine's bookings over time. Drag a job onto a machine to book it; drag a booking to move it, or its right edge to change its hours." />
+      <Suspense fallback={<Skeleton className="h-24 rounded-2xl" />}>
+        <Attention />
+      </Suspense>
+      <Suspense fallback={<Skeleton className="h-[32rem] rounded-2xl" />}>
+        <Body searchParams={searchParams} />
+      </Suspense>
     </div>
   );
+}
+
+async function Attention() {
+  return <NeedsAttentionPanel n={await getNeedsAttention()} />;
+}
+
+async function Body({ searchParams }: { searchParams: Sp }) {
+  const f = await timelineFiltersFromParams(await searchParams);
+  const data = await getTimeline(f);
+  return <Timeline data={data} view={f.view} date={f.date} />;
 }

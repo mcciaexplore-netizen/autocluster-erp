@@ -156,3 +156,11 @@ export async function loadJobPanelAction(jobId: string) {
   return { ok: true as const, data: { detail, options, materials: ticket?.materials ?? null } };
 }
 export type JobPanelData = Extract<Awaited<ReturnType<typeof loadJobPanelAction>>, { ok: true }>["data"];
+
+/** Dropping a job onto the timeline: its details for the Book time form. */
+export async function loadBookJobAction(jobId: string) {
+  if (!(await isSignedIn())) return { ok: false as const, message: SIGNED_OUT_MESSAGE };
+  const { getBookJob } = await import("@/lib/planning-data");
+  const j = await getBookJob(z.string().uuid().parse(jobId));
+  return j ? { ok: true as const, data: j } : { ok: false as const, message: "This job could not be found." };
+}
