@@ -4,11 +4,12 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { db } from "@/db";
 import { UserFacingError } from "@/db/quote-writer";
-import { finishJob, handOverJob, holdJob, logReadyMessage, OtherJobRunningError, pauseJob, startJob } from "@/db/work-writer";
+import { finishJob, handOverJob, holdJob, logReadyMessage, NeedMachineError, OtherJobRunningError, pauseJob, startJob } from "@/db/work-writer";
 import { isSignedIn } from "@/lib/auth-guard";
 import { SIGNED_OUT_MESSAGE } from "@/lib/auth-messages";
 
-type Result<T> = { ok: true; data: T } | { ok: false; message: string; otherRunning?: string };
+export type NeedMachine = { suggestedMachineId: string | null; machines: { id: string; name: string; deptCode: string; suitable: boolean }[]; hours: number; later: { bookingId: string; machine: string; start: string } | null };
+type Result<T> = { ok: true; data: T } | { ok: false; message: string; otherRunning?: string; needMachine?: NeedMachine };
 
 async function run<T>(fn: () => Promise<T>): Promise<Result<T>> {
   if (!(await isSignedIn())) return { ok: false, message: SIGNED_OUT_MESSAGE };
@@ -18,6 +19,7 @@ async function run<T>(fn: () => Promise<T>): Promise<Result<T>> {
     return { ok: true, data };
   } catch (e) {
     if (e instanceof OtherJobRunningError) return { ok: false, message: e.message, otherRunning: e.otherTicketNo };
+    if (e instanceof NeedMachineError) return { ok: false, message: e.message, needMachine: { ...e.info, later: e.info.later ? { ...e.info.later, start: e.info.later.start.toISOString() } : null } };
     if (e instanceof UserFacingError) return { ok: false, message: e.message };
     if (e instanceof z.ZodError) return { ok: false, message: e.issues[0]?.message ?? "Some details need a second look." };
     console.error("work", e);
@@ -28,8 +30,15 @@ async function run<T>(fn: () => Promise<T>): Promise<Result<T>> {
 const id = z.string().uuid();
 const opt = id.nullable();
 
-export async function startJobAction(jobId: string, operatorId: string | null, pauseOther = false) {
-  return run(() => startJob(db, id.parse(jobId), { operatorId: opt.parse(operatorId), pauseOther }));
+export async function startJobAction(jobId: string, operatorId: string | null, more: { pauseOther?: boolean; machineId?: string | null; removeLaterBookingId?: string | null } = {}) {
+  return run(() =>
+    startJob(db, id.parse(jobId), {
+      operatorId: opt.parse(operatorId),
+      pauseOther: !!more.pauseOther,
+      machineId: more.machineId ? id.parse(more.machineId) : null,
+      removeLaterBookingId: more.removeLaterBookingId ? id.parse(more.removeLaterBookingId) : null,
+    }),
+  );
 }
 export async function pauseJobAction(jobId: string, reason: string, note: string | null, operatorId: string | null) {
   return run(() => pauseJob(db, id.parse(jobId), z.string().max(60).parse(reason), z.string().max(500).nullable().parse(note), { operatorId: opt.parse(operatorId) }));

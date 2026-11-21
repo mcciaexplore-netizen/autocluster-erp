@@ -5,7 +5,7 @@ import { createMachine } from "@/db/machine-writer";
 import { addPurchaseOrder } from "@/db/po-writer";
 import * as s from "@/db/schema";
 import { changeQuotationStatus } from "@/db/ticket-writer";
-import { finishJob, handOverJob, OtherJobRunningError, pauseJob, startJob } from "@/db/work-writer";
+import { finishJob, handOverJob, NeedMachineError, OtherJobRunningError, pauseJob, startJob } from "@/db/work-writer";
 import { istAt } from "@/lib/planning/hours";
 import { actualHours, quotedVsActual } from "@/lib/planning/work";
 import { EMPTY_MACHINE_FORM } from "@/lib/validation/planning";
@@ -66,15 +66,39 @@ describe.skipIf(skip)("operators' work on jobs (database)", () => {
   });
 
   it("one running job per operator: starting another is refused, or pauses the first when asked", async () => {
-    const { a, b, op } = await setup();
-    await startJob(db, a.id, { operatorId: op.id, now: at("2026-11-30", "10:00") });
-    const err = await startJob(db, b.id, { operatorId: op.id, now: at("2026-11-30", "11:00") }).catch((e) => e);
+    const { a, b, m, op } = await setup();
+    const m2 = await createMachine(db, { ...EMPTY_MACHINE_FORM, name: "Second VMC", deptCode: "PPF" });
+    await startJob(db, a.id, { operatorId: op.id, machineId: m.id, now: at("2026-11-30", "10:00") });
+    const err = await startJob(db, b.id, { operatorId: op.id, machineId: m2.id, now: at("2026-11-30", "11:00") }).catch((e) => e);
     expect(err).toBeInstanceOf(OtherJobRunningError);
     expect(err.message).toMatch(/You're already running ACDRI\/TK\/.* Pause it and start this one\?/);
-    await startJob(db, b.id, { operatorId: op.id, pauseOther: true, now: at("2026-11-30", "11:00") });
+    await startJob(db, b.id, { operatorId: op.id, machineId: m2.id, pauseOther: true, now: at("2026-11-30", "11:00") });
     const [ja, jb] = await Promise.all([db.select().from(s.jobs).where(eq(s.jobs.id, a.id)), db.select().from(s.jobs).where(eq(s.jobs.id, b.id))]);
     expect(ja[0]).toMatchObject({ status: "ON_HOLD" });
     expect(ja[0].holdReason).toMatch(/^Started ACDRI\/TK/);
     expect(jb[0].status).toBe("RUNNING");
+  });
+
+  it("Start with no booking covering now: asks which machine, books from now for the time still needed, can remove the later booking; refused if another job is on that machine now", async () => {
+    const { a, b, m, op } = await setup();
+    const NOW = at("2026-11-30", "10:00");
+    // a has a later booking (tomorrow); time needed 6 h
+    const later = await bookTime(db, { jobId: a.id, machineId: m.id, start: at("2026-12-01", "09:00"), hours: 6 }, { now: NOW });
+    const ask = (await startJob(db, a.id, { operatorId: op.id, now: NOW }).catch((e) => e)) as NeedMachineError;
+    expect(ask).toBeInstanceOf(NeedMachineError);
+    expect(ask.info).toMatchObject({ suggestedMachineId: m.id, hours: 6, later: { bookingId: later.booking.id, machine: "5-Axis VMC (Non-Continuous)" } });
+    await startJob(db, a.id, { operatorId: op.id, machineId: m.id, removeLaterBookingId: later.booking.id, now: NOW });
+    const bs = await db.select().from(s.jobBookings).where(eq(s.jobBookings.jobId, a.id));
+    const live = bs.filter((x) => !x.cancelledAt);
+    expect(live).toHaveLength(1);
+    expect(live[0].startAt).toEqual(NOW); // starts now, not snapped
+    expect(live[0].endAt).toEqual(at("2026-11-30", "16:30")); // 6 working hours
+    expect(bs.find((x) => x.id === later.booking.id)!.cancelledAt).not.toBeNull();
+    const [log] = await db.select().from(s.jobTimeLogs).where(eq(s.jobTimeLogs.jobId, a.id));
+    expect(log.bookingId).toBe(live[0].id); // the log counts against the booking it ran in
+    // b on the same machine right now: refused plainly, and not started
+    const err = await startJob(db, b.id, { operatorId: null, machineId: m.id, now: at("2026-11-30", "11:00") }).catch((e) => e);
+    expect(err.message).toMatch(/5-Axis VMC \(Non-Continuous\) is already booked for ACDRI\/TK\/.* from Mon 30 Nov, 10:00 to 16:30\./);
+    expect((await db.select().from(s.jobs).where(eq(s.jobs.id, b.id)))[0].status).not.toBe("RUNNING");
   });
 });

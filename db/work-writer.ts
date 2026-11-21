@@ -5,7 +5,8 @@
  */
 import { and, asc, eq, gt, isNull, lte, ne, sql } from "drizzle-orm";
 import { formatWhen } from "@/lib/planning/hours";
-import { PAUSE_REASONS } from "@/lib/planning/work";
+import { actualHours, PAUSE_REASONS } from "@/lib/planning/work";
+import { bookTime, cancelBooking } from "./booking-writer";
 import type { DB, Tx } from "./client";
 import { addJobEvent } from "./job-writer";
 import { UserFacingError } from "./quote-writer";
@@ -52,10 +53,35 @@ async function closeLog(tx: Tx, jobId: string, now: Date, pauseReason: string | 
 }
 
 /**
+ * Start pressed with no booking covering now: the screen asks which machine is being used (and
+ * whether to remove the job's later booking, since the work is happening now).
+ */
+export class NeedMachineError extends UserFacingError {
+  constructor(
+    public info: {
+      suggestedMachineId: string | null;
+      machines: { id: string; name: string; deptCode: string; suitable: boolean }[];
+      hours: number;
+      later: { bookingId: string; machine: string; start: Date } | null;
+    },
+  ) {
+    super("Which machine are you using?");
+    this.name = "NeedMachineError";
+  }
+}
+
+/**
  * Start (or Resume) a job. Only one running job per operator: if another is running, it is
  * refused (OtherJobRunningError) unless `pauseOther` is set, which pauses that one first.
+ * With no booking covering now, a machine must be given (NeedMachineError asks for it): a booking
+ * starting now is made on it for the remaining time needed, with the normal clash rules, and the
+ * job's later booking can be removed. Time logs always point to the booking they ran in.
  */
-export async function startJob(db: Conn, jobId: string, opts: { operatorId: string | null; pauseOther?: boolean; now?: Date }) {
+export async function startJob(
+  db: Conn,
+  jobId: string,
+  opts: { operatorId: string | null; pauseOther?: boolean; machineId?: string | null; removeLaterBookingId?: string | null; now?: Date },
+) {
   const now = opts.now ?? new Date();
   return db.transaction(async (tx) => {
     const j = await lockJob(tx, jobId);
@@ -75,19 +101,45 @@ export async function startJob(db: Conn, jobId: string, opts: { operatorId: stri
         await pauseInTx(tx, other.jobId, "Other", `Started ${j.ticketNo}`, now, who);
       }
     }
-    // The booking being worked on: the one covering now on any machine, else the next one today, else the last.
     const bookings = await tx
-      .select({ id: jobBookings.id, machineId: jobBookings.machineId, startAt: jobBookings.startAt, endAt: jobBookings.endAt, machine: machines.name })
+      .select({ id: jobBookings.id, machineId: jobBookings.machineId, startAt: jobBookings.startAt, endAt: jobBookings.endAt, hours: jobBookings.hours, machine: machines.name })
       .from(jobBookings)
       .innerJoin(machines, eq(machines.id, jobBookings.machineId))
       .where(and(eq(jobBookings.jobId, jobId), isNull(jobBookings.cancelledAt)))
       .orderBy(asc(jobBookings.startAt));
-    const current = bookings.find((b) => b.startAt <= now && b.endAt > now) ?? bookings.find((b) => b.startAt > now) ?? bookings.at(-1) ?? null;
+    let current: { id: string; machineId: string; machine: string } | null = bookings.find((b) => b.startAt <= now && b.endAt > now) ?? null;
+    if (!current) {
+      const later = bookings.find((b) => b.startAt > now) ?? null;
+      const logs = await tx.select().from(jobTimeLogs).where(eq(jobTimeLogs.jobId, jobId));
+      const done = actualHours(logs, now);
+      const needed = j.job.hoursNeeded != null ? Number(j.job.hoursNeeded) : null;
+      const hours = Math.max(0.5, Math.round(((needed != null ? needed - done : later ? Number(later.hours) : 1) || 1) * 2) / 2);
+      if (!opts.machineId) {
+        const suitable = await tx.execute<{ machine_id: string }>(sql`
+          select ms.machine_id from machine_services ms join quotation_items qi on qi.service_id = ms.service_id join tickets t on t.quotation_item_id = qi.id where t.id = ${j.job.ticketId}`);
+        const ids = new Set(suitable.rows.map((r) => r.machine_id));
+        const all = await tx.select({ id: machines.id, name: machines.name, deptCode: machines.deptCode }).from(machines).where(eq(machines.isActive, true)).orderBy(asc(machines.deptCode), asc(machines.sortOrder));
+        const list = all.map((m) => ({ ...m, suitable: ids.has(m.id) })).sort((a, b) => Number(b.suitable) - Number(a.suitable));
+        throw new NeedMachineError({
+          suggestedMachineId: later?.machineId ?? list.find((m) => m.suitable)?.id ?? null,
+          machines: list,
+          hours,
+          later: later ? { bookingId: later.id, machine: later.machine, start: later.startAt } : null,
+        });
+      }
+      if (opts.removeLaterBookingId) {
+        const l = bookings.find((b) => b.id === opts.removeLaterBookingId && b.startAt > now);
+        if (l) await cancelBooking(tx, l.id, "Later booking removed: the work started now instead", { now, by: who });
+      }
+      // The normal clash rules: refused (and not started) if the machine is booked by another job now.
+      const r = await bookTime(tx, { jobId, machineId: opts.machineId, start: now, hours, operatorId: opts.operatorId, exactStart: true, note: "Booked when the work started", createdBy: who }, { now });
+      current = { id: r.booking.id, machineId: r.booking.machineId, machine: r.machine };
+    }
     const resume = j.job.status === "ON_HOLD";
-    await tx.insert(jobTimeLogs).values({ jobId, bookingId: current?.id ?? null, machineId: current?.machineId ?? null, operatorId: opts.operatorId, startedAt: now });
+    await tx.insert(jobTimeLogs).values({ jobId, bookingId: current.id, machineId: current.machineId, operatorId: opts.operatorId, startedAt: now });
     await tx.update(jobs).set({ status: "RUNNING", holdReason: null }).where(eq(jobs.id, jobId));
-    await addJobEvent(tx, jobId, resume ? "RESUMED" : "STARTED", `${resume ? "Resumed" : "Started"}${current ? ` on ${current.machine}` : ""}${who ? ` by ${who}` : ""}`, { bookingId: current?.id ?? null }, who);
-    return { ticketNo: j.ticketNo, machine: current?.machine ?? null };
+    await addJobEvent(tx, jobId, resume ? "RESUMED" : "STARTED", `${resume ? "Resumed" : "Started"} on ${current.machine}${who ? ` by ${who}` : ""}`, { bookingId: current.id }, who);
+    return { ticketNo: j.ticketNo, machine: current.machine };
   });
 }
 

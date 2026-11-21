@@ -137,6 +137,8 @@ export interface BookInput {
   note?: string | null;
   /** Booking in the past is allowed only after the person confirms (recording work already done). */
   allowPast?: boolean;
+  /** Use the start as given (work starting right now): no snapping, no "in the past" question. */
+  exactStart?: boolean;
   createdBy?: string | null;
 }
 
@@ -149,8 +151,8 @@ export async function bookTime(db: Conn, input: BookInput, opts: { now?: Date } 
     await checkMachineUsable(tx, m, now);
     const { pattern, holdDays } = await loadPattern(tx);
     // Starts snap to half hours; machines that need an operator start at the next working moment.
-    const start = nextWorkingMoment(snapTo30(input.start), pattern, m.runsNonstop);
-    if (start.getTime() < now.getTime() - 60_000 && !input.allowPast) throw new PastBookingError();
+    const start = input.exactStart ? input.start : nextWorkingMoment(snapTo30(input.start), pattern, m.runsNonstop);
+    if (!input.exactStart && start.getTime() < now.getTime() - 60_000 && !input.allowPast) throw new PastBookingError();
     const end = addWorkingHours(start, hours, pattern, m.runsNonstop);
     await checkFree(tx, m, { start, end });
     let operatorId: string | null = input.operatorId ?? j.job.operatorId ?? null;
