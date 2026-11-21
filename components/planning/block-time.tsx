@@ -92,7 +92,7 @@ export function showClashes(machine: string, clashes: Clash[], what: string) {
   if (!clashes.length)
     return void toast.success(`${machine}: ${what}. No bookings clash.`);
   toast.warning(
-    `${machine}: ${what}. ${clashes.length} ${clashes.length === 1 ? "booking clashes" : "bookings clash"}; move ${clashes.length === 1 ? "it" : "them"} to another time or machine.`,
+    `${machine}: ${what}. ${clashes.length} ${clashes.length === 1 ? "booking clashes" : "bookings clash"}; move ${clashes.length === 1 ? "it" : "them"} from the machine page (“Move to next free slot” or “Pick another machine”).`,
     {
       description: clashes
         .map(

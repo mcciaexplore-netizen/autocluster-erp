@@ -6,9 +6,11 @@ import "server-only";
 import { and, asc, eq, gt, isNull, lt, sql } from "drizzle-orm";
 import { connection } from "next/server";
 import { db } from "@/db";
+import { bookingsClashingWithBlocks } from "@/db/booking-writer";
 import { nextMachineCode } from "@/db/machine-writer";
-import { departments, holidays, jobBookings, jobs, machineBlocks, machineServices, machines, services, settings, teamMembers, tickets } from "@/db/schema";
+import { departments, holidays, jobBookings, jobs, jobTimeLogs, machineBlocks, machineServices, machines, services, settings, teamMembers, tickets } from "@/db/schema";
 import { dayPlus, istAt, istDate, patternFromSettings, type Span, type WorkPattern } from "@/lib/planning/hours";
+import { JOB_STATUS_UI, type JobStatusName } from "@/lib/planning/job-status";
 import { machineUse, weekStart } from "@/lib/planning/use";
 
 /** Working hours and holidays, as a pattern for the working-hours maths. */
@@ -166,7 +168,7 @@ export async function getMachine(id: string, weekOf?: string) {
   const week = weekWindow(weekOf && /^\d{4}-\d{2}-\d{2}$/.test(weekOf) ? weekOf : istDate(now));
   const month = monthWindow(istDate(now));
   const thisWeek = weekWindow(istDate(now));
-  const [plan, svcs, dept, wb, wbl, mb, mbl, twb, twbl, history, overdue] = await Promise.all([
+  const [plan, svcs, dept, wb, wbl, mb, mbl, twb, twbl, history, overdue, clashes] = await Promise.all([
     getPlanningSettings(),
     db.select({ id: services.id, name: services.name, deptCode: services.deptCode }).from(machineServices).innerJoin(services, eq(services.id, machineServices.serviceId)).where(eq(machineServices.machineId, id)).orderBy(asc(services.sortOrder)),
     db.select().from(departments).where(eq(departments.code, m.deptCode)),
@@ -187,8 +189,10 @@ export async function getMachine(id: string, weekOf?: string) {
       .orderBy(sql`min(${jobBookings.startAt}) desc`)
       .limit(50),
     overdueBreakdowns(now),
+    bookingsClashingWithBlocks(db, now),
   ]);
   return {
+    clashes: clashes.filter((c) => c.machineId === id),
     machine: m,
     department: dept[0] ?? null,
     services: svcs,
@@ -211,3 +215,202 @@ export async function getMachinePicks() {
     .where(eq(machines.isActive, true))
     .orderBy(asc(machines.deptCode), asc(machines.sortOrder), asc(machines.name));
 }
+
+// ---- jobs -------------------------------------------------------------------------------------------
+
+export { JOB_STATUS_UI as JOB_STATUS, type JobStatusName } from "@/lib/planning/job-status";
+
+export interface JobFilters {
+  q?: string;
+  status?: JobStatusName;
+  dept?: string;
+  machine?: string;
+  operator?: string;
+  promisedBy?: string;
+  late?: boolean;
+  notPlanned?: boolean;
+  overQuoted?: boolean;
+}
+
+export function jobFiltersFromParams(sp: Record<string, string | string[] | undefined>): JobFilters {
+  const one = (k: string) => (typeof sp[k] === "string" ? (sp[k] as string) : "");
+  const uuid = (v: string) => (/^[0-9a-f-]{36}$/i.test(v) ? v : undefined);
+  return {
+    q: one("q").slice(0, 100) || undefined,
+    status: (Object.keys(JOB_STATUS_UI) as JobStatusName[]).find((s) => s === one("status")),
+    dept: /^[A-Z]{2,6}$/.test(one("dept")) ? one("dept") : undefined,
+    machine: uuid(one("machine")),
+    operator: uuid(one("operator")),
+    promisedBy: /^\d{4}-\d{2}-\d{2}$/.test(one("promised")) ? one("promised") : undefined,
+    late: one("late") === "1",
+    notPlanned: one("notplanned") === "1",
+    overQuoted: one("over") === "1",
+  };
+}
+
+/** Actual hours = the running periods, pauses left out (a running period still open counts to now). */
+const ACTUAL_SQL = sql`(select coalesce(sum(extract(epoch from (coalesce(l.ended_at, now()) - l.started_at))), 0) / 3600 from job_time_logs l where l.job_id = j.id)`;
+
+/** The jobs list (and its Excel), newest first, with planned and actual hours. */
+export async function listJobs(f: JobFilters = {}, limit = 500) {
+  await connection();
+  const today = istDate(new Date());
+  const [set] = await db.select({ alert: settings.actualVsQuotedAlertPct }).from(settings).where(eq(settings.id, 1));
+  const alert = set?.alert ?? 10;
+  const where = [sql`true`];
+  if (f.q) {
+    const t = `%${f.q}%`;
+    where.push(sql`(t.ticket_no ilike ${t} or t.snapshot->>'companyName' ilike ${t} or t.snapshot->>'description' ilike ${t})`);
+  }
+  if (f.status) where.push(sql`j.status = ${f.status}`);
+  if (f.dept) where.push(sql`coalesce(t.snapshot->>'deptCode', '') = ${f.dept}`);
+  if (f.machine) where.push(sql`exists (select 1 from job_bookings b where b.job_id = j.id and b.cancelled_at is null and b.machine_id = ${f.machine})`);
+  if (f.operator) where.push(sql`j.operator_id = ${f.operator}`);
+  if (f.promisedBy) where.push(sql`j.promised_date <= ${f.promisedBy}`);
+  if (f.notPlanned) where.push(sql`j.status = 'TO_PLAN'`);
+  const rows = await db.execute<{
+    id: string; ticket_id: string; ticket_no: string; company: string; service: string; dept: string | null; status: JobStatusName; priority: "NORMAL" | "URGENT";
+    promised_date: string | null; hours_needed: string | null; planned: string | null; first_start: string | null; last_end: string | null; machines: string[] | null;
+    operator: string | null; operator_id: string | null; actual: string; per_hour: boolean; billable: string; done_at: string | null; stage: string;
+  }>(sql`
+    select j.id, t.id as ticket_id, t.ticket_no, t.snapshot->>'companyName' as company, t.snapshot->>'description' as service, t.snapshot->>'deptCode' as dept,
+      j.status, j.priority, j.promised_date::text, j.hours_needed, j.operator_id, tm.name as operator, j.done_at::text, t.stage,
+      (select sum(b.hours) from job_bookings b where b.job_id = j.id and b.cancelled_at is null) as planned,
+      (select min(b.start_at)::text from job_bookings b where b.job_id = j.id and b.cancelled_at is null) as first_start,
+      (select max(b.end_at)::text from job_bookings b where b.job_id = j.id and b.cancelled_at is null) as last_end,
+      (select array_agg(distinct m.name) from job_bookings b join machines m on m.id = b.machine_id where b.job_id = j.id and b.cancelled_at is null) as machines,
+      ${ACTUAL_SQL} as actual,
+      (qi.unit_type in ('PER_HOUR', 'PER_HOUR_3_SAMPLES') and not qi.is_custom_item) as per_hour, qi.billable_qty as billable
+    from jobs j
+    join tickets t on t.id = j.ticket_id
+    join quotation_items qi on qi.id = t.quotation_item_id
+    left join team_members tm on tm.id = j.operator_id
+    where ${and(...where)}
+    order by case j.status when 'RUNNING' then 0 when 'TO_PLAN' then 1 when 'PLANNED' then 2 when 'ON_HOLD' then 3 else 4 end, j.priority desc, coalesce(j.promised_date, '9999-12-31'), t.ticket_no desc
+    limit ${limit}`);
+  const list = rows.rows.map((r) => {
+    const open = !["DONE", "HANDED_OVER", "CANCELLED"].includes(r.status);
+    const lastEnd = r.last_end ? new Date(r.last_end) : null;
+    const late = !!r.promised_date && (open ? today > r.promised_date || (!!lastEnd && istDate(lastEnd) > r.promised_date) : !!r.done_at && istDate(new Date(r.done_at)) > r.promised_date);
+    const actual = Number(r.actual);
+    const quoted = r.per_hour ? Number(r.billable) : null;
+    const overPct = quoted && actual > 0 ? ((actual - quoted) / quoted) * 100 : null;
+    return {
+      id: r.id,
+      ticketId: r.ticket_id,
+      ticketNo: r.ticket_no,
+      company: r.company,
+      service: r.service,
+      deptCode: r.dept,
+      status: r.status,
+      ticketStage: r.stage,
+      priority: r.priority,
+      promisedDate: r.promised_date,
+      hoursNeeded: r.hours_needed == null ? null : Number(r.hours_needed),
+      plannedHours: Number(r.planned ?? 0),
+      actualHours: actual,
+      quotedHours: quoted,
+      overPct,
+      overQuoted: overPct != null && overPct > alert,
+      plannedStart: r.first_start ? new Date(r.first_start) : null,
+      plannedEnd: lastEnd,
+      machines: r.machines ?? [],
+      operator: r.operator,
+      operatorId: r.operator_id,
+      late,
+    };
+  });
+  return list.filter((j) => (!f.late || j.late) && (!f.overQuoted || j.overQuoted));
+}
+export type JobRow = Awaited<ReturnType<typeof listJobs>>[number];
+
+/** Machines for booking: the ones linked to the job's service first; all machines grouped by department. */
+export async function getBookingOptions() {
+  await connection();
+  const [ms, links, depts, team, plan] = await Promise.all([
+    db
+      .select({ id: machines.id, name: machines.name, code: machines.code, deptCode: machines.deptCode, status: machines.status, runsNonstop: machines.runsNonstop, parallelJobs: machines.parallelJobs })
+      .from(machines)
+      .where(eq(machines.isActive, true))
+      .orderBy(asc(machines.sortOrder), asc(machines.name)),
+    db.select().from(machineServices),
+    db.select({ code: departments.code, name: departments.name }).from(departments).orderBy(asc(departments.sortOrder)),
+    db.select({ id: teamMembers.id, name: teamMembers.name }).from(teamMembers).where(eq(teamMembers.isActive, true)).orderBy(asc(teamMembers.sortOrder), asc(teamMembers.name)),
+    getPlanningSettings(),
+  ]);
+  const s = plan.settings;
+  return {
+    machines: ms.map((m) => ({ ...m, serviceIds: links.filter((l) => l.machineId === m.id).map((l) => l.serviceId) })),
+    departments: depts,
+    team,
+    /** The working-hours settings, so the form can work out the end live. */
+    hours: { workingDays: s.workingDays, shiftStart: s.shiftStart, shiftEnd: s.shiftEnd, breakStart: s.breakStart, breakEnd: s.breakEnd, holidays: plan.holidays.map((h) => h.date) },
+    holdDays: s.tentativeHoldDays,
+  };
+}
+export type BookingOptions = Awaited<ReturnType<typeof getBookingOptions>>;
+
+/** Everything the job panel shows. */
+export async function getJobDetail(id: string) {
+  await connection();
+  if (!/^[0-9a-f-]{36}$/i.test(id)) return null;
+  const [row] = await db
+    .select({ job: jobs, ticket: tickets, operator: teamMembers.name })
+    .from(jobs)
+    .innerJoin(tickets, eq(tickets.id, jobs.ticketId))
+    .leftJoin(teamMembers, eq(teamMembers.id, jobs.operatorId))
+    .where(eq(jobs.id, id));
+  if (!row) return null;
+  const [item] = await db.execute<{ service_id: number | null; unit_type: string | null; custom: boolean; customer_id: string }>(sql`
+    select qi.service_id, qi.unit_type, qi.is_custom_item as custom, t.customer_id from tickets t join quotation_items qi on qi.id = t.quotation_item_id where t.id = ${row.ticket.id}`).then((r) => r.rows);
+  const [bookings, logs, events, fileRows, actual] = await Promise.all([
+    db
+      .select({ b: jobBookings, machine: machines.name, machineCode: machines.code, operator: teamMembers.name })
+      .from(jobBookings)
+      .innerJoin(machines, eq(machines.id, jobBookings.machineId))
+      .leftJoin(teamMembers, eq(teamMembers.id, jobBookings.operatorId))
+      .where(and(eq(jobBookings.jobId, id), isNull(jobBookings.cancelledAt)))
+      .orderBy(asc(jobBookings.startAt)),
+    db
+      .select({ l: jobTimeLogs, operator: teamMembers.name, machine: machines.name })
+      .from(jobTimeLogs)
+      .leftJoin(teamMembers, eq(teamMembers.id, jobTimeLogs.operatorId))
+      .leftJoin(machines, eq(machines.id, jobTimeLogs.machineId))
+      .where(eq(jobTimeLogs.jobId, id))
+      .orderBy(asc(jobTimeLogs.startedAt)),
+    db.execute<{ id: number; type: string; message: string; created_by: string | null; created_at: string }>(sql`select id, type, message, created_by, created_at::text from job_events where job_id = ${id} order by created_at desc, id desc`).then((r) => r.rows),
+    db.execute<{ id: string; file_name: string; size: number }>(sql`select f.id, f.file_name, f.size from job_files jf join files f on f.id = jf.file_id where jf.job_id = ${id} order by f.uploaded_at`).then((r) => r.rows),
+    db.execute<{ h: string }>(sql`select ${ACTUAL_SQL} as h from jobs j where j.id = ${id}`).then((r) => Number(r.rows[0]?.h ?? 0)),
+  ]);
+  const perHour = !item?.custom && (item?.unit_type === "PER_HOUR" || item?.unit_type === "PER_HOUR_3_SAMPLES");
+  const planned = bookings.reduce((a, b) => a + Number(b.b.hours), 0);
+  return {
+    job: row.job,
+    operatorName: row.operator,
+    ticket: {
+      id: row.ticket.id,
+      ticketNo: row.ticket.ticketNo,
+      stage: row.ticket.stage,
+      quotationId: row.ticket.quotationId,
+      customerId: row.ticket.customerId,
+      company: row.ticket.snapshot.companyName,
+      service: row.ticket.snapshot.description,
+      deptCode: row.ticket.snapshot.deptCode,
+      quantityText: row.ticket.snapshot.quantityText,
+      quoteNo: row.ticket.snapshot.quoteNo,
+      notes: row.ticket.snapshot.notes,
+      taxablePaise: Math.round(Number(row.ticket.taxableValue) * 100),
+    },
+    serviceId: item?.service_id ?? null,
+    isCustomItem: !!item?.custom,
+    perHour,
+    quotedHours: perHour ? Number(row.ticket.snapshot.billableQty) : null,
+    bookings: bookings.map((x) => ({ ...x.b, machine: x.machine, machineCode: x.machineCode, operator: x.operator })),
+    plannedHours: planned,
+    timeLogs: logs.map((x) => ({ ...x.l, operator: x.operator, machine: x.machine })),
+    actualHours: actual,
+    events: events.map((e) => ({ ...e, createdAt: new Date(e.created_at) })),
+    files: fileRows,
+  };
+}
+export type JobDetail = NonNullable<Awaited<ReturnType<typeof getJobDetail>>>;

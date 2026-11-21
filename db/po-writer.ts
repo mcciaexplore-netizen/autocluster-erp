@@ -7,6 +7,7 @@
  * - PO numbers are unique per customer. Re-using one means linking the existing PO.
  * - Saving moves every selected ticket to Billing in one transaction, with a PO_ADDED event each.
  */
+import { firmUpBookingsForTickets } from "./job-writer";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { formatDate } from "../lib/format";
 import { formatINR, paiseToRupeeString, toPaise } from "../lib/pricing";
@@ -128,6 +129,8 @@ export async function addPurchaseOrder(db: DB, input: AddPoInput, today: string)
       `${linked ? "Linked to" : "PO added:"} PO ${po.number} dated ${formatDate(po.date)}, ${formatINR(po.amountPaise)}${others}. Moved to Billing.`,
       { poId: po.id, linked },
     );
+    // Planning: tentative bookings for these tickets become firm.
+    await firmUpBookingsForTickets(tx, ids, po.number);
     return { poId: po.id, poNumber: po.number, moved: rows.map((r) => r.ticket_no) };
   });
 }

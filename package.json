@@ -16,7 +16,8 @@
     "db:backup": "tsx scripts/db-backup.ts",
     "tickets:backfill": "tsx scripts/tickets-backfill.ts",
     "crm:seed": "tsx scripts/crm-seed.ts",
-    "inv:verify": "tsx scripts/inv-verify.ts"
+    "inv:verify": "tsx scripts/inv-verify.ts",
+    "jobs:backfill": "tsx scripts/jobs-backfill.ts"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

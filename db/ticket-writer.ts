@@ -14,6 +14,7 @@ import { and, eq, inArray, ne, sql } from "drizzle-orm";
 import { financialYear, formatQuoteNo, paiseToRupeeString, quantityInWords, toPaise } from "../lib/pricing";
 import { splitQuotation } from "../lib/tickets";
 import type { DB, Tx } from "./client";
+import { cancelJobsForTickets, ensureJobsForTickets } from "./job-writer";
 import { UserFacingError } from "./quote-writer";
 import { markLeadWonForQuotation, noteQuotationRejected } from "./lead-links";
 import { quotationItems, quotations, settings, ticketCounters, ticketEvents, tickets, type TicketSnapshot } from "./schema";
@@ -67,7 +68,10 @@ export async function openTicketsForQuotation(tx: Conn, quotationId: string, tod
   }
 
   const missing = items.filter((it) => !byItem.has(it.id));
-  if (!missing.length) return { opened: [] as { id: string; ticketNo: string }[], reopened: toReopen.length };
+  if (!missing.length) {
+    await ensureJobsForTickets(tx, toReopen.map((t) => t.id));
+    return { opened: [] as { id: string; ticketNo: string }[], reopened: toReopen.length };
+  }
 
   const n = (v: string | null) => (v == null ? null : Number(v));
   const values = splitQuotation(
@@ -136,6 +140,8 @@ export async function openTicketsForQuotation(tx: Conn, quotationId: string, tod
       await addEvents(tx, [row.id], "OPENED", `Ticket opened: quotation ${q.quoteNo} accepted`, { quoteNo: q.quoteNo });
     }
   }
+  // One job per ticket (Planning), in "To plan".
+  await ensureJobsForTickets(tx, [...toReopen.map((t) => t.id), ...opened.map((o) => o.id)]);
   return { opened, reopened: toReopen.length };
 }
 
@@ -195,6 +201,7 @@ export async function changeQuotationStatus(db: DB, quotationId: string, to: "DR
         .set({ stage: "CANCELLED", autoCancelled: true, cancelReason: AUTO_CANCEL_REASON, stageChangedAt: new Date() })
         .where(inArray(tickets.id, ids));
       await addEvents(tx, ids, "CANCELLED", `Cancelled: ${AUTO_CANCEL_REASON.toLowerCase()}`);
+      await cancelJobsForTickets(tx, ids, AUTO_CANCEL_REASON.toLowerCase());
       if (to === "REJECTED") await noteQuotationRejected(tx, quotationId);
       return { opened: 0, reopened: 0, cancelled: ids.length, leadWon: null };
     }
@@ -219,6 +226,7 @@ export async function cancelTicket(db: DB, ticketId: string, reason: string) {
     }
     await tx.update(tickets).set({ stage: "CANCELLED", cancelReason: reason, autoCancelled: false, stageChangedAt: new Date() }).where(eq(tickets.id, ticketId));
     await addEvents(tx, [ticketId], "CANCELLED", `Cancelled: ${reason}`, { from: t.stage });
+    await cancelJobsForTickets(tx, [ticketId], `ticket cancelled (${reason})`);
   });
 }
 

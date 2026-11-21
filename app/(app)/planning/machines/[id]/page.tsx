@@ -7,6 +7,7 @@ import { FormSkeleton } from "@/components/common/form-skeleton";
 import { BlockTimeButton, BreakdownButton, DeleteBlockButton, FixedButton } from "@/components/planning/block-time";
 import { MachineChips, MachineStatusChip, pctText } from "@/components/planning/machine-bits";
 import { StillBrokenDown } from "@/components/planning/still-broken";
+import { ClashActions } from "@/components/planning/clash-actions";
 import { Button } from "@/components/ui/button";
 import { UUID_RE } from "@/lib/inventory/uuid";
 import { getMachine, type MachineDetail } from "@/lib/planning-data";
@@ -86,6 +87,28 @@ async function Detail({ params, searchParams }: { params: Promise<{ id: string }
           </div>
         ))}
       </section>
+
+      {d.clashes.length ? (
+        <section className="rounded-2xl border border-amber-300 bg-amber-50 p-4 text-amber-950 sm:p-5" aria-labelledby="clash-h">
+          <h2 id="clash-h" className="mb-1 text-lg font-semibold">
+            {d.clashes.length} {d.clashes.length === 1 ? "booking clashes" : "bookings clash"} with time it&apos;s not available
+          </h2>
+          <p className="mb-3 text-sm">Move each one to the next free time on this machine, or to another machine.</p>
+          <ul className="flex flex-col gap-3">
+            {d.clashes.map((c) => (
+              <li key={c.bookingId} className="flex flex-col gap-2 rounded-xl border border-amber-200 bg-white/70 p-3 text-sm sm:flex-row sm:items-center sm:justify-between">
+                <span>
+                  <span className="font-semibold tabular-nums">{c.ticketNo}</span> {c.company}
+                  <span className="block text-xs">
+                    {formatWhen(c.startAt)} to {formatWhen(c.endAt)} · clashes with {BLOCK_TYPES[c.blockType].toLowerCase()}
+                  </span>
+                </span>
+                <ClashActions bookingId={c.bookingId} jobId={c.jobId} />
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
 
       <Week d={d} />
 
