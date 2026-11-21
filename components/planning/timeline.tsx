@@ -418,8 +418,8 @@ function Bar({ b, x, width, top, nonstop, onOpen, pph }: { b: Booking; x: (iso: 
       tabIndex={0}
       onClick={onOpen}
       onKeyDown={(e) => e.key === "Enter" && onOpen()}
-      title={`${b.ticketNo} · ${b.company} · ${b.service}\n${formatWhen(new Date(b.start))} to ${formatWhen(new Date(b.end))} (${formatHours(b.hours)})${b.operator ? `\n${b.operator}` : ""}${b.tentative ? `\nTentative: waiting for PO (held until ${b.holdUntil?.split("-").reverse().join("/")})` : ""}${b.late ? "\nLate: past the promised date" : ""}`}
-      className={cn("absolute z-[5] flex items-center overflow-hidden rounded-md border text-[11px] leading-tight shadow-sm select-none", colour, b.late && "ring-2 ring-red-600", !started && !done && "cursor-grab", isDragging && "z-30 opacity-80 shadow-lg")}
+      title={`${b.ticketNo} · ${b.company} · ${b.service}\n${formatWhen(new Date(b.start))} to ${formatWhen(new Date(b.end))} (${formatHours(b.hours)})${b.operator ? `\n${b.operator}` : ""}${b.tentative ? `\nTentative: waiting for PO (held until ${b.holdUntil?.split("-").reverse().join("/")})` : ""}${b.late ? "\nLate: past the promised date" : ""}${b.overrun ? "\nStill running? Past its booked end" : ""}`}
+      className={cn("absolute z-[5] flex items-center overflow-hidden rounded-md border text-[11px] leading-tight shadow-sm select-none", colour, b.late && "ring-2 ring-red-600", b.overrun && "animate-pulse ring-2 ring-red-600", !started && !done && "cursor-grab", isDragging && "z-30 opacity-80 shadow-lg")}
       style={{ left, width: w, top, height: LANE - 4, transform: CSS.Translate.toString(transform) }}
     >
       <span className="truncate px-1.5">

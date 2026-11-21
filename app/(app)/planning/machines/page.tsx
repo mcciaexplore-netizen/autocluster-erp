@@ -74,6 +74,10 @@ async function List() {
                           <span className="text-sm">
                             {m.blockedNow ? (
                               <span className="font-medium text-slate-700">Now: not available ({BLOCK_TYPES[m.blockedNow.type].toLowerCase()})</span>
+                            ) : m.running.length ? (
+                              <span className="font-medium text-emerald-800">
+                                Now: Job {m.running[0].ticketNo} for {m.running[0].company} (running)
+                              </span>
                             ) : m.now.length ? (
                               <span className="font-medium text-emerald-800">
                                 Now: Job {m.now[0].ticketNo} for {m.now[0].company}

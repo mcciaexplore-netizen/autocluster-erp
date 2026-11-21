@@ -8,10 +8,12 @@ import { connection } from "next/server";
 import { db } from "@/db";
 import { bookingsClashingWithBlocks } from "@/db/booking-writer";
 import { nextMachineCode } from "@/db/machine-writer";
+import { runningLogs } from "@/db/work-writer";
 import { departments, holidays, jobBookings, jobs, jobTimeLogs, machineBlocks, machineServices, machines, services, settings, teamMembers, tickets } from "@/db/schema";
 import { dayPlus, istAt, istDate, patternFromSettings, type Span, type WorkPattern } from "@/lib/planning/hours";
 import { JOB_STATUS_UI, type JobStatusName } from "@/lib/planning/job-status";
 import { machineUse, weekStart } from "@/lib/planning/use";
+import { isOverrun, quotedVsActual } from "@/lib/planning/work";
 
 /** Working hours and holidays, as a pattern for the working-hours maths. */
 export async function getPlanningSettings() {
@@ -132,7 +134,7 @@ export async function listMachines() {
   await connection();
   const now = new Date();
   const week = weekWindow(istDate(now));
-  const [plan, rows, links, depts, weekBookings, weekBlocks, upcoming, blockedNow, overdue] = await Promise.all([
+  const [plan, rows, links, depts, weekBookings, weekBlocks, upcoming, blockedNow, overdue, running] = await Promise.all([
     getPlanningSettings(),
     db.select().from(machines).orderBy(asc(machines.sortOrder), asc(machines.name)),
     db.select({ machineId: machineServices.machineId, serviceId: services.id, name: services.name }).from(machineServices).innerJoin(services, eq(services.id, machineServices.serviceId)),
@@ -142,6 +144,7 @@ export async function listMachines() {
     bookingsBetween(now, new Date(now.getTime() + 120 * 86_400_000)),
     blocksBetween(now, new Date(now.getTime() + 1)),
     overdueBreakdowns(now),
+    runningLogs(db),
   ]);
   const list = rows.map((m) => {
     const mine = upcoming.filter((b) => b.machineId === m.id);
@@ -149,6 +152,7 @@ export async function listMachines() {
       ...m,
       services: links.filter((l) => l.machineId === m.id).map((l) => ({ id: l.serviceId, name: l.name })),
       now: mine.filter((b) => b.startAt <= now && b.endAt > now),
+      running: running.filter((r) => r.machine_id === m.id).map((r) => ({ ticketNo: r.ticket_no, company: r.company })),
       next: mine.find((b) => b.startAt > now) ?? null,
       blockedNow: blockedNow.find((b) => b.machineId === m.id) ?? null,
       overdueBreakdown: overdue.get(m.id) ?? null,
@@ -462,7 +466,8 @@ export async function getTimeline(f: TimelineFilters) {
   const start = istAt(f.date, 0);
   const end = istAt(dayPlus(f.date, VIEW_DAYS[f.view]), 0);
   const today = istDate(new Date());
-  const [ms, bookingRows, blocks, toPlan, options, customers] = await Promise.all([
+  const [[warnSet], ms, bookingRows, blocks, toPlan, options, customers] = await Promise.all([
+    db.select({ pct: settings.overrunWarningPct }).from(settings).where(eq(settings.id, 1)),
     db.select().from(machines).where(eq(machines.isActive, true)).orderBy(asc(machines.sortOrder), asc(machines.name)),
     db.execute<{
       id: string; job_id: string; machine_id: string; start_at: string; end_at: string; hours: string; is_tentative: boolean; hold_until: string | null; note: string | null;
@@ -511,6 +516,7 @@ export async function getTimeline(f: TimelineFilters) {
         customerId: b.customer_id,
         urgent: b.priority === "URGENT",
         late: !!b.promised_date && open && (today > b.promised_date || istDate(endAt) > b.promised_date),
+        overrun: b.status === "RUNNING" && new Date(b.start_at) <= new Date() && isOverrun({ start: new Date(b.start_at), end: endAt }, new Date(), warnSet?.pct ?? 50),
       };
     })
     .filter((b) => (!f.operator || b.operatorId === f.operator) && (!f.customer || b.customerId === f.customer) && (!f.late || b.late) && (!f.tentative || b.tentative));
@@ -612,3 +618,93 @@ export async function getNeedsAttention() {
   };
 }
 export type NeedsAttention = Awaited<ReturnType<typeof getNeedsAttention>>;
+
+// ---- today (operators) ----------------------------------------------------------------------------------
+
+/**
+ * Today's cards for everyone (the screen filters by "Who's working?"): bookings today, running
+ * and on-hold jobs, and jobs done in the last 7 days that aren't handed over yet.
+ */
+export async function getToday() {
+  await connection();
+  const now = new Date();
+  const today = istDate(now);
+  const dayStart = istAt(today, 0);
+  const dayEnd = istAt(dayPlus(today, 1), 0);
+  const [[set], team, rows] = await Promise.all([
+    db.select().from(settings).where(eq(settings.id, 1)),
+    db.select({ id: teamMembers.id, name: teamMembers.name }).from(teamMembers).where(eq(teamMembers.isActive, true)).orderBy(asc(teamMembers.sortOrder), asc(teamMembers.name)),
+    db.execute<{
+      job_id: string; status: JobStatusName; ticket_id: string; ticket_no: string; company: string; service: string; instructions: string | null; hold_reason: string | null;
+      job_operator: string | null; booking_id: string | null; booking_operator: string | null; machine: string | null; start_at: string | null; end_at: string | null;
+      log_operator: string | null; log_started: string | null; first_started: string | null; actual: string; done_at: string | null; done_note: string | null;
+      contact: string | null; phone: string | null; per_hour: boolean; billable: string; has_list: boolean; recorded: boolean;
+    }>(sql`
+      with day_bookings as (
+        select b.* from job_bookings b where b.cancelled_at is null and b.start_at < ${dayEnd} and b.end_at > ${dayStart}
+      ), picked as (
+        select j.id from jobs j where j.status in ('RUNNING', 'ON_HOLD')
+        union select db.job_id from day_bookings db
+        union select j.id from jobs j where j.status = 'DONE' and j.done_at > ${new Date(now.getTime() - 7 * 86_400_000)}
+      )
+      select j.id as job_id, j.status, t.id as ticket_id, t.ticket_no, t.snapshot->>'companyName' as company, t.snapshot->>'description' as service,
+        j.instructions, j.hold_reason, j.operator_id as job_operator,
+        b.id as booking_id, b.operator_id as booking_operator, m.name as machine, b.start_at::text, b.end_at::text,
+        l.operator_id as log_operator, l.started_at::text as log_started,
+        (select min(x.started_at)::text from job_time_logs x where x.job_id = j.id) as first_started,
+        ${ACTUAL_SQL} as actual, j.done_at::text, j.done_note,
+        c.poc_name as contact, c.poc_phone as phone,
+        (qi.unit_type in ('PER_HOUR', 'PER_HOUR_3_SAMPLES') and not qi.is_custom_item) as per_hour, qi.billable_qty as billable,
+        exists (select 1 from inv_service_materials sm where sm.service_id = qi.service_id) as has_list,
+        exists (select 1 from inv_documents d where d.ticket_id = t.id and d.type = 'OUT' and d.reverses_doc_id is null and d.reversed_by_doc_id is null) as recorded
+      from picked p
+      join jobs j on j.id = p.id
+      join tickets t on t.id = j.ticket_id
+      join quotation_items qi on qi.id = t.quotation_item_id
+      join customers c on c.id = t.customer_id
+      left join job_time_logs l on l.job_id = j.id and l.ended_at is null
+      left join lateral (
+        select * from job_bookings b2 where b2.job_id = j.id and b2.cancelled_at is null
+        order by (b2.start_at < ${dayEnd} and b2.end_at > ${dayStart}) desc, abs(extract(epoch from (b2.start_at - ${now}))) limit 1
+      ) b on true
+      left join machines m on m.id = b.machine_id
+      where j.status <> 'CANCELLED'
+      order by coalesce(b.start_at, now())`),
+  ]);
+  const warn = set?.overrunWarningPct ?? 50;
+  const alert = set?.actualVsQuotedAlertPct ?? 10;
+  const cards = rows.rows.map((r) => {
+    const booked = r.start_at && r.end_at ? { start: new Date(r.start_at), end: new Date(r.end_at) } : null;
+    const actual = Number(r.actual);
+    const quoted = r.per_hour ? Number(r.billable) : null;
+    return {
+      jobId: r.job_id,
+      status: r.status,
+      ticketId: r.ticket_id,
+      ticketNo: r.ticket_no,
+      company: r.company,
+      service: r.service,
+      instructions: r.instructions,
+      holdReason: r.hold_reason,
+      machine: r.machine,
+      start: r.start_at,
+      end: r.end_at,
+      /** Who it's for: the booking's operator, the job's operator, or whoever is running it. */
+      operatorIds: [...new Set([r.booking_operator, r.job_operator, r.log_operator].filter((x): x is string => !!x))],
+      runningSince: r.log_started,
+      firstStarted: r.first_started,
+      overrun: r.status === "RUNNING" && isOverrun(booked, now, warn),
+      actualHours: actual,
+      quotedHours: quoted,
+      vsQuoted: quotedVsActual(quoted, actual, alert),
+      doneAt: r.done_at,
+      doneNote: r.done_note,
+      contact: r.contact,
+      phone: r.phone,
+      materialsMissing: r.has_list && !r.recorded,
+    };
+  });
+  return { today, team, cards, readyTemplate: set?.readyWhatsappTemplate ?? "", orgName: set?.orgName ?? "", warnPct: warn };
+}
+export type TodayData = Awaited<ReturnType<typeof getToday>>;
+export type TodayCard = TodayData["cards"][number];
