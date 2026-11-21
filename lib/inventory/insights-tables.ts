@@ -9,6 +9,8 @@ export interface InsightTable {
   title: string;
   columns: Col[];
   rows: (string | number | null)[][];
+  /** Further tables below the first one, on the same sheet. */
+  more?: InsightTable[];
 }
 
 const rs = (paise: number) => paise / 100;

@@ -179,9 +179,9 @@ export async function earliestSlotForServiceAction(serviceId: number, billableQt
     if (!svc) return null;
     const ms = await db.select({ id: machineServices.machineId }).from(machineServices).where(eq(machineServices.serviceId, sid));
     if (!ms.length) return { none: true as const };
-    const hours = suggestHours({ unitType: svc.unitType, billableQty: qty, setupMinutes: svc.setupMinutes, minutesPerUnit: svc.minutesPerUnit }) ?? 1;
-    const [slot] = await findFreeSlots(db, ms.map((m) => m.id), Math.min(hours, 2000), { limit: 1 });
-    return slot ? { none: false as const, start: slot.start.toISOString(), machine: slot.machine } : null;
+    const suggested = suggestHours({ unitType: svc.unitType, billableQty: qty, setupMinutes: svc.setupMinutes, minutesPerUnit: svc.minutesPerUnit });
+    const [slot] = await findFreeSlots(db, ms.map((m) => m.id), Math.min(suggested ?? 1, 2000), { limit: 1 });
+    return slot ? { none: false as const, start: slot.start.toISOString(), machine: slot.machine, assumed: suggested == null } : null;
   } catch {
     return null;
   }

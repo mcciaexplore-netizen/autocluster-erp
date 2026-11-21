@@ -10,6 +10,20 @@ import { cn } from "@/lib/utils";
 
 const ALL = "all";
 
+const monthStart = (today: string, n: number) => new Date(Date.UTC(Number(today.slice(0, 4)), Number(today.slice(5, 7)) - 1 + n, 1)).toISOString().slice(0, 10);
+
+/** Planning looks at this month by default, and ahead as well as back. */
+function planningPresets(today: string) {
+  const fy = financialYear(new Date(`${today}T00:00:00`));
+  return [
+    { key: "month", label: "This month", from: monthStart(today, 0), to: addDays(monthStart(today, 1), -1) },
+    { key: "last", label: "Last month", from: monthStart(today, -1), to: addDays(monthStart(today, 0), -1) },
+    { key: "next2w", label: "Next 2 weeks", from: today, to: addDays(today, 13) },
+    { key: "3m", label: "Last 3 months", from: monthStart(today, -2), to: today },
+    { key: "fy", label: "This financial year", from: `${fy.slice(0, 4)}-04-01`, to: today },
+  ];
+}
+
 function presets(today: string) {
   const fy = financialYear(new Date(`${today}T00:00:00`));
   const start = Number(fy.slice(0, 4));
@@ -22,11 +36,23 @@ function presets(today: string) {
 }
 
 /** Date range and department, kept in the address so the view can be shared and refreshed. */
-export function InsightsFilters({ from, to, dept, departments }: { from: string; to: string; dept: string | null; departments: { code: string; name: string }[] }) {
+export function InsightsFilters({
+  from,
+  to,
+  dept,
+  departments,
+  periods = "inventory",
+}: {
+  from: string;
+  to: string;
+  dept: string | null;
+  departments: { code: string; name: string }[];
+  periods?: "inventory" | "planning";
+}) {
   const router = useRouter();
   const pathname = usePathname();
   const [pending, start] = useTransition();
-  const list = presets(todayInIndia());
+  const list = periods === "planning" ? planningPresets(todayInIndia()) : presets(todayInIndia());
   const current = list.find((p) => p.from === from && p.to === to)?.key ?? "custom";
   const go = (next: { from?: string; to?: string; dept?: string | null }) => {
     const p = new URLSearchParams({ from: next.from ?? from, to: next.to ?? to });

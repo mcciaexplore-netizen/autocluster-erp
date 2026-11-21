@@ -1,7 +1,7 @@
 "use client";
 
 import { Check, Info, Pencil, X } from "lucide-react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useMemo, useState, useTransition } from "react";
 import { toast } from "sonner";
 import { setServiceActive, updateRates } from "@/lib/actions/rate-card";
@@ -51,6 +51,7 @@ export function RateCardEditor({
   const noMaterials = (id: number) => !(materials[id]?.length);
   const noMaterialsCount = services.filter((s) => s.isActive && noMaterials(s.id)).length;
   const [onlyNoTime, setOnlyNoTime] = useState(false);
+  const openTimeFor = Number(useSearchParams().get("time")) || null;
   const noTimeCount = services.filter((s) => s.isActive && noTimeSet(s)).length;
   const [pending, startTransition] = useTransition();
 
@@ -185,7 +186,7 @@ export function RateCardEditor({
                         </span>
                         <span className="flex flex-wrap items-center gap-x-2">
                           {noTimeSet(s) ? <span className="rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-900">No time set</span> : null}
-                          <TimeButton service={s} />
+                          <TimeButton service={s} defaultOpen={openTimeFor === s.id} />
                         </span>
                       </span>
                       <span className="col-span-2 text-sm text-muted-foreground md:col-span-1">{UNIT_LABELS[s.unitType]}</span>

@@ -14,9 +14,9 @@ import { isPerHour, suggestHours, timeSettingText, type UnitTypeName } from "@/l
 type Svc = { id: number; name: string; unitType: UnitTypeName; unitLabel: string; setupMinutes: number | null; minutesPerUnit: string | null };
 
 /** Rate Card: "Time needed" for a service, used only to suggest a job's hours. */
-export function TimeButton({ service }: { service: Svc }) {
+export function TimeButton({ service, defaultOpen = false }: { service: Svc; defaultOpen?: boolean }) {
   const router = useRouter();
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(defaultOpen);
   const [setup, setSetup] = useState(service.setupMinutes?.toString() ?? "");
   const [per, setPer] = useState(service.minutesPerUnit != null ? String(Number(service.minutesPerUnit)) : "");
   const [pending, start] = useTransition();

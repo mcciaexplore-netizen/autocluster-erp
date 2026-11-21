@@ -309,19 +309,30 @@ export async function insightTableWorkbook(t: InsightTable, note: string): Promi
   ws.addRow([t.title]).font = { bold: true, size: 13 };
   ws.addRow([note]).font = { color: { argb: "FF6B7280" } };
   ws.addRow([]);
-  const head = ws.addRow(t.columns.map((c) => c.header));
-  head.font = { bold: true, color: { argb: "FFFFFFFF" } };
-  head.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF0B1F3A" } };
-  head.alignment = { vertical: "middle", wrapText: true };
-  head.height = 32;
-  t.columns.forEach((c, i) => (ws.getColumn(i + 1).width = c.width));
-  for (const r of t.rows) {
-    const row = ws.addRow(r.map((v, i) => (t.columns[i]?.fmt === "date" && typeof v === "string" ? asDate(v) : v)));
-    t.columns.forEach((c, i) => {
-      if (c.fmt && typeof r[i] !== "string") row.getCell(i + 1).numFmt = FMT[c.fmt];
-      if (c.fmt === "date" && r[i]) row.getCell(i + 1).numFmt = FMT.date;
-    });
+  const isDate = (v: unknown) => typeof v === "string" && /^\d{4}-\d{2}-\d{2}/.test(v);
+  const widths: number[] = [];
+  const write = (tb: InsightTable) => {
+    const head = ws.addRow(tb.columns.map((c) => c.header));
+    head.font = { bold: true, color: { argb: "FFFFFFFF" } };
+    head.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF0B1F3A" } };
+    head.alignment = { vertical: "middle", wrapText: true };
+    head.height = 32;
+    tb.columns.forEach((c, i) => (widths[i] = Math.max(widths[i] ?? 0, c.width)));
+    for (const r of tb.rows) {
+      const row = ws.addRow(r.map((v, i) => (tb.columns[i]?.fmt === "date" && isDate(v) ? asDate(v as string) : v)));
+      tb.columns.forEach((c, i) => {
+        if (c.fmt && typeof r[i] !== "string") row.getCell(i + 1).numFmt = FMT[c.fmt];
+        if (c.fmt === "date" && isDate(r[i])) row.getCell(i + 1).numFmt = FMT.date;
+      });
+    }
+  };
+  write(t);
+  for (const more of t.more ?? []) {
+    ws.addRow([]);
+    ws.addRow([more.title]).font = { bold: true, size: 12 };
+    write(more);
   }
+  widths.forEach((w, i) => (ws.getColumn(i + 1).width = w));
   ws.views = [{ state: "frozen", ySplit: 4 }];
   return new Uint8Array(await wb.xlsx.writeBuffer());
 }

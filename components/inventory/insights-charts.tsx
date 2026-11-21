@@ -18,7 +18,7 @@ const shortRupees = (paise: number) => {
  * Fixed colour per series (validated categorical palette: CVD-safe neighbours). The colour
  * follows the department, never its position, so filtering never repaints a series.
  */
-export const SERIES_COLOURS: Record<string, string> = { RPT: "#2a78d6", PPF: "#eb6834", ENV: "#1baf7a", RPL: "#eda100", OTHER: "#e87ba4", INTERNAL: "#6250d6" };
+export const SERIES_COLOURS: Record<string, string> = { RPT: "#2a78d6", PPF: "#eb6834", ENV: "#1baf7a", RPL: "#eda100", MET: "#008300", OTHER: "#e87ba4", INTERNAL: "#6250d6" };
 const colour = (key: string) => SERIES_COLOURS[key] ?? "#6B7280";
 
 function TipBox({ title, lines, total }: { title: string; lines: { label: string; value: string; colour?: string }[]; total?: string }) {
