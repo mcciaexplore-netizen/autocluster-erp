@@ -98,6 +98,9 @@ const TIME_NEEDED: Record<string, [number, number]> = {
   DSC: [15, 45],
 };
 
+/** Chamber tests that use no stock: Rate Card "No materials needed". */
+const NO_MATERIALS = new Set(["Thermal shock chamber", "Water spray chamber", "High-low chamber", "Ozone chamber", "Hot air oven"]);
+
 // Fictional companies. GST / PAN / TAN numbers are valid in format only.
 const CUSTOMERS = [
   {
@@ -216,6 +219,7 @@ export async function loadDemoData(db: DB | Tx, opts: { quiet?: boolean; orders?
         sortOrder: i + 1,
         setupMinutes: TIME_NEEDED[name]?.[0] ?? null,
         minutesPerUnit: TIME_NEEDED[name] ? String(TIME_NEEDED[name][1]) : null,
+        noMaterialsNeeded: NO_MATERIALS.has(name),
       })),
     )
     .returning();

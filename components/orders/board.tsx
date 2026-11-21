@@ -58,6 +58,7 @@ export function OrdersBoard({ tickets, customers, uploadEnv, departments }: { ti
   const { params, set } = useFilters();
   const today = todayInIndia();
   const [q, setQ] = useState(params.get("q") ?? "");
+  const [paidMore, setPaidMore] = useState(false);
   const [pending, startTransition] = useTransition();
   useAutoRefresh("orders");
 
@@ -103,8 +104,23 @@ export function OrdersBoard({ tickets, customers, uploadEnv, departments }: { ti
       });
   const olderPaid = visible.filter((t) => t.stage === "PAID" && !paidRecently(t)).length;
   const byStage = (s: BoardStage) => visible.filter((t) => t.stage === s && (s !== "PAID" || f.paidAll || paidRecently(t)));
+  // A long Paid column shows the most recent 20 first.
+  const PAID_FIRST = 20;
+  const cards = (s: BoardStage) => {
+    const list = byStage(s);
+    if (s !== "PAID" || paidMore || list.length <= PAID_FIRST) return list;
+    return [...list].sort((a, b) => b.stageChangedAt.localeCompare(a.stageChangedAt)).slice(0, PAID_FIRST);
+  };
+  const paidHidden = paidMore ? 0 : Math.max(0, byStage("PAID").length - PAID_FIRST);
   const paidToggle = (
-    <PaidToggle older={olderPaid} all={f.paidAll} onChange={(all) => set({ paid: all ? "all" : null })} />
+    <>
+      {paidHidden ? (
+        <button type="button" onClick={() => setPaidMore(true)} className="min-h-11 rounded-xl border border-dashed px-3 text-sm font-medium text-primary hover:bg-secondary">
+          Show {paidHidden} more paid
+        </button>
+      ) : null}
+      <PaidToggle older={olderPaid} all={f.paidAll} onChange={(all) => set({ paid: all ? "all" : null })} />
+    </>
   );
 
   // ---- selected ticket (detail panel) ------------------------------------------
@@ -285,7 +301,7 @@ export function OrdersBoard({ tickets, customers, uploadEnv, departments }: { ti
             </div>
             <ColumnHeader stage={tab} count={byStage(tab).length} totalPaise={columnTotal(tab)} />
             <div role="tabpanel" className="flex flex-col gap-3">
-              {byStage(tab).map((t) => (
+              {cards(tab).map((t) => (
                 <TicketCard key={t.id} ticket={t} onAction={openAction} onMoveTo={moveTo} draggable={false} />
               ))}
               {!byStage(tab).length ? <p className="rounded-xl border border-dashed p-6 text-center text-muted-foreground">No cards in this step.</p> : null}
@@ -298,7 +314,7 @@ export function OrdersBoard({ tickets, customers, uploadEnv, departments }: { ti
             <div className="hidden gap-4 lg:grid lg:grid-cols-4">
               {STAGES.map((s) => (
                 <Column key={s} stage={s} count={byStage(s).length} totalPaise={columnTotal(s)} dragging={dragging}>
-                  {byStage(s).map((t) => (
+                  {cards(s).map((t) => (
                     <TicketCard key={t.id} ticket={t} onAction={openAction} onMoveTo={moveTo} />
                   ))}
                   {s === "PAID" ? paidToggle : null}

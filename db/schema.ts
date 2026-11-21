@@ -86,6 +86,8 @@ export const services = pgTable(
     /** Module 6: used only to suggest a job's time needed (setup + minutes per billing unit). */
     setupMinutes: integer("setup_minutes"),
     minutesPerUnit: numeric("minutes_per_unit", { precision: 10, scale: 2 }),
+    /** Rate Card "No materials needed": the service uses no stock (e.g. a chamber test), so kept after materials is 100%. */
+    noMaterialsNeeded: boolean("no_materials_needed").notNull().default(false),
     sortOrder: integer("sort_order").notNull().default(0),
   },
   (t) => [index("services_dept_idx").on(t.deptCode)],

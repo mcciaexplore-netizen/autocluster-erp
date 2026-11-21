@@ -39,7 +39,7 @@ export function insightTable(section: InsightSection, d: Insights): InsightTable
           { header: "Materials share %", width: 12, fmt: "pct" },
         ],
         rows: [
-          ...d.services.ranked.map((s) => [s.name, s.deptCode, s.jobs, s.jobsRecorded, rs(s.revenuePaise), rs(s.materialPaise), rs(s.keptPaise), p1(s.keptPct), p1(s.materialSharePct)]),
+          ...d.services.ranked.map((s) => [s.noneNeeded ? `${s.name} (no materials needed)` : s.name, s.deptCode, s.jobs, s.jobsRecorded, rs(s.revenuePaise), rs(s.materialPaise), rs(s.keptPaise), p1(s.keptPct), p1(s.materialSharePct)]),
           ...d.services.leftOut.map((name) => [name, null, null, null, null, null, null, null, "No materials list (left out of the ranking)"]),
         ],
       };

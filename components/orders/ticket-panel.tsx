@@ -366,12 +366,18 @@ function MaterialsSection({ ticketId, m, cancelled }: { ticketId: string; m: Tic
       ) : (
         <>
           <p className="text-sm text-muted-foreground">
-            {m.hasList ? "Not recorded yet. “Record materials” fills in the suggested quantities." : "No materials recorded for this job."}
+            {m.hasList ? "Not recorded yet. “Record materials” fills in the suggested quantities." : m.noneNeeded ? "This service needs no materials." : "No materials recorded for this job."}
           </p>
           {!m.hasList ? (
             <dl className="mt-2 grid grid-cols-[1fr_auto] gap-x-4 border-t pt-2 text-sm">
               <dt className="font-semibold">Kept after materials</dt>
-              <dd className="text-right text-muted-foreground">No materials list</dd>
+              {m.noneNeeded ? (
+                <dd className="text-right font-semibold tabular-nums">
+                  {formatINR(m.taxablePaise)} <span className="font-normal text-muted-foreground">(100%, no materials)</span>
+                </dd>
+              ) : (
+                <dd className="text-right text-muted-foreground">No materials list</dd>
+              )}
             </dl>
           ) : null}
         </>

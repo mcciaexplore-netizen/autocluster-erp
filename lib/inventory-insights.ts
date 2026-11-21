@@ -9,7 +9,6 @@ import { db } from "@/db";
 import { runsOutInDays } from "@/lib/inventory/calc";
 import { isSlowMoving, priceRise } from "@/lib/inventory/insights-calc";
 import { D, valuePaise } from "@/lib/inventory/numbers";
-import { financialYear } from "@/lib/pricing";
 import { addDays, todayInIndia } from "@/lib/tickets";
 
 export interface InsightFilters {
@@ -20,13 +19,12 @@ export interface InsightFilters {
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
-/** Default: this financial year (1 April to today). */
+/** Default: the last 30 days. */
 export async function insightFiltersFromParams(sp: Record<string, string | string[] | undefined>): Promise<InsightFilters> {
   await connection();
   const today = todayInIndia();
-  const fy = financialYear(new Date(`${today}T00:00:00`));
   const one = (k: string) => (typeof sp[k] === "string" ? (sp[k] as string) : "");
-  let from = DATE_RE.test(one("from")) ? one("from") : `${fy.slice(0, 4)}-04-01`;
+  let from = DATE_RE.test(one("from")) ? one("from") : addDays(today, -30);
   let to = DATE_RE.test(one("to")) ? one("to") : today;
   if (from > to) [from, to] = [to, from];
   const dept = /^[A-Z]{2,6}$/.test(one("dept")) ? one("dept") : null;
@@ -92,10 +90,10 @@ export async function getInsights(f: InsightFilters) {
       select u.item_id, i.name, i.code, sum(u.value) as value from (${usedRows(f)}) u join inv_items i on i.id = u.item_id
       group by 1, 2, 3 order by sum(u.value) desc`),
     // 2. kept after materials, by service (jobs opened in the range)
-    db.execute<{ service_id: number; name: string; dept_code: string; jobs: string; revenue: string; material: string; recorded: string; has_list: boolean }>(sql`
+    db.execute<{ service_id: number; name: string; dept_code: string; jobs: string; revenue: string; material: string; recorded: string; has_list: boolean; none_needed: boolean }>(sql`
       select s.id as service_id, s.name, s.dept_code, count(*) as jobs, sum(round(t.taxable_value * 100)) as revenue,
         sum(coalesce(mc.cost, 0)) as material, count(*) filter (where mc.recorded) as recorded,
-        exists (select 1 from inv_service_materials sm where sm.service_id = s.id) as has_list
+        exists (select 1 from inv_service_materials sm where sm.service_id = s.id) as has_list, s.no_materials_needed as none_needed
       from tickets t
       join quotation_items qi on qi.id = t.quotation_item_id
       join services s on s.id = qi.service_id
@@ -107,8 +105,10 @@ export async function getInsights(f: InsightFilters) {
         group by d.ticket_id
       ) mc on mc.ticket_id = t.id
       where t.stage <> 'CANCELLED' and (t.created_at at time zone 'Asia/Kolkata')::date between ${f.from} and ${f.to}
+        -- Only work that is done (or already has materials recorded): jobs still to do don't need materials yet.
+        and (mc.recorded or exists (select 1 from jobs j where j.ticket_id = t.id and j.status in ('DONE', 'HANDED_OVER')) or not exists (select 1 from jobs j where j.ticket_id = t.id))
         ${f.dept ? sql`and s.dept_code = ${f.dept}` : sql``}
-      group by s.id, s.name, s.dept_code`),
+      group by s.id, s.name, s.dept_code, s.no_materials_needed`),
     // 4. purchase rates (receipts from suppliers, not reversed), up to the end of the range
     db.execute<{ item_id: string; name: string; unit: string; doc_date: string; rate: string; supplier: string }>(sql`
       select m.item_id, i.name, u.name as unit, d.doc_date::text, m.unit_cost as rate, s.name as supplier
@@ -171,10 +171,12 @@ export async function getInsights(f: InsightFilters) {
       keptPct: pct(kept, revenue),
       materialSharePct: pct(material, revenue),
       hasList: r.has_list,
+      /** Rate Card "No materials needed": always 100% kept, never "not recorded". */
+      noneNeeded: r.none_needed && !r.has_list,
     };
   });
   // A service with no materials list and nothing recorded would show 100%: leave it out of the ranking.
-  const leftOut = services.filter((s) => !s.hasList && s.jobsRecorded === 0);
+  const leftOut = services.filter((s) => !s.hasList && !s.noneNeeded && s.jobsRecorded === 0);
   const ranked = services.filter((s) => !leftOut.includes(s)).sort((a, b) => (a.keptPct ?? 101) - (b.keptPct ?? 101) || a.name.localeCompare(b.name));
 
   // ---- 3. biggest-spend items (top 10, running %) ----

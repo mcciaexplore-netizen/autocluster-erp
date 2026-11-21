@@ -77,13 +77,12 @@ describe.skipIf(skip)("planning demo data (database)", () => {
     expect(late.rows.length).toBeGreaterThanOrEqual(1);
   });
 
-  it("one tentative hold expires tomorrow and one has expired; a machine is under maintenance next week; a breakdown last month", async () => {
+  it("one tentative hold expires tomorrow and one has expired; a machine is under maintenance next week; a breakdown in the last 30 days", async () => {
     const holds = await db.execute<{ hold_until: string }>(sql`select hold_until::text from job_bookings where is_tentative and cancelled_at is null order by hold_until`);
     expect(holds.rows.map((h) => h.hold_until)).toEqual([dayPlus(today, -1), dayPlus(today, 1)]);
     const blocks = await db.execute<{ type: string; start_at: string }>(sql`select type, start_at::text from machine_blocks`);
     expect(blocks.rows.some((b) => b.type === "MAINTENANCE" && new Date(b.start_at) > now)).toBe(true);
-    const lastMonth = new Date(Date.UTC(Number(today.slice(0, 4)), Number(today.slice(5, 7)) - 2, 1)).toISOString().slice(0, 7);
-    expect(blocks.rows.some((b) => b.type === "BREAKDOWN" && istDate(new Date(b.start_at)).startsWith(lastMonth))).toBe(true);
+    expect(blocks.rows.some((b) => b.type === "BREAKDOWN" && istDate(new Date(b.start_at)) >= dayPlus(today, -30))).toBe(true);
     expect((await db.select().from(s.machines)).every((m) => m.status === "AVAILABLE")).toBe(true);
   });
 

@@ -12,6 +12,7 @@ import {
   purchaseOrders,
   quotationItems,
   quotations,
+  services,
   ticketEvents,
   tickets,
   type TicketStage,
@@ -234,7 +235,11 @@ export async function getTicketDetail(id: string) {
   const [mats, svcMaterials, svcRow] = await Promise.all([
     getTicketMaterials(id),
     getServiceMaterials(),
-    db.select({ serviceId: quotationItems.serviceId }).from(quotationItems).where(eq(quotationItems.id, t.quotationItemId)),
+    db
+      .select({ serviceId: quotationItems.serviceId, noneNeeded: services.noMaterialsNeeded })
+      .from(quotationItems)
+      .leftJoin(services, eq(services.id, quotationItems.serviceId))
+      .where(eq(quotationItems.id, t.quotationItemId)),
   ]);
   const serviceId = svcRow[0]?.serviceId ?? null;
   const suggestions = serviceId ? suggestMaterials(t.snapshot.billableQty, t.snapshot.unitLabel, svcMaterials[serviceId] ?? []) : [];
@@ -245,6 +250,8 @@ export async function getTicketDetail(id: string) {
       recorded: mats.docs.some((d) => !d.reverses && !d.reversedBy),
       hint: stockHint(suggestions),
       hasList: suggestions.length > 0,
+      /** Rate Card "No materials needed": kept after materials is 100%. */
+      noneNeeded: !!svcRow[0]?.noneNeeded && suggestions.length === 0,
     },
     ticket: {
       ...t,

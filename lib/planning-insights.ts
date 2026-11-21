@@ -38,24 +38,16 @@ export const QUIET_PCT = 10;
 /** Earnings per hour are shown only for machines that ran at least this long (a few minutes give silly numbers). */
 export const MIN_EARNING_HOURS = 1;
 
-/** Default: this month (1st to the last day). */
+/** Default: the last 30 days (as on Inventory Insights). */
 export async function planningInsightFiltersFromParams(sp: Record<string, string | string[] | undefined>): Promise<PlanningInsightFilters> {
   await connection();
   const today = istDate(new Date());
   const one = (k: string) => (typeof sp[k] === "string" ? (sp[k] as string) : "");
-  const first = `${today.slice(0, 7)}-01`;
-  const last = dayPlus(monthsAfter(first, 1), -1);
-  let from = DATE_RE.test(one("from")) ? one("from") : first;
-  let to = DATE_RE.test(one("to")) ? one("to") : last;
+  let from = DATE_RE.test(one("from")) ? one("from") : dayPlus(today, -30);
+  let to = DATE_RE.test(one("to")) ? one("to") : today;
   if (from > to) [from, to] = [to, from];
   const dept = /^[A-Z]{2,6}$/.test(one("dept")) ? one("dept") : null;
   return { from, to, dept };
-}
-
-/** The 1st of the month n months after a "YYYY-MM-01" date. */
-export function monthsAfter(first: string, n: number): string {
-  const d = new Date(Date.UTC(Number(first.slice(0, 4)), Number(first.slice(5, 7)) - 1 + n, 1));
-  return d.toISOString().slice(0, 10);
 }
 
 const BLOCK_TYPES = ["MAINTENANCE", "CALIBRATION", "BREAKDOWN", "INTERNAL", "OTHER"] as const;

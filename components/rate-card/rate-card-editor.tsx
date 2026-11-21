@@ -4,7 +4,7 @@ import { Check, Info, Pencil, X } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useMemo, useState, useTransition } from "react";
 import { toast } from "sonner";
-import { setServiceActive, updateRates } from "@/lib/actions/rate-card";
+import { setNoMaterialsNeeded, setServiceActive, updateRates } from "@/lib/actions/rate-card";
 import { DeptIcon } from "@/components/customers/dept-icons";
 import {
   AlertDialog,
@@ -48,7 +48,9 @@ export function RateCardEditor({
   const [confirmOpen, setConfirmOpen] = useState(false);
   // Inventory: show only services that have no materials list yet.
   const [onlyNoMaterials, setOnlyNoMaterials] = useState(false);
-  const noMaterials = (id: number) => !(materials[id]?.length);
+  const noneNeeded = (id: number) => !!services.find((s) => s.id === id)?.noMaterialsNeeded;
+  /** "No materials set": no list, and not marked "No materials needed". */
+  const noMaterials = (id: number) => !(materials[id]?.length) && !noneNeeded(id);
   const noMaterialsCount = services.filter((s) => s.isActive && noMaterials(s.id)).length;
   const [onlyNoTime, setOnlyNoTime] = useState(false);
   const openTimeFor = Number(useSearchParams().get("time")) || null;
@@ -81,6 +83,14 @@ export function RateCardEditor({
       if (!res.ok) return void toast.error(res.message);
       toast.success(`Rates saved (${changes.length} ${changes.length === 1 ? "service" : "services"} changed)`);
       setEditing(false);
+      router.refresh();
+    });
+
+  const toggleNoneNeeded = (s: Service, on: boolean) =>
+    startTransition(async () => {
+      const r = await setNoMaterialsNeeded(s.id, on);
+      if (!r.ok) return void toast.error(r.message);
+      toast.success(on ? `${s.name}: no materials needed` : `${s.name}: materials can be set again`);
       router.refresh();
     });
 
@@ -182,7 +192,17 @@ export function RateCardEditor({
                           {noMaterials(s.id) ? (
                             <span className="rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-900">No materials set</span>
                           ) : null}
-                          <MaterialsButton service={{ id: s.id, name: s.name, unitLabel: s.unitLabel }} current={materials[s.id] ?? []} items={items} />
+                          {noneNeeded(s.id) ? (
+                            <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-800">Kept after materials: 100% (no materials)</span>
+                          ) : (
+                            <MaterialsButton service={{ id: s.id, name: s.name, unitLabel: s.unitLabel }} current={materials[s.id] ?? []} items={items} />
+                          )}
+                          {!(materials[s.id]?.length) ? (
+                            <label className="inline-flex min-h-8 items-center gap-1.5 text-xs font-medium text-muted-foreground">
+                              <Switch checked={noneNeeded(s.id)} onCheckedChange={(on) => toggleNoneNeeded(s, on)} disabled={pending} className="scale-75" />
+                              No materials needed
+                            </label>
+                          ) : null}
                         </span>
                         <span className="flex flex-wrap items-center gap-x-2">
                           {noTimeSet(s) ? <span className="rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-900">No time set</span> : null}

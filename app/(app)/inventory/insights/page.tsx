@@ -51,7 +51,7 @@ async function Body({ searchParams }: { searchParams: Sp }) {
 
         <Section
           title="Kept after materials, by service"
-          why={`What each service keeps after paying for materials (revenue before GST minus material cost), lowest first. Red: materials take more than ${d.shareAlertPct}% of the revenue, so the rate may be too low.`}
+          why={`What each service keeps after paying for materials (revenue before GST minus material cost), for work done, lowest first. Red: materials take more than ${d.shareAlertPct}% of the revenue, so the rate may be too low.`}
           excel={excel("services")}
         >
           <ServicesTable d={d} />
@@ -206,7 +206,7 @@ function ServicesTable({ d }: { d: Insights }) {
             return [
               <span key="n">
                 <span className="font-medium">{s.name}</span> <span className="text-xs text-muted-foreground">{s.deptCode}</span>
-                {s.jobsRecorded < s.jobs ? (
+                {s.jobsRecorded < s.jobs && !s.noneNeeded ? (
                   <span className="block text-xs text-amber-800">
                     Materials recorded on {s.jobsRecorded} of {s.jobs} jobs
                   </span>
@@ -218,6 +218,7 @@ function ServicesTable({ d }: { d: Insights }) {
               formatINRShort(s.keptPaise),
               <span key="p" className={cn("font-semibold", high && "text-destructive")} title={high ? `Materials take ${Math.round(s.materialSharePct!)}% of the revenue` : undefined}>
                 {pctText(s.keptPct)}
+                {s.noneNeeded && !s.materialPaise ? <span className="block text-xs font-normal text-muted-foreground">(no materials)</span> : null}
                 {high ? <AlertTriangle className="ml-1 inline size-3.5 align-[-2px]" aria-label="Materials take a high share" /> : null}
               </span>,
             ];

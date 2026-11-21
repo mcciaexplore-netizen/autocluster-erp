@@ -176,7 +176,11 @@ export async function setServiceMaterials(db: DB, serviceId: number, lines: { it
       if (found.length !== seen.size) throw new UserFacingError("One of the items could not be found.");
     }
     await tx.delete(invServiceMaterials).where(eq(invServiceMaterials.serviceId, serviceId));
-    if (rows.length) await tx.insert(invServiceMaterials).values(rows);
+    if (rows.length) {
+      await tx.insert(invServiceMaterials).values(rows);
+      // A materials list means the service does use materials.
+      await tx.update(services).set({ noMaterialsNeeded: false }).where(eq(services.id, serviceId));
+    }
     return { count: rows.length };
   });
 }

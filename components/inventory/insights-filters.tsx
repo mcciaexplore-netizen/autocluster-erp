@@ -16,6 +16,7 @@ const monthStart = (today: string, n: number) => new Date(Date.UTC(Number(today.
 function planningPresets(today: string) {
   const fy = financialYear(new Date(`${today}T00:00:00`));
   return [
+    { key: "30d", label: "Last 30 days", from: addDays(today, -30), to: today },
     { key: "month", label: "This month", from: monthStart(today, 0), to: addDays(monthStart(today, 1), -1) },
     { key: "last", label: "Last month", from: monthStart(today, -1), to: addDays(monthStart(today, 0), -1) },
     { key: "next2w", label: "Next 2 weeks", from: today, to: addDays(today, 13) },
@@ -28,10 +29,10 @@ function presets(today: string) {
   const fy = financialYear(new Date(`${today}T00:00:00`));
   const start = Number(fy.slice(0, 4));
   return [
+    { key: "30d", label: "Last 30 days", from: addDays(today, -30), to: today },
     { key: "fy", label: "This financial year", from: `${start}-04-01`, to: today },
     { key: "lfy", label: "Last financial year", from: `${start - 1}-04-01`, to: `${start}-03-31` },
     { key: "6m", label: "Last 6 months", from: addDays(today, -182), to: today },
-    { key: "30d", label: "Last 30 days", from: addDays(today, -30), to: today },
   ];
 }
 

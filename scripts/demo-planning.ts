@@ -21,7 +21,7 @@ import { addPurchaseOrder, registerFile } from "../db/po-writer";
 import { createQuotation } from "../db/quote-writer";
 import * as s from "../db/schema";
 import { changeQuotationStatus } from "../db/ticket-writer";
-import { addWorkingHours, dayPlus, istAt, istDate, nextWorkingMoment, overlaps, patternFromSettings, segmentsOn, snapTo30, type Span, type WorkPattern } from "../lib/planning/hours";
+import { addWorkingHours, dayPlus, istAt, istDate, maxAtOnce, nextWorkingMoment, overlaps, patternFromSettings, segmentsOn, snapTo30, type Span, type WorkPattern } from "../lib/planning/hours";
 import { machineUse, weekStart } from "../lib/planning/use";
 import { blobAuth, blobConfigured } from "../lib/blob";
 import { uploadPath, type BlobEnv } from "../lib/files";
@@ -93,6 +93,7 @@ function seeded(seed: number) {
 
 const OPERATOR_FOR: Record<string, string> = { PPF: "Amit Patil", MET: "Amit Patil", RPT: "Rohan Deshpande", ENV: "Priya Shah", RPL: "Priya Shah" };
 const HOUR = 3_600_000;
+const daysBetweenDates = (a: string, b: string) => Math.round((Date.parse(`${b}T00:00:00Z`) - Date.parse(`${a}T00:00:00Z`)) / 86_400_000);
 
 /** Time logs for work that ran `hours` from `start`: split at day ends and the break for shift machines. */
 function logSpans(start: Date, hours: number, p: WorkPattern, nonstop: boolean): Span[] {
@@ -168,10 +169,9 @@ export async function loadPlanningDemo(conn: DB | Tx, opts: { log?: (m: string) 
   log(`  ${machineRows.length} machines in 5 departments, ${links.length} rate card links`);
 
   // ---- Blocked time ---------------------------------------------------------------------------
-  const lastMonth = new Date(Date.UTC(year, Number(today.slice(5, 7)) - 2, 20)).toISOString().slice(0, 10);
   const nextMonday = dayPlus(weekStart(today), 7);
   const blocks = [
-    { machineId: machine("SLA - 3D Systems 7000 HD").id, type: "BREAKDOWN" as const, startAt: istAt(lastMonth, 10 * 60), endAt: istAt(dayPlus(lastMonth, 2), 17 * 60), note: "Laser power dropped mid-build. Service engineer replaced the scanner mirror." },
+    { machineId: machine("SLA - 3D Systems 7000 HD").id, type: "BREAKDOWN" as const, startAt: istAt(day(-18), 10 * 60), endAt: istAt(day(-16), 17 * 60), note: "Laser power dropped mid-build. Service engineer replaced the scanner mirror." },
     { machineId: machine("Water Spray Test Chamber").id, type: "MAINTENANCE" as const, startAt: istAt(dayPlus(nextMonday, 1), 9 * 60), endAt: istAt(dayPlus(nextMonday, 2), 18 * 60), note: "Half-yearly maintenance by the supplier" },
     { machineId: machine("Differential Scanning Calorimeter (DSC)").id, type: "CALIBRATION" as const, startAt: istAt(day(-12), 9 * 60), endAt: istAt(day(-12), 13 * 60), note: "Yearly calibration with indium standard" },
     { machineId: machine("Universal Testing Machine (UTM)").id, type: "CALIBRATION" as const, startAt: istAt(day(-33), 9 * 60), endAt: istAt(day(-33), 18 * 60), note: "Load cell calibration (NABL)" },
@@ -274,29 +274,6 @@ export async function loadPlanningDemo(conn: DB | Tx, opts: { log?: (m: string) 
   const CHAKAN = "Chakan EV Motors Pvt Ltd";
   const WESTERN = "Western Drive Systems Ltd";
   const KAVERI = "Kaveri Mobility Parts Pvt Ltd";
-  const PAST: { d: number; customer: string; line: L; machine: string; hours?: number }[] = [
-    { d: -51, customer: SAHYADRI, line: { custom: { dept: "PPF", description: "Laser cutting, 2 mm SS sheet panels", unitLabel: "per piece", ratePaise: 120_00 }, q: { quantity: 60 }, notes: "As per DXF drawing SAC-PN-02" }, machine: "5+1 Axis Laser (Rotary Attachment)", hours: 8 },
-    { d: -52, customer: WESTERN, line: { name: "Thermal shock chamber", q: { hours: 48 }, notes: "As per IEC 60068-2-14" }, machine: "Thermal Shock Test Chamber" },
-    { d: -47, customer: INDUS, line: { custom: { dept: "MET", description: "CMM inspection of trimming die", unitLabel: "per die", ratePaise: 6500_00 }, q: { quantity: 1 }, notes: "Report with GD&T check" }, machine: "Co-ordinate Measuring Machine (CMM)", hours: 5 },
-    { d: -45, customer: KAVERI, line: { name: "High-low chamber", q: { hours: 36 }, notes: "-40 °C to +85 °C cycling" }, machine: "High-Low Temperature Chamber" },
-    { d: -43, customer: TALEGAON, line: { custom: { dept: "PPF", description: "3-axis milling of pattern plates", unitLabel: "per hour", ratePaise: 900_00 }, q: { quantity: 14 }, notes: "Aluminium pattern plates, 2 pcs" }, machine: "3-Axis VMC", hours: 14 },
-    { d: -40, customer: WESTERN, line: { name: "Water spray chamber", q: { hours: 16 }, notes: "IPX4 splash test" }, machine: "Water Spray Test Chamber" },
-    { d: -38, customer: CHAKAN, line: { custom: { dept: "PPF", description: "Laser cutting, 4 mm MS motor brackets", unitLabel: "per piece", ratePaise: 180_00 }, q: { quantity: 80 }, notes: "As per drawing CEV-MB-11" }, machine: "5+1 Axis Laser (Rotary Attachment)", hours: 10 },
-    { d: -35, customer: TALEGAON, line: { custom: { dept: "PPF", description: "Turn-mill machining of shafts", unitLabel: "per piece", ratePaise: 1400_00 }, q: { quantity: 12 }, notes: "EN8 shafts with milled keyways" }, machine: "Turn Mill Centre", hours: 9 },
-    { d: -33, customer: CHAKAN, line: { name: "Thermal shock chamber", q: { hours: 72 }, notes: "Motor controller housing, 100 cycles" }, machine: "Thermal Shock Test Chamber" },
-    { d: -31, customer: SAHYADRI, line: { custom: { dept: "MET", description: "CMM inspection of die-cast housings", unitLabel: "per part", ratePaise: 2500_00 }, q: { quantity: 2 }, notes: "First article inspection" }, machine: "Co-ordinate Measuring Machine (CMM)", hours: 6 },
-    { d: -29, customer: KAVERI, line: { name: "High-low chamber", q: { hours: 48 }, notes: "-30 °C to +70 °C, 10 cycles" }, machine: "High-Low Temperature Chamber" },
-    { d: -27, customer: INDUS, line: { custom: { dept: "PPF", description: "3-axis milling of fixture blocks", unitLabel: "per hour", ratePaise: 900_00 }, q: { quantity: 18 }, notes: "Fixture blocks, 4 pcs" }, machine: "3-Axis VMC", hours: 18 },
-    { d: -25, customer: CHAKAN, line: { name: "Water spray chamber", q: { hours: 24 }, notes: "IPX5 water jet test, charger" }, machine: "Water Spray Test Chamber" },
-    { d: -24, customer: NASHIK, line: { custom: { dept: "PPF", description: "Deep hole drilling of ejector pins", unitLabel: "per piece", ratePaise: 650_00 }, q: { quantity: 10 }, notes: "450 mm deep, 12 mm dia" }, machine: "Deep Hole Drilling", hours: 7 },
-  ];
-  const pastMachine = new Map<string, { machine: string; hours?: number }>();
-  for (const p of PAST) {
-    const ts = await order(p.customer, p.d - 4, p.line.name ? `Quotation for ${p.line.name}` : `Quotation for ${p.line.custom!.description.toLowerCase()}`, [p.line], p.d - 2);
-    await invoiceAndPay(ts, p.customer, Math.min(p.d + 7, -1), Math.min(p.d + 21, -1));
-    for (const t of ts) pastMachine.set(t.id, { machine: p.machine, hours: p.hours });
-  }
-  log(`  ${PAST.length} more past jobs (chamber tests and custom items), invoiced and paid`);
 
   // ---- All jobs, with their ticket and service --------------------------------------------------
   const jobRows = (
@@ -310,40 +287,49 @@ export async function loadPlanningDemo(conn: DB | Tx, opts: { log?: (m: string) 
       order by opened`)
   ).rows;
   const job = (ticketId: string) => jobRows.find((j) => j.ticket_id === ticketId)!;
-  const hoursOf = (j: (typeof jobRows)[number]) => Number(j.hours_needed ?? 0) || 4;
+  const hoursOf = (j: { hours_needed: string | null }) => Number(j.hours_needed ?? 0) || 4;
 
   // ---- History: work already done ------------------------------------------------------------
   const blocksFor = (machineId: string) => blocks.filter((b) => b.machineId === machineId).map((b) => ({ start: b.startAt, end: b.endAt }));
-  const lanes = new Map<string, Date[]>();
-  /** The next free time on a machine from `earliest`, never over blocked time. */
+  /** The earliest free time on a machine from `earliest`: never over blocked time or more jobs than it takes at once. */
   function place(m: typeof s.machines.$inferSelect, earliest: Date, hours: number): Span {
-    const ls = lanes.get(m.id) ?? Array.from({ length: m.parallelJobs }, () => new Date(0));
-    lanes.set(m.id, ls);
-    const lane = ls.indexOf(ls.reduce((a, b) => (a < b ? a : b)));
-    let start = nextWorkingMoment(snapTo30(new Date(Math.max(earliest.getTime(), ls[lane].getTime()))), pattern, m.runsNonstop);
-    let end = addWorkingHours(start, hours, pattern, m.runsNonstop);
-    for (const b of blocksFor(m.id)) {
-      if (overlaps(b, { start, end })) {
-        start = nextWorkingMoment(b.end, pattern, m.runsNonstop);
-        end = addWorkingHours(start, hours, pattern, m.runsNonstop);
+    let start = nextWorkingMoment(snapTo30(earliest), pattern, m.runsNonstop);
+    for (let guard = 0; guard < 1000; guard++) {
+      const span = { start, end: addWorkingHours(start, hours, pattern, m.runsNonstop) };
+      const block = blocksFor(m.id).find((b) => overlaps(b, span));
+      if (block) {
+        start = nextWorkingMoment(block.end, pattern, m.runsNonstop);
+        continue;
       }
+      const busy = (used.get(m.id) ?? []).filter((u) => overlaps(u, span));
+      if (busy.length && maxAtOnce(busy, span) >= m.parallelJobs) {
+        const next = busy.map((u) => u.end.getTime()).filter((t) => t > start.getTime());
+        start = nextWorkingMoment(new Date(Math.min(...next)), pattern, m.runsNonstop);
+        continue;
+      }
+      return span;
     }
-    ls[lane] = end;
-    return { start, end };
+    throw new Error(`No free time found on ${m.name}`);
   }
 
+  /** Work on each machine (booking start to the end of its time logs), to work out use %. */
+  const used = new Map<string, Span[]>();
   const OVER = new Map<string, number>(); // ticket no. -> how much longer than quoted it ran
   const LATE_DONE = new Set<string>();
   const doneJobs: { id: string; ticketNo: string; machine: string; start: Date; end: Date }[] = [];
   /** A finished job: booking, time logs, done (and handed over if it was a while ago). */
-  async function finished(j: (typeof jobRows)[number], m: typeof s.machines.$inferSelect, earliest: Date, opts: { factor?: number; promisedLate?: boolean; handedOver?: boolean; note?: string } = {}) {
+  async function finished(
+    j: Pick<(typeof jobRows)[number], "id" | "ticket_no" | "dept" | "unit_type" | "hours_needed">,
+    m: typeof s.machines.$inferSelect,
+    earliest: Date,
+    opts: { factor?: number; promisedLate?: boolean; handedOver?: boolean; note?: string; span?: Span } = {},
+  ) {
     const planned = hoursOf(j);
-    const span = place(m, earliest, planned);
     const factor = opts.factor ?? 0.92 + rnd() * 0.14; // 92% to 106% of the plan
+    const span = opts.span ?? place(m, earliest, planned * Math.max(1, factor));
     const logs = logSpans(span.start, planned * factor, pattern, m.runsNonstop);
     const end = logs.at(-1)!.end;
-    const lanesOf = lanes.get(m.id)!;
-    lanesOf[lanesOf.indexOf(span.end)] = new Date(Math.max(span.end.getTime(), end.getTime()));
+    if (!opts.span) used.set(m.id, [...(used.get(m.id) ?? []), { start: span.start, end }]);
     const operatorId = operatorFor(j.dept);
     const [b] = await db
       .insert(s.jobBookings)
@@ -354,18 +340,19 @@ export async function loadPlanningDemo(conn: DB | Tx, opts: { log?: (m: string) 
     const lead = Math.max(3, Math.ceil(planned / (m.runsNonstop ? 24 : 8.5)) + 2 + Math.floor(rnd() * 3));
     const promised = opts.promisedLate ? dayPlus(doneDate, -1 - Math.floor(rnd() * 2)) : dayPlus(istDate(span.start), lead);
     const handed = opts.handedOver ?? end.getTime() < now.getTime() - 3 * 24 * HOUR;
+    const handedOn = dayPlus(doneDate, 1) > today ? today : dayPlus(doneDate, 1);
     const who = operatorName(operatorId);
     const note = opts.note ?? (j.unit_type === "PER_CC" ? "All parts printed, cleaned and checked" : j.unit_type === "PER_SAMPLE" ? "All samples tested, report attached" : "Work complete as per quotation");
     await db
       .update(s.jobs)
-      .set({ status: handed ? "HANDED_OVER" : "DONE", operatorId, promisedDate: promised, doneAt: end, doneNote: note, handedOverAt: handed ? dayPlus(doneDate, 1) : null, handedOverTo: handed ? "Customer's courier" : null })
+      .set({ status: handed ? "HANDED_OVER" : "DONE", operatorId, promisedDate: promised, doneAt: end, doneNote: note, handedOverAt: handed ? handedOn : null, handedOverTo: handed ? "Customer's courier" : null })
       .where(eq(s.jobs.id, j.id));
     const ev = (type: string, message: string, at: Date, data?: Record<string, unknown>) => ({ jobId: j.id, type, message, data, createdBy: who ?? "Demo User", createdAt: at });
     await db.insert(s.jobEvents).values([
       ev("BOOKED", `Booked on ${m.name} (${planned} h)`, new Date(span.start.getTime() - 2 * 24 * HOUR), { bookingId: b.id, machineId: m.id }),
       ev("STARTED", `Started on ${m.name}${who ? ` by ${who}` : ""}`, logs[0].start, { bookingId: b.id }),
       ev("DONE", `Done${who ? ` by ${who}` : ""}: ${note}`, end),
-      ...(handed ? [ev("HANDED_OVER", `Handed over on ${dayPlus(doneDate, 1).split("-").reverse().join("/")} to Customer's courier`, istAt(dayPlus(doneDate, 1), 11 * 60))] : []),
+      ...(handed ? [ev("HANDED_OVER", `Handed over on ${handedOn.split("-").reverse().join("/")} to Customer's courier`, new Date(Math.min(istAt(handedOn, 11 * 60).getTime(), now.getTime())))] : []),
     ]);
     if (factor > 1.1) OVER.set(j.ticket_no, factor);
     if (opts.promisedLate) LATE_DONE.add(j.ticket_no);
@@ -374,22 +361,12 @@ export async function loadPlanningDemo(conn: DB | Tx, opts: { log?: (m: string) 
 
   const windowStart = istAt(day(-56), 0);
   const storyIds = new Set([laser, ozone, cmm, ...fiveAxis, urgent, pastPromise, onHold, late].map((t) => t.id));
-  // Three past machining jobs (per hour) that ran longer than quoted, and two delivered late.
-  const pastPerHour = jobRows.filter((j) => j.stage === "PAID" || j.stage === "PAYMENT").filter((j) => j.unit_type === "PER_HOUR" && j.dept === "PPF" && new Date(j.opened) >= windowStart);
-  const overFactors = new Map(pastPerHour.slice(-3).map((j, i) => [j.id, [1.26, 1.15, 1.22][i]]));
-  const pastOthers = jobRows.filter((j) => (j.stage === "PAID" || j.stage === "PAYMENT") && j.unit_type !== "PER_HOUR" && new Date(j.opened) >= windowStart);
-  const lateIds = new Set([pastOthers[1]?.id, pastOthers[pastOthers.length - 2]?.id].filter(Boolean));
 
   let older = 0;
   for (const j of jobRows) {
     if (storyIds.has(j.ticket_id)) continue;
     if (j.stage === "PAID" || j.stage === "PAYMENT") {
-      const pm = pastMachine.get(j.ticket_id);
-      if (pm?.hours) {
-        await db.update(s.jobs).set({ hoursNeeded: String(pm.hours) }).where(eq(s.jobs.id, j.id));
-        j.hours_needed = String(pm.hours);
-      }
-      const m = pm ? machine(pm.machine) : j.service_id != null ? machineForService.get(j.service_id) : undefined;
+      const m = j.service_id != null ? machineForService.get(j.service_id) : undefined;
       const opened = new Date(j.opened);
       if (!m || opened < windowStart) {
         // Before the 8 weeks: done and handed over, no time records.
@@ -401,7 +378,7 @@ export async function loadPlanningDemo(conn: DB | Tx, opts: { log?: (m: string) 
         older++;
         continue;
       }
-      await finished(j, m, new Date(opened.getTime() + 20 * HOUR), { factor: overFactors.get(j.id), promisedLate: lateIds.has(j.id) });
+      await finished(j, m, new Date(opened.getTime() + 20 * HOUR));
     }
   }
   log(`  ${doneJobs.length} jobs done in the last 8 weeks with bookings and time logs; ${older} older jobs handed over`);
@@ -417,6 +394,117 @@ export async function loadPlanningDemo(conn: DB | Tx, opts: { log?: (m: string) 
   const dust = kaveri.find((j) => j.service_id === svcId("Dust spray chamber"));
   const highLow = kaveri.find((j) => j.service_id === svcId("High-low chamber"));
   if (dust) await finished(dust, machine("Dust Spray Test Chamber"), istAt(day(-4), 10 * 60), { handedOver: false, factor: 1 });
+
+  // ---- The last 30 days: enough paid work that most machines run 30-70% of their time ----------
+  // Only chamber tests that need no materials and custom items (customer-supplied material, or
+  // tests not on the rate card), so the Inventory demo's stock numbers don't change.
+  type Fill = { service?: string; custom?: string[]; rate?: number; size: [number, number] };
+  const FILL: Record<string, Fill> = {
+    "5-Axis VMC (Non-Continuous)": { custom: ["5-axis finishing of mould inserts (customer tooling)", "5-axis machining of turbine blades (customer blanks)"], rate: 1900_00, size: [12, 30] },
+    "3-Axis VMC": { custom: ["3-axis milling of pattern plates", "3-axis milling of fixture blocks", "3-axis machining of electrode blanks"], rate: 900_00, size: [12, 28] },
+    "5+1 Axis Laser (Rotary Attachment)": { custom: ["Laser cutting, 3 mm MS brackets", "Laser cutting, 2 mm SS panels", "Laser tube cutting, 40 mm SS"], rate: 1600_00, size: [8, 20] },
+    "3+1 Axis VMC (Rotary Attachment)": { custom: ["4th-axis machining of manifold blocks (customer tooling)", "Indexed drilling of flanges (customer tooling)"], rate: 450_00, size: [12, 28] },
+    "Turn Mill Centre": { custom: ["Turn-mill machining of EN8 shafts", "Turn-mill machining of bronze bushes"], rate: 1200_00, size: [10, 24] },
+    "Deep Hole Drilling": { custom: ["Deep hole drilling of ejector pins", "Gun drilling of mould cooling lines"], rate: 1000_00, size: [8, 20] },
+    "SLA - 3D Systems 7000 HD": { custom: ["SLA prints in customer-supplied resin", "SLA casting patterns in customer-supplied resin"], rate: 1500_00, size: [10, 24] },
+    "SLS - EOS P385": { custom: ["SLS build in customer-supplied PA12 powder"], rate: 1800_00, size: [14, 30] },
+    "FDM - Stratasys 450 MC": { custom: ["FDM prints in ASA", "FDM assembly jigs in ABS"], rate: 700_00, size: [12, 30] },
+    "Vacuum Casting - KLM": { custom: ["Silicone tool and 10 PU castings", "Vacuum casting, 6 rigid PU parts"], rate: 900_00, size: [12, 24] },
+    "Figure 4 Standalone Pro": { custom: ["Figure 4 prints in customer-supplied resin"], rate: 1200_00, size: [8, 18] },
+    "Origin 1 SLA": { custom: ["Origin 1 prints in customer-supplied resin"], rate: 1100_00, size: [8, 18] },
+    "Xenon Test Chamber": { custom: ["Xenon ageing, SAE J2527 (customer cycle)"], rate: 110_00, size: [120, 240] },
+    "Salt Spray Test Chamber": { custom: ["Cyclic corrosion test (customer profile)", "Neutral salt spray with customer-supplied salt"], rate: 55_00, size: [96, 240] },
+    "Dust Spray Test Chamber": { custom: ["IP5X dust test with customer-supplied dust"], rate: 500_00, size: [24, 72] },
+    "Water Spray Test Chamber": { service: "Water spray chamber", size: [24, 72] },
+    "Thermal Shock Test Chamber": { service: "Thermal shock chamber", size: [48, 120] },
+    "High-Low Temperature Chamber": { service: "High-low chamber", size: [48, 120] },
+    "Universal Testing Machine (UTM)": { custom: ["Compression test, ISO 604 (batch)", "Peel test, ASTM D903 (batch)", "Flexural test, ISO 178 (batch)"], rate: 1500_00, size: [10, 24] },
+    "Thermogravimetric Analyser (TGA)": { custom: ["TGA filler content, ISO 11358", "TGA decomposition profile"], rate: 1800_00, size: [8, 20] },
+    "Impact Tester": { custom: ["Izod impact, ISO 180 (40 specimens)", "Charpy impact, ISO 179 (40 specimens)"], rate: 1200_00, size: [8, 20] },
+    "Accelerated Weathering Tester (QUV/Spray)": { custom: ["UV-B ageing (customer cycle)"], rate: 90_00, size: [120, 240] },
+    "Melt Flow Indexer": { custom: ["Melt volume rate, ISO 1133-2 (batch)"], rate: 1200_00, size: [8, 20] },
+    "Differential Scanning Calorimeter (DSC)": { custom: ["Oxidation induction time, ISO 11357-6 (batch)"], rate: 1500_00, size: [8, 20] },
+    "HDT & VICAT Softening Temperature Tester": { custom: ["HDT series, 30 specimens", "VICAT series, 30 specimens"], rate: 600_00, size: [20, 44] },
+    "FTIR Spectrometer": { custom: ["FTIR contamination analysis (batch)"], rate: 1800_00, size: [8, 20] },
+    "Hot Air Oven": { service: "Hot air oven", size: [72, 168] },
+    "Co-ordinate Measuring Machine (CMM)": { custom: ["CMM inspection of forging dies", "CMM first article inspection"], rate: 1300_00, size: [8, 20] },
+  };
+  const DEPT_WORK: Record<string, string> = { PPF: "machining and cutting work", RPT: "prototyping work", ENV: "environmental tests", RPL: "polymer tests", MET: "CMM inspection" };
+  const POOL: Record<string, string[]> = {
+    PPF: [INDUS, SAHYADRI, TALEGAON, CHAKAN, NASHIK],
+    RPT: [NASHIK, CHAKAN, TALEGAON, SAHYADRI],
+    ENV: [KAVERI, WESTERN, CHAKAN],
+    RPL: [DECCAN, BHARAT, WESTERN],
+    MET: [INDUS, SAHYADRI, TALEGAON],
+  };
+  // Story: three chamber tests ran over 10% longer than quoted; two jobs were delivered late.
+  const OVER_ON: Record<string, number> = { "Thermal Shock Test Chamber": 1.22, "High-Low Temperature Chamber": 1.17, "Water Spray Test Chamber": 1.24 };
+  const LATE_ON = new Set(["3-Axis VMC", "SLS - EOS P385"]);
+  const w30 = istAt(day(-30), 0);
+  const highLowStart = new Date(now.getTime() - 20 * HOUR); // the job running now
+  type Planned = { m: typeof s.machines.$inferSelect; span: Span; hours: number; factor: number; promisedLate: boolean; line: L };
+  const planned: Planned[] = [];
+  for (const m of machineRows) {
+    const f = FILL[m.name];
+    if (!f) continue;
+    const target = 0.38 + rnd() * 0.27; // 38% to 65%
+    const cutoff = m.name === "High-Low Temperature Chamber" ? new Date(highLowStart.getTime() - HOUR) : new Date(now.getTime() - HOUR);
+    const base = { window: { start: w30, end: now }, pattern, nonstop: m.runsNonstop, parallelJobs: m.parallelJobs, blocks: blocksFor(m.id) };
+    const avail = machineUse({ ...base, bookings: [] }).availableHours;
+    let earliest = new Date(w30.getTime() + rnd() * 24 * HOUR);
+    let n = 0;
+    for (let guard = 0; guard < 40; guard++) {
+      const booked = machineUse({ ...base, bookings: used.get(m.id) ?? [] }).bookedHours;
+      if (booked >= avail * target) break;
+      // Bigger batches, and never past about 68% of the time available.
+      const want = Math.round((f.size[0] + rnd() * (f.size[1] - f.size[0])) * 1.5 * 2) / 2;
+      const hours = Math.min(want, Math.floor((avail * 0.68 - booked) * 2) / 2);
+      if (hours < f.size[0]) break;
+      const factor = n === 1 && OVER_ON[m.name] ? OVER_ON[m.name] : 0.93 + rnd() * 0.12;
+      const span = place(m, earliest, hours * Math.max(1, factor));
+      if (span.end > cutoff) break;
+      used.set(m.id, [...(used.get(m.id) ?? []), span]);
+      const line: L = f.service
+        ? { name: f.service, q: { hours }, notes: "As per the customer's test plan" }
+        : { custom: { dept: m.deptCode, description: f.custom![n % f.custom!.length], unitLabel: "per hour", ratePaise: f.rate! }, q: { quantity: hours }, notes: `On ${m.name}` };
+      planned.push({ m, span, hours, factor, promisedLate: n === 1 && LATE_ON.has(m.name), line });
+      n++;
+      earliest = m.parallelJobs > 1 ? new Date(w30.getTime() + rnd() * 5 * 24 * HOUR) : new Date(span.end.getTime() + rnd() * 18 * HOUR);
+    }
+  }
+  // One quotation, PO and invoice per customer per fortnight.
+  const groups = new Map<string, { customer: string; jobs: Planned[] }>();
+  for (const p of planned.sort((a, b) => a.span.start.getTime() - b.span.start.getTime())) {
+    const pool = POOL[p.m.deptCode];
+    const customer = pool[Math.floor(rnd() * pool.length)];
+    const fortnight = Math.floor(daysBetweenDates(day(-30), istDate(p.span.start)) / 14);
+    const key = `${customer}|${p.m.deptCode}|${fortnight}`;
+    if (!groups.has(key)) groups.set(key, { customer, jobs: [] });
+    groups.get(key)!.jobs.push(p);
+  }
+  for (const g of groups.values()) {
+    const first = istDate(g.jobs[0].span.start);
+    const quoteDay = daysBetweenDates(today, first) - 4;
+    const ts = await order(g.customer, quoteDay, g.jobs.length > 1 ? `Quotation for ${DEPT_WORK[g.jobs[0].m.deptCode] ?? "work"}` : `Quotation for ${g.jobs[0].line.name ?? g.jobs[0].line.custom!.description.toLowerCase()}`, g.jobs.map((p) => p.line), quoteDay + 2);
+    const rows = (
+      await db.execute<{ id: string; ticket_id: string; ticket_no: string; dept: string | null; unit_type: string | null; hours_needed: string | null }>(
+        sql`select j.id, t.id as ticket_id, t.ticket_no, t.snapshot->>'deptCode' as dept, qi.unit_type, j.hours_needed from jobs j join tickets t on t.id = j.ticket_id join quotation_items qi on qi.id = t.quotation_item_id where t.id = any(${sql.param(ts.map((t) => t.id))}::uuid[])`,
+      )
+    ).rows;
+    for (const [i, t] of ts.entries()) {
+      const p = g.jobs[i];
+      const r = rows.find((x) => x.ticket_id === t.id)!;
+      if (p.line.custom) {
+        await db.update(s.jobs).set({ hoursNeeded: String(p.hours) }).where(eq(s.jobs.id, r.id));
+        r.hours_needed = String(p.hours);
+      }
+      await finished(r, p.m, p.span.start, { span: p.span, factor: p.factor, promisedLate: p.promisedLate, handedOver: true });
+    }
+    const lastEnd = istDate(new Date(Math.max(...g.jobs.map((p) => p.span.end.getTime()))));
+    const invDay = Math.min(daysBetweenDates(today, lastEnd) + 1, 0);
+    await invoiceAndPay(ts, g.customer, invDay, Math.min(invDay + 10, 0));
+  }
+  log(`  Last 30 days: ${planned.length} more jobs on ${new Set(planned.map((p) => p.m.id)).size} machines in ${groups.size} paid orders`);
 
   // ---- Now and the next 2 weeks (through the real booking rules) ------------------------------
   const book = (jobId: string, machineName: string, start: Date, hours: number, extra: { exactStart?: boolean; allowPast?: boolean } = {}) =>
@@ -488,6 +576,7 @@ export async function loadPlanningDemo(conn: DB | Tx, opts: { log?: (m: string) 
   const over = [...OVER.entries()];
   const story = {
     machines: machineRows.length,
+    fillJobs: planned.length,
     doneWithLogs: doneJobs.length,
     vmcBookedPct: Math.round(use.bookedPct ?? 0),
     overQuoted: over.map(([t, f]) => `${t} +${Math.round((f - 1) * 100)}%`),

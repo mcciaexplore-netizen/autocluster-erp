@@ -395,7 +395,13 @@ function Body({ data, reload, env, openMove }: { data: JobPanelData; reload: () 
             ) : null}
           </>
         ) : (
-          <p className="text-sm text-muted-foreground">{materials?.hasList ? "Not recorded yet." : "No materials recorded for this job."}</p>
+          materials?.noneNeeded ? (
+            <p className="text-sm">
+              Kept after materials: <strong>{formatINR(materials.taxablePaise)}</strong> (100%, no materials)
+            </p>
+          ) : (
+            <p className="text-sm text-muted-foreground">{materials?.hasList ? "Not recorded yet." : "No materials recorded for this job."}</p>
+          )
         )}
       </Section>
 

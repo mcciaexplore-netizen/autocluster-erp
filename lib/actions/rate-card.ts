@@ -3,11 +3,11 @@
 import { isSignedIn } from "@/lib/auth-guard";
 import { SIGNED_OUT_MESSAGE } from "@/lib/auth-messages";
 
-import { eq, inArray } from "drizzle-orm";
+import { eq, inArray, sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { db } from "@/db";
-import { services } from "@/db/schema";
+import { invServiceMaterials, services } from "@/db/schema";
 import { todayIso } from "@/lib/format";
 
 const rate = z.number().finite().min(0).max(10_000_000);
@@ -33,6 +33,18 @@ export async function updateRates(changes: { id: number; rateMsme: number; rateO
   });
   revalidatePath("/", "layout");
   return { ok: true as const, count: parsed.data.length };
+}
+
+/** "No materials needed" on a service. Only allowed when it has no materials list. */
+export async function setNoMaterialsNeeded(id: number, on: boolean) {
+  if (!(await isSignedIn())) return { ok: false as const, message: SIGNED_OUT_MESSAGE };
+  if (on) {
+    const [m] = await db.select({ n: sql<number>`count(*)::int` }).from(invServiceMaterials).where(eq(invServiceMaterials.serviceId, id));
+    if ((m?.n ?? 0) > 0) return { ok: false as const, message: "This service has a materials list. Remove it first, then switch on “No materials needed”." };
+  }
+  await db.update(services).set({ noMaterialsNeeded: on }).where(eq(services.id, id));
+  revalidatePath("/", "layout");
+  return { ok: true as const };
 }
 
 export async function setServiceActive(id: number, isActive: boolean) {
