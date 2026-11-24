@@ -7,6 +7,8 @@
  * when their role says "Can only act on their own departments". Viewing is never scoped.
  */
 export const PERMISSIONS = {
+  // General
+  "actions.on_behalf": { area: "General", label: "Record work on behalf of others (change \"Done by\", and \"Who's working?\" on Today)" },
   // CRM
   "crm.view": { area: "CRM", label: "See enquiries and activities" },
   "crm.edit": { area: "CRM", label: "Add and change enquiries, activities and follow-ups" },
@@ -84,7 +86,7 @@ export const DEFAULT_ROLES: DefaultRole[] = [
     name: "Manager",
     description: "Runs the work: everything except users, roles and settings.",
     scopeOwnDepartments: false,
-    permissions: [...pick("crm."), "customers.view", "customers.edit", ...pick("quotes."), ...pick("orders."), ...pick("planning."), ...pick("inventory.").filter((p) => p !== "inventory.use_own_jobs"), ...pick("ratecard."), ...INSIGHTS_ALL, "money.sale_prices", "money.stock_costs"],
+    permissions: ["actions.on_behalf", ...pick("crm."), "customers.view", "customers.edit", ...pick("quotes."), ...pick("orders."), ...pick("planning."), ...pick("inventory.").filter((p) => p !== "inventory.use_own_jobs"), ...pick("ratecard."), ...INSIGHTS_ALL, "money.sale_prices", "money.stock_costs"],
   },
   {
     name: "Sales",

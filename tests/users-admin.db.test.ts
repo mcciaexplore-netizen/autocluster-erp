@@ -165,7 +165,31 @@ describe.skipIf(skip)("Users and Roles admin (database)", () => {
     expect(editors.some((p) => p.name === "Nita Sales")).toBe(true); // name only now, still has Sales
   });
 
-  it("Done by is the signed-in person; only Managers and Admins record for someone else", async () => {
+  it("recording for others is a permission: a renamed copy of Manager keeps it, and removing it takes it away", async () => {
+    const { doneByFor } = await import("@/lib/auth/done-by");
+    const { copyRole } = await import("@/db/role-writer");
+    const [omkar] = await db.select().from(s.appUsers).where(eq(s.appUsers.fullName, "Omkar Operator"));
+    // Defaults: on for Admin and Manager only.
+    const perms = async (id: number) => (await db.select().from(s.rolePermissions).where(eq(s.rolePermissions.roleId, id))).map((p) => p.permission);
+    for (const [name, id] of Object.entries(roles)) expect((await perms(id)).includes("actions.on_behalf")).toBe(name === "Admin" || name === "Manager");
+    // A copy of Manager, renamed: still allowed.
+    const copy = await copyRole(db, roles.Manager);
+    const copied = await perms(copy.id);
+    expect(copied).toContain("actions.on_behalf");
+    await saveRole(db, copy.id, { name: "Shift lead", description: "", scopeOwnDepartments: false, permissions: copied });
+    const lead = await saveUser(db, auth, null, { ...base, name: "Lata Lead", email: "lata@example.com", roleIds: [copy.id] }, temp);
+    current = await asPerson(lead.id);
+    expect(mayRecordForOthers(current)).toBe(true);
+    expect((await doneByFor(omkar.teamMemberId)).id).toBe(omkar.teamMemberId);
+    // Switch it off on that role: from the next click she is recorded as herself.
+    await saveRole(db, copy.id, { name: "Shift lead", description: "", scopeOwnDepartments: false, permissions: copied.filter((p) => p !== "actions.on_behalf") });
+    current = await asPerson(lead.id);
+    expect(mayRecordForOthers(current)).toBe(false);
+    expect((await doneByFor(omkar.teamMemberId)).id).toBe(current.teamMemberId);
+    current = null;
+  });
+
+  it("Done by is the signed-in person; only people allowed to record on behalf record for someone else", async () => {
     const { doneByFor, logOnBehalf } = await import("@/lib/auth/done-by");
     const [omkar] = await db.select().from(s.appUsers).where(eq(s.appUsers.fullName, "Omkar Operator"));
     const kiran = await asPerson((await db.select().from(s.appUsers).where(eq(s.appUsers.email, "kiran@example.com")))[0].id);
