@@ -10,6 +10,7 @@ const TABS: { href: string; label: string; perm: Permission }[] = [
   { href: "/settings", label: "General", perm: "settings.edit" },
   { href: "/settings/users", label: "Users", perm: "users.manage" },
   { href: "/settings/roles", label: "Roles", perm: "users.manage" },
+  { href: "/settings/activity", label: "Activity log", perm: "users.manage" },
 ];
 
 /** Settings' tabs, only the ones the person can open. On phones the strip scrolls inside its own box. */

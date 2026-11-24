@@ -1,5 +1,6 @@
 "use server";
 
+import { logActivity } from "@/lib/activity";
 import { doneByFor, logOnBehalf } from "@/lib/auth/done-by";
 
 import { revalidatePath } from "next/cache";
@@ -40,11 +41,16 @@ export async function markOrderedAction(input: z.input<typeof sendSchema>) {
     const v = sendSchema.parse(input);
     const who = await doneByFor(v.doneBy);
     const r = await markOrdered(db, { ...v, doneBy: who.id });
+    await logActivity({ area: "Inventory", action: "ordered", summary: `Sent an order to a supplier (${v.lines.length} items, by ${v.method.toLowerCase()})`, entityType: "supplier", entityId: v.supplierId });
     await logOnBehalf(who, "Inventory", "sent an order to a supplier");
     return r;
   });
 }
 
 export async function clearOrderedAction(itemId: string) {
-  return run("inventory.reorder", () => clearOrdered(db, z.string().uuid().parse(itemId)));
+  return run("inventory.reorder", async () => {
+    const r = await clearOrdered(db, z.string().uuid().parse(itemId));
+    await logActivity({ area: "Inventory", action: "ordered", summary: "Cleared “Ordered on” for an item", entityType: "inv_item", entityId: itemId });
+    return r;
+  });
 }

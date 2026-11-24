@@ -9,33 +9,44 @@ import { safeNextPath } from "@/lib/auth/demo-gate";
 import { getCurrentUser } from "@/lib/auth/current-user";
 import { passwordProblem } from "@/lib/auth/password-rules";
 import { auth } from "@/lib/auth/server";
+import { logActivity } from "@/lib/activity";
+import { checkSignIn } from "@/lib/auth/sign-in-flow";
 
 export type FormState = { error: string | null; ok?: string | null };
 
-const WRONG = "Email or password is not right.";
+/** The IP address of this request (Vercel puts the caller's address first). */
+async function requestIp() {
+  const h = await headers();
+  return h.get("x-forwarded-for")?.split(",")[0]?.trim() || h.get("x-real-ip") || null;
+}
 
 /** Sign in with email and password. "Keep me signed in" keeps the session for 7 days. */
 export async function signInWithPassword(_prev: FormState, fd: FormData): Promise<FormState> {
-  const email = String(fd.get("email") ?? "").trim().toLowerCase();
+  const email = String(fd.get("email") ?? "").trim().toLowerCase().slice(0, 200);
   const password = String(fd.get("password") ?? "");
   const remember = fd.get("remember") === "on";
   const next = safeNextPath(fd.get("next"));
   if (!email || !password) return { error: "Please type your email and password." };
 
-  const [u] = await db.select().from(appUsers).where(eq(appUsers.email, email));
-  // The same answer whether the email is unknown, deactivated or the password is wrong.
-  if (!u || !u.canSignIn || u.deactivatedAt || !u.authUserId) {
-    await new Promise((r) => setTimeout(r, 600));
-    return { error: WRONG };
+  const h = await headers();
+  const r = await checkSignIn(
+    db,
+    { email, ip: await requestIp() },
+    async () => {
+      try {
+        await auth.api.signInEmail({ body: { email, password, rememberMe: remember }, headers: h });
+        return true;
+      } catch {
+        return false;
+      }
+    },
+    (e) => logActivity({ area: "Sign-in", action: e.success ? "signed in" : "failed sign-in", summary: e.summary, entityType: "user", entityId: e.userId, userId: e.userId }),
+  );
+  if (!r.ok) {
+    await new Promise((res) => setTimeout(res, 600)); // slows down guessing
+    return { error: r.message };
   }
-  try {
-    await auth.api.signInEmail({ body: { email, password, rememberMe: remember }, headers: await headers() });
-  } catch {
-    await new Promise((r) => setTimeout(r, 600));
-    return { error: WRONG };
-  }
-  await db.update(appUsers).set({ lastSignInAt: new Date() }).where(eq(appUsers.id, u.id));
-  redirect(u.mustChangePassword ? `/change-password?next=${encodeURIComponent(next)}` : next);
+  redirect(r.user.mustChangePassword ? `/change-password?next=${encodeURIComponent(next)}` : next);
 }
 
 export async function signOutAction() {
@@ -53,6 +64,7 @@ async function setOwnPassword(userId: string, authUserId: string, sessionId: str
   await ctx.internalAdapter.updatePassword(authUserId, await ctx.password.hash(password));
   await db.delete(authSessions).where(and(eq(authSessions.userId, authUserId), ne(authSessions.id, sessionId)));
   await db.update(appUsers).set({ mustChangePassword: false, updatedAt: new Date() }).where(eq(appUsers.id, userId));
+  await logActivity({ area: "Sign-in", action: "password changed", summary: "Changed their own password (other devices signed out)", entityType: "user", entityId: userId });
 }
 
 /** First sign-in with a temporary password: "Choose your new password". */
@@ -115,6 +127,9 @@ export async function signOutSession(sessionId: string): Promise<FormState> {
 /** Profile: "Sign out of all devices", including this one. */
 export async function signOutEverywhere() {
   const me = await getCurrentUser();
-  if (me) await db.delete(authSessions).where(eq(authSessions.userId, me.authUserId));
+  if (me) {
+    await db.delete(authSessions).where(eq(authSessions.userId, me.authUserId));
+    await logActivity({ area: "Sign-in", action: "signed out", summary: "Signed out of all devices", entityType: "user", entityId: me.id });
+  }
   redirect("/sign-in");
 }

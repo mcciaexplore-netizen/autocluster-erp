@@ -1,5 +1,6 @@
 "use server";
 
+import { logActivity } from "@/lib/activity";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { db } from "@/db";
@@ -32,9 +33,11 @@ export async function saveItemAction(itemId: string | null, values: ItemFormValu
     const v = itemFormSchema.parse(values);
     if (itemId) {
       await updateItem(db, id.parse(itemId), v);
+      await logActivity({ area: "Inventory", action: "changed", summary: `Changed item ${v.code} ${v.name}`, entityType: "inv_item", entityId: itemId });
       return { id: itemId, code: v.code };
     }
     const item = await createItem(db, v, { suggestedCode });
+    await logActivity({ area: "Inventory", action: "created", summary: `Added item ${item.code} ${v.name}`, entityType: "inv_item", entityId: item.id });
     return { id: item.id, code: item.code };
   });
 }
@@ -44,19 +47,20 @@ export async function saveSupplierAction(supplierId: string | null, values: Supp
     const v = supplierFormSchema.parse(values);
     if (supplierId) {
       await updateSupplier(db, id.parse(supplierId), v);
+      await logActivity({ area: "Inventory", action: "changed", summary: `Changed supplier ${v.name.trim()}`, entityType: "supplier", entityId: supplierId });
       return { id: supplierId, name: v.name.trim() };
     }
     const s = await createSupplier(db, v);
+    await logActivity({ area: "Inventory", action: "created", summary: `Added supplier ${s.name}`, entityType: "supplier", entityId: s.id });
     return { id: s.id, name: s.name };
   });
 }
 
 export async function setServiceMaterialsAction(serviceId: number, lines: { itemId: string; qtyPerUnit: string }[]) {
-  return run("ratecard.time_materials", () =>
-    setServiceMaterials(
-      db,
-      z.number().int().positive().parse(serviceId),
-      z.array(z.object({ itemId: z.string().uuid().or(z.literal("")), qtyPerUnit: z.string().max(20) })).max(30).parse(lines),
-    ),
-  );
+  return run("ratecard.time_materials", async () => {
+    const sid = z.number().int().positive().parse(serviceId);
+    const r = await setServiceMaterials(db, sid, z.array(z.object({ itemId: z.string().uuid().or(z.literal("")), qtyPerUnit: z.string().max(20) })).max(30).parse(lines));
+    await logActivity({ area: "Rate Card", action: "materials", summary: `Changed the materials list of a service (${lines.filter((l) => l.itemId).length} items)`, entityType: "service", entityId: String(sid) });
+    return r;
+  });
 }

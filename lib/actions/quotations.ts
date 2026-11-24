@@ -1,5 +1,6 @@
 "use server";
 
+import { logActivity } from "@/lib/activity";
 import { allow } from "@/lib/auth/guard";
 import type { Permission } from "@/lib/auth/permissions";
 
@@ -90,6 +91,7 @@ export async function saveQuotation(
     // An existing quotation keeps its enquiry link; a new one made from an enquiry gets it here.
     const { leadId, ...data } = c.data;
     const q = id ? await updateQuotationAndLead(db, id, data) : leadId ? await createQuotationFromLead(db, data, leadId) : await createQuotation(db, data);
+    await logActivity({ area: "Quotations", action: id ? "changed" : "created", summary: `${id ? "Changed" : "Created"} quotation ${q.quoteNo}`, entityType: "quotation", entityId: q.id });
     refresh();
     return { ok: true, data: q };
   } catch (e) {
@@ -118,6 +120,8 @@ export async function setQuotationStatus(
   if (!s.success) return { ok: false, message: "Unknown status." };
   try {
     const r = await changeQuotationStatus(db, id, s.data, todayInIndia());
+    const [qn] = await db.select({ no: quotations.quoteNo }).from(quotations).where(eq(quotations.id, id));
+    await logActivity({ area: "Quotations", action: "status", summary: `Marked quotation ${qn?.no ?? ""} ${s.data.toLowerCase()}`, entityType: "quotation", entityId: id });
     refresh();
     return { ok: true, data: r };
   } catch (e) {

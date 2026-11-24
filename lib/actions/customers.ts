@@ -1,5 +1,6 @@
 "use server";
 
+import { logActivity } from "@/lib/activity";
 import { allow } from "@/lib/auth/guard";
 
 import { and, eq, inArray, isNull } from "drizzle-orm";
@@ -69,10 +70,12 @@ export async function saveCustomerDetails(
         .where(and(eq(customers.id, id), isNull(customers.deletedAt)))
         .returning({ id: customers.id });
       if (!row) return { ok: false, message: "This customer could not be found. It may have been deleted." };
+      await logActivity({ area: "Customers", action: "changed", summary: `Changed customer ${values.companyName}`, entityType: "customer", entityId: row.id });
       refresh();
       return { ok: true, data: { id: row.id } };
     }
     const [row] = await db.insert(customers).values({ ...values, status: "DRAFT" }).returning({ id: customers.id });
+    await logActivity({ area: "Customers", action: "created", summary: `Added customer ${values.companyName}`, entityType: "customer", entityId: row.id });
     return { ok: true, data: { id: row.id } };
   } catch (e) {
     console.error(e);
@@ -117,6 +120,7 @@ export async function saveCustomerLinks(
       if (validDepts.length) await tx.insert(customerDepartments).values(validDepts.map((deptCode) => ({ customerId: id, deptCode })));
       if (validServices.length) await tx.insert(customerServices).values(validServices.map((serviceId) => ({ customerId: id, serviceId })));
       await tx.update(customers).set({ status: "ACTIVE" }).where(eq(customers.id, id));
+      await logActivity({ area: "Customers", action: "changed", summary: `Set departments and services of ${c.companyName} (${validDepts.join(", ") || "none"}; ${validServices.length} services)`, entityType: "customer", entityId: id }, tx);
       return { ok: true as const, data: { id, companyName: c.companyName } };
     });
   } catch (e) {
@@ -131,7 +135,8 @@ export async function saveCustomerLinks(
 export async function deleteCustomer(id: string): Promise<ActionResult> {
   const g = await allow("customers.edit");
   if (!g.ok) return { ok: false as const, message: g.message };
-  await db.update(customers).set({ deletedAt: new Date() }).where(eq(customers.id, id));
+  const [del] = await db.update(customers).set({ deletedAt: new Date() }).where(eq(customers.id, id)).returning({ name: customers.companyName });
+  if (del) await logActivity({ area: "Customers", action: "deleted", summary: `Deleted customer ${del.name}`, entityType: "customer", entityId: id });
   refresh();
   return { ok: true };
 }
@@ -139,7 +144,8 @@ export async function deleteCustomer(id: string): Promise<ActionResult> {
 export async function restoreCustomer(id: string): Promise<ActionResult> {
   const g = await allow("customers.edit");
   if (!g.ok) return { ok: false as const, message: g.message };
-  await db.update(customers).set({ deletedAt: null }).where(eq(customers.id, id));
+  const [back] = await db.update(customers).set({ deletedAt: null }).where(eq(customers.id, id)).returning({ name: customers.companyName });
+  if (back) await logActivity({ area: "Customers", action: "restored", summary: `Brought back customer ${back.name}`, entityType: "customer", entityId: id });
   refresh();
   return { ok: true };
 }

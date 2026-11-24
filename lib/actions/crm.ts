@@ -1,5 +1,6 @@
 "use server";
 
+import { logActivity } from "@/lib/activity";
 import { eq } from "drizzle-orm";
 import { leads } from "@/db/schema";
 import { revalidatePath } from "next/cache";
@@ -187,7 +188,11 @@ export async function findDuplicatesAction(q: z.input<typeof dupQuery>): Promise
 
 /** "Pick or type a new tag" in the enquiry form. */
 export async function createTagAction(name: string) {
-  return run("crm.edit", async () => ({ id: await addListItem(db, "tags", { name: z.string().max(200).parse(name) }), name: name.trim().replace(/\s+/g, " ") }));
+  return run("crm.edit", async () => {
+    const tag = { id: await addListItem(db, "tags", { name: z.string().max(200).parse(name) }), name: name.trim().replace(/\s+/g, " ") };
+    await logActivity({ area: "CRM", action: "tag", summary: `Added tag "${tag.name}"`, entityType: "settings", entityId: null });
+    return tag;
+  });
 }
 
 // ---- activities ---------------------------------------------------------------------------

@@ -10,7 +10,7 @@
  * - The quotation row is locked (FOR UPDATE) while its tickets change, so two
  *   people clicking at once can't both open tickets.
  */
-import { actorName } from "../lib/auth/actor";
+import { actorName, reportActivity } from "../lib/auth/actor";
 import { and, eq, inArray, ne, sql } from "drizzle-orm";
 import { financialYear, formatQuoteNo, paiseToRupeeString, quantityInWords, toPaise } from "../lib/pricing";
 import { splitQuotation } from "../lib/tickets";
@@ -44,6 +44,7 @@ export async function addEvents(
   if (!ticketIds.length) return;
   const by = await actorName();
   await tx.insert(ticketEvents).values(ticketIds.map((ticketId) => ({ ticketId, type, message, data: data ?? null, createdBy: by })));
+  for (const ticketId of ticketIds) await reportActivity(tx, { area: "Orders", action: type.toLowerCase().replace(/_/g, " "), summary: message, entityType: "ticket", entityId: ticketId });
 }
 
 async function lockQuotation(tx: Conn, id: string) {

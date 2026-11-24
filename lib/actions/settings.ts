@@ -1,5 +1,6 @@
 "use server";
 
+import { logActivity } from "@/lib/activity";
 import { allow } from "@/lib/auth/guard";
 
 import { eq } from "drizzle-orm";
@@ -38,6 +39,7 @@ export async function saveSettings(input: SettingsInput) {
       gstPct: String(v.gstPct),
     })
     .where(eq(settings.id, 1));
+  await logActivity({ area: "Settings", action: "changed", summary: "Changed the general settings", entityType: "settings", entityId: null });
   revalidatePath("/", "layout");
   return { ok: true as const };
 }

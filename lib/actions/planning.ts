@@ -1,5 +1,6 @@
 "use server";
 
+import { logActivity } from "@/lib/activity";
 import { assertInScope, machineDept } from "@/lib/auth/scope";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
@@ -47,9 +48,11 @@ export async function saveMachineAction(machineId: string | null, input: Machine
     const v = machineFormSchema.parse(input);
     if (machineId) {
       await updateMachine(db, id.parse(machineId), v);
+      await logActivity({ area: "Planning", action: "changed", summary: `Changed machine ${v.name}`, entityType: "machine", entityId: machineId });
       return { id: machineId };
     }
     const m = await createMachine(db, v);
+    await logActivity({ area: "Planning", action: "created", summary: `Added machine ${m.code} ${v.name}`, entityType: "machine", entityId: m.id });
     return { id: m.id, code: m.code };
   });
 }
@@ -68,6 +71,7 @@ export async function blockTimeAction(input: z.input<typeof blockSchema>) {
     await assertInScope("planning.blocks", [await machineDept(id.parse(input.machineId))]);
     const v = blockSchema.parse(input);
     const r = await blockMachine(db, { machineId: v.machineId, type: v.type, start: v.from, end: v.to, note: v.note, invDocumentId: v.invDocumentId ?? null });
+    await logActivity({ area: "Planning", action: "blocked", summary: `Blocked ${r.machine.name} (${v.type.toLowerCase()})${v.note ? `: ${v.note}` : ""}`, entityType: "machine", entityId: v.machineId });
     return { machine: r.machine.name, clashes: r.clashes.map((c) => ({ id: c.id, ticketNo: c.ticketNo, company: c.company, startAt: c.startAt.toISOString(), endAt: c.endAt.toISOString() })) };
   });
 }
@@ -76,6 +80,7 @@ export async function markBreakdownAction(machineId: string, until: string, note
   return run("planning.blocks", async () => {
     await assertInScope("planning.blocks", [await machineDept(id.parse(machineId))]);
     const r = await markBreakdown(db, id.parse(machineId), localDt.parse(until), z.string().max(500).nullable().parse(note));
+    await logActivity({ area: "Planning", action: "breakdown", summary: `Marked ${r.machine.name} as broken down${note ? `: ${note}` : ""}`, entityType: "machine", entityId: machineId });
     return { machine: r.machine.name, clashes: r.clashes.map((c) => ({ id: c.id, ticketNo: c.ticketNo, company: c.company, startAt: c.startAt.toISOString(), endAt: c.endAt.toISOString() })) };
   });
 }
@@ -84,6 +89,7 @@ export async function extendBreakdownAction(machineId: string, until: string) {
   return run("planning.blocks", async () => {
     await assertInScope("planning.blocks", [await machineDept(id.parse(machineId))]);
     const r = await extendBreakdown(db, id.parse(machineId), localDt.parse(until));
+    await logActivity({ area: "Planning", action: "breakdown", summary: `Extended the breakdown of ${r.machine.name}`, entityType: "machine", entityId: machineId });
     return { machine: r.machine.name, clashes: r.clashes.map((c) => ({ id: c.id, ticketNo: c.ticketNo, company: c.company, startAt: c.startAt.toISOString(), endAt: c.endAt.toISOString() })) };
   });
 }
@@ -91,14 +97,18 @@ export async function extendBreakdownAction(machineId: string, until: string) {
 export async function markFixedAction(machineId: string) {
   return run("planning.blocks", async () => {
     await assertInScope("planning.blocks", [await machineDept(id.parse(machineId))]);
-    return ({ machine: (await markFixed(db, id.parse(machineId))).name });
+    const m = await markFixed(db, id.parse(machineId));
+    await logActivity({ area: "Planning", action: "fixed", summary: `Marked ${m.name} as fixed`, entityType: "machine", entityId: machineId });
+    return { machine: m.name };
   });
 }
 
 export async function deleteBlockAction(blockId: string) {
   return run("planning.blocks", async () => {
     await assertInScope("planning.blocks", [await blockMachineDept(id.parse(blockId))]);
-    return deleteBlock(db, id.parse(blockId));
+    const r = await deleteBlock(db, id.parse(blockId));
+    await logActivity({ area: "Planning", action: "unblocked", summary: "Removed a blocked time", entityType: "machine_block", entityId: blockId });
+    return r;
   });
 }
 
@@ -106,6 +116,7 @@ export async function addHolidayAction(date: string, name: string) {
   return run("planning.machines", async () => {
     await assertInScope("planning.machines", [null]); // holidays apply to every department
     const h = await addHoliday(db, z.string().max(10).parse(date), z.string().max(200).parse(name));
+    await logActivity({ area: "Planning", action: "holiday", summary: `Added holiday ${name.trim()} on ${date}`, entityType: "holiday", entityId: String(h.id) });
     return { id: h.id };
   });
 }
@@ -113,7 +124,9 @@ export async function addHolidayAction(date: string, name: string) {
 export async function deleteHolidayAction(holidayId: number) {
   return run("planning.machines", async () => {
     await assertInScope("planning.machines", [null]);
-    return deleteHoliday(db, z.number().int().positive().parse(holidayId));
+    const r = await deleteHoliday(db, z.number().int().positive().parse(holidayId));
+    await logActivity({ area: "Planning", action: "holiday", summary: "Removed a holiday", entityType: "holiday", entityId: String(holidayId) });
+    return r;
   });
 }
 
@@ -125,6 +138,7 @@ export async function importHolidaysAction(form: FormData) {
     if (!/\.xlsx$/i.test(file.name)) throw new UserFacingError("Please upload an Excel file (.xlsx).");
     const { rows, problems } = await readHolidaysFile(new Uint8Array(await file.arrayBuffer()));
     const r = rows.length ? await importHolidays(db, rows) : { added: 0, skipped: 0 };
+    if (r.added) await logActivity({ area: "Planning", action: "holiday", summary: `Imported ${r.added} holidays from Excel`, entityType: "holiday", entityId: null });
     return { ...r, problems };
   });
 }
@@ -141,6 +155,7 @@ export async function saveServiceTimeAction(serviceId: number, setupMinutes: num
       .where(eq(services.id, sid))
       .returning({ id: services.id });
     if (!row) throw new UserFacingError("This service could not be found.");
+    await logActivity({ area: "Rate Card", action: "time", summary: `Changed the time needed for a service (setup ${setup ?? "-"} min, ${per ?? "-"} min per unit)`, entityType: "service", entityId: String(sid) });
     return { id: row.id };
   });
 }

@@ -1,5 +1,6 @@
 "use server";
 
+import { logActivity } from "@/lib/activity";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { db } from "@/db";
@@ -86,6 +87,7 @@ export async function importLeadsAction(rows: { rowNo: number; raw: RawRow }[], 
       z.string().max(200).parse(fileName).replace(/[^\w .()-]/g, ""),
     );
     revalidatePath("/", "layout");
+    await logActivity({ area: "CRM", action: "import", summary: `Imported ${made.length} enquiries from Excel`, entityType: "lead", entityId: null });
     return { imported: made.length, leadNos: made.map((m) => m.leadNo), nowFailing: checked.length - good.length };
   });
 }

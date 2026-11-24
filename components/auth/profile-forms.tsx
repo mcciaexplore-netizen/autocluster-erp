@@ -92,3 +92,27 @@ export function SessionList({ sessions }: { sessions: { id: string; current: boo
     </div>
   );
 }
+
+const signInWhen = new Intl.DateTimeFormat("en-IN", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "Asia/Kolkata" });
+
+/** "Recent sign-ins": the last 10 sign-ins and failed tries, so someone can spot a stranger. */
+export function SignInHistory({ items }: { items: { at: string; ok: boolean; ip: string | null; userAgent: string | null }[] }) {
+  if (!items.length) return <p className="text-sm text-muted-foreground">No sign-ins recorded yet.</p>;
+  return (
+    <>
+      <ul className="divide-y text-sm">
+        {items.map((s, i) => (
+          <li key={i} className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5 py-2.5">
+            <span className={s.ok ? "" : "font-medium text-destructive"}>{s.ok ? "Signed in" : "Wrong password or refused"}</span>
+            <span className="text-muted-foreground tabular-nums">{signInWhen.format(new Date(s.at))}</span>
+            <span className="w-full text-xs text-muted-foreground">
+              {deviceName(s.userAgent).text}
+              {s.ip ? ` · ${s.ip}` : ""}
+            </span>
+          </li>
+        ))}
+      </ul>
+      <p className="mt-3 text-xs text-muted-foreground">Don&apos;t recognise one? Change your password and sign out of all devices.</p>
+    </>
+  );
+}

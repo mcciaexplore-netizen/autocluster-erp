@@ -7,7 +7,7 @@
  * Each change is logged in crm_stage_changes (who, what, when).
  * The screens check canManagePipeline() before calling these.
  */
-import { actorName } from "../lib/auth/actor";
+import { actorName, reportActivity } from "../lib/auth/actor";
 import { asc, eq, sql } from "drizzle-orm";
 import { STAGE_COLOR_KEYS, stageNameProblem, stageOrderProblem, type StageColor, type StageType } from "@/lib/crm/stages";
 import type { DB, Tx } from "./client";
@@ -29,6 +29,8 @@ function find(stages: CrmStage[], id: string) {
 
 async function log(tx: Tx, action: string, details: Record<string, unknown>) {
   await tx.insert(crmStageChanges).values({ action, details, createdBy: await actorName() });
+  const name = typeof details.name === "string" ? details.name : typeof details.stage === "string" ? details.stage : "";
+  await reportActivity(tx, { area: "CRM", action: "stages", summary: `Pipeline stages: ${action.toLowerCase().replace(/_/g, " ")}${name ? ` (${name})` : ""}`, entityType: "crm_stages", entityId: "" });
 }
 
 async function writeOrder(tx: Tx, ordered: CrmStage[]) {

@@ -35,3 +35,33 @@ export async function currentActor(): Promise<Actor | null> {
 export async function actorName(): Promise<string> {
   return (await currentActor())?.name ?? FALLBACK_ACTOR;
 }
+
+// ---- Activity log hook ---------------------------------------------------------------------------
+/**
+ * The db writers that keep a record's own history (enquiry, job, ticket, stock record, stages)
+ * also report it here, and the signed-in app forwards it to the Activity log (lib/activity.ts).
+ * Scripts and tests never register a hook, so they write no log entries.
+ */
+export interface WriterActivity {
+  area: string;
+  action: string;
+  summary: string;
+  entityType: string;
+  entityId: string;
+  data?: Record<string, unknown> | null;
+}
+type ActivityHook = (conn: unknown, e: WriterActivity) => Promise<void>;
+const h = globalThis as unknown as { acdriActivityHook?: ActivityHook };
+
+export function setActivityHook(fn: ActivityHook) {
+  h.acdriActivityHook = fn;
+}
+
+/** Never throws: a log entry must not undo the work. */
+export async function reportActivity(conn: unknown, e: WriterActivity) {
+  try {
+    await h.acdriActivityHook?.(conn, e);
+  } catch {
+    /* the Activity log is best effort */
+  }
+}

@@ -12,6 +12,7 @@
  * Kept free of Next.js imports so scripts and tests can use it.
  */
 import Decimal from "decimal.js";
+import { reportActivity } from "../lib/auth/actor";
 import { and, asc, eq, sql } from "drizzle-orm";
 import { applyIn, applyOut, applyOutAtCost, isExpired, pickBatches, usableBatches, type StockState } from "@/lib/inventory/calc";
 import { D, formatQty, packRateToUnitRate, packsToUnits, parseQty, parseRate, qtyText, rateText, valuePaise } from "@/lib/inventory/numbers";
@@ -75,6 +76,8 @@ async function newDocument(
     .insert(invDocuments)
     .values({ ...fields, type, fy, seq, docNo })
     .returning({ id: invDocuments.id, docNo: invDocuments.docNo });
+  const words = { IN: "Stock received", OUT: "Stock used", ADJ: "Stock adjusted" } as Record<string, string>;
+  await reportActivity(tx, { area: "Inventory", action: type.toLowerCase(), summary: `${words[type] ?? "Stock record"}: ${d.docNo}${fields.reversesDocId ? " (reversal)" : ""}`, entityType: "inv_document", entityId: d.id });
   return d;
 }
 

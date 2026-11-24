@@ -1,5 +1,6 @@
 "use server";
 
+import { logActivity } from "@/lib/activity";
 import { doneByFor, logOnBehalf } from "@/lib/auth/done-by";
 
 import { revalidatePath } from "next/cache";
@@ -36,6 +37,7 @@ export async function startCountAction(input: { categoryId?: string | null; dept
   return run("inventory.count", async () => {
     const who = await doneByFor(p.doneBy);
     const r = await startCount(db, { ...p, doneBy: who.id });
+    await logActivity({ area: "Inventory", action: "count", summary: `Started stock count ${r.countNo}`, entityType: "inv_count", entityId: r.id });
     await logOnBehalf(who, "Inventory", "started a stock count");
     return r;
   });
@@ -56,5 +58,9 @@ export async function completeCountAction(countId: string, doneBy: string | null
 }
 
 export async function discardCountAction(countId: string) {
-  return run("inventory.count", () => discardCount(db, id.parse(countId)));
+  return run("inventory.count", async () => {
+    const r = await discardCount(db, id.parse(countId));
+    await logActivity({ area: "Inventory", action: "count", summary: "Discarded a stock count", entityType: "inv_count", entityId: countId });
+    return r;
+  });
 }

@@ -7,6 +7,7 @@ import { headers } from "next/headers";
 import { cache } from "react";
 import { db } from "@/db";
 import { setActorResolver } from "./actor";
+import "@/lib/activity"; // registers the Activity log hook
 import { readAccess } from "./access";
 import type { Grants } from "./can";
 import { auth } from "./server";

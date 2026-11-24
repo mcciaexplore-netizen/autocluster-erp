@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { Suspense } from "react";
 import { NewPasswordForm } from "@/components/auth/sign-in-form";
-import { DetailsForm, SessionList } from "@/components/auth/profile-forms";
+import { DetailsForm, SessionList, SignInHistory } from "@/components/auth/profile-forms";
 import { PageHeader } from "@/components/common/page-header";
 import { Skeleton } from "@/components/ui/skeleton";
 import { changePassword } from "@/lib/actions/session";
@@ -44,6 +44,9 @@ async function Body() {
       </Card>
       <Card title="Signed in on">
         <SessionList sessions={p.sessions.map((s) => ({ id: s.id, current: s.current, ip: s.ip, userAgent: s.userAgent, lastUsed: s.updatedAt.toISOString() }))} />
+      </Card>
+      <Card title="Recent sign-ins">
+        <SignInHistory items={p.signIns} />
       </Card>
       <Card title="Your roles and departments">
         <dl className="grid grid-cols-[8rem_1fr] gap-y-3 text-sm">

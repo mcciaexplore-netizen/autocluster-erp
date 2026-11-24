@@ -7,7 +7,7 @@ import { headers } from "next/headers";
 import { db } from "@/db";
 import type { DB, Tx } from "@/db/client";
 import { activityLog } from "@/db/schema";
-import { currentActor } from "@/lib/auth/actor";
+import { currentActor, setActivityHook } from "@/lib/auth/actor";
 
 export type ActivityArea = "Users" | "Roles" | "Sign-in" | "Settings" | "CRM" | "Customers" | "Quotations" | "Orders" | "Planning" | "Inventory" | "Rate Card";
 
@@ -39,7 +39,8 @@ export async function logActivity(e: ActivityEntry, conn: DB | Tx = db) {
   try {
     const actor = e.userId !== undefined ? null : await currentActor();
     const { ip, userAgent } = await requestInfo();
-    await conn.insert(activityLog).values({
+    // Its own savepoint: a failed log line must never break the caller's transaction.
+    await conn.transaction(async (sp) => sp.insert(activityLog).values({
       userId: e.userId !== undefined ? e.userId : (actor?.userId ?? null),
       onBehalfOfUserId: e.onBehalfOfUserId ?? null,
       area: e.area,
@@ -50,8 +51,15 @@ export async function logActivity(e: ActivityEntry, conn: DB | Tx = db) {
       data: e.data ?? null,
       ip,
       userAgent,
-    });
+    }));
   } catch (err) {
     console.error("activity log", err);
   }
 }
+
+// Records' own histories (enquiry, job, ticket, stock record, stages) also go to the Activity log,
+// inside the same transaction, but only for a signed-in person (never for scripts).
+setActivityHook(async (conn, e) => {
+  if (!(await currentActor())) return;
+  await logActivity({ area: e.area as ActivityArea, action: e.action, summary: e.summary, entityType: e.entityType, entityId: e.entityId || null, data: e.data ?? null }, conn as DB | Tx);
+});

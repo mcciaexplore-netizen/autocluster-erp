@@ -1,5 +1,6 @@
 "use server";
 
+import { logActivity } from "@/lib/activity";
 import { doneByFor, logOnBehalf } from "@/lib/auth/done-by";
 
 import { revalidatePath } from "next/cache";
@@ -85,6 +86,7 @@ export async function importItemsAction(rows: { rowNo: number; raw: ItemRawRow }
       z.string().max(200).parse(fileName).replace(/[^\w .()-]/g, ""),
       { doneBy: who.id },
     );
+    await logActivity({ area: "Inventory", action: "import", summary: `Imported ${r.items.length} items from Excel (${fileName})`, entityType: "inv_item", entityId: null });
     await logOnBehalf(who, "Inventory", `imported ${r.items.length} items`);
     revalidatePath("/", "layout");
     return { imported: r.items.length, firstCode: r.items[0]?.code ?? "", lastCode: r.items.at(-1)?.code ?? "", openingDoc: r.openingDoc, openingLines: r.openingLines };
