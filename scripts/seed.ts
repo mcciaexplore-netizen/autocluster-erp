@@ -3,11 +3,19 @@
  * Loads demo data (incl. Orders & Billing with sample PDFs) into an EMPTY database only. It never deletes anything.
  * To wipe and reload, use: npm run db:reset
  */
-import { deleteStoredFiles } from "./blob-files";
+import { isDemoMode, NOT_DEMO_MESSAGE } from "../lib/auth/demo-mode";
+import { isConnectionDrop } from "../db/client";
 import { isEmpty, loadDemoData, scriptDb } from "./demo-data";
+import { clearStagedFiles, uploadStagedFiles } from "./demo-files";
 import { scriptBlobFolder } from "./demo-orders";
 
 async function main() {
+  // Real use (DEMO_MODE not true): never wipe or load demo data.
+  if (!isDemoMode()) {
+    console.log(`\n${NOT_DEMO_MESSAGE}\n`);
+    process.exitCode = 1;
+    return;
+  }
   const { db, pool, where } = scriptDb();
   try {
     if (!(await isEmpty(db))) {
@@ -17,14 +25,24 @@ async function main() {
       return;
     }
     console.log(`Loading demo data into ${where}...`);
-    const uploaded: string[] = [];
     const blobFolder = scriptBlobFolder(process.env.DATABASE_URL_UNPOOLED || process.env.DATABASE_URL);
-    try {
-      await db.transaction((tx) => loadDemoData(tx, { orders: { blobFolder, onUpload: (p) => uploaded.push(p) }, crm: true, inventory: true, planning: true }));
-    } catch (e) {
-      await deleteStoredFiles(uploaded).catch(() => {});
-      throw e;
+    // Same as db:reset: retry the database part if the link drops; upload files only once it has saved.
+    for (let attempt = 1; ; attempt++) {
+      clearStagedFiles();
+      try {
+        await db.transaction((tx) => loadDemoData(tx, { orders: { blobFolder }, crm: true, inventory: true, planning: true }));
+        break;
+      } catch (e) {
+        if (attempt < 3 && isConnectionDrop(e)) {
+          console.log(`The link to the database dropped; nothing was saved. Trying again (${attempt + 1} of 3)...`);
+          await new Promise((r) => setTimeout(r, 5000 * attempt));
+          continue;
+        }
+        throw e;
+      }
     }
+    const up = await uploadStagedFiles((m) => console.log(m));
+    if (!up.skipped) console.log(`Uploaded ${up.uploaded} sample PDF(s).${up.failed.length ? ` ${up.failed.length} could not be uploaded.` : ""}`);
     console.log("Done.");
   } finally {
     await pool.end();

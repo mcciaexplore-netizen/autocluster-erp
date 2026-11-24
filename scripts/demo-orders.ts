@@ -6,7 +6,7 @@
  * Everything goes through the real writers, so all amounts follow the real pricing rules.
  * Sample PDFs ("SAMPLE PO", "SAMPLE TAX INVOICE") are made with pdf-lib and uploaded to Blob.
  */
-import { put } from "@vercel/blob";
+import { stageDemoFile } from "./demo-files";
 import { inArray, sql } from "drizzle-orm";
 import { PDFDocument, rgb, StandardFonts, degrees } from "pdf-lib";
 import type { DB, Tx } from "../db/client";
@@ -16,9 +16,8 @@ import { addPurchaseOrder, registerFile } from "../db/po-writer";
 import { createQuotation } from "../db/quote-writer";
 import * as s from "../db/schema";
 import { cancelTicket, changeQuotationStatus } from "../db/ticket-writer";
-import { blobAuth, blobConfigured } from "../lib/blob";
 import { formatDate } from "../lib/format";
-import { uploadPath, type BlobEnv } from "../lib/files";
+import type { BlobEnv } from "../lib/files";
 import { paiseToRupeeString, toPaise } from "../lib/pricing";
 import { addDays, todayInIndia } from "../lib/tickets";
 import { DEFAULT_TERMS } from "../lib/settings-shared";
@@ -28,8 +27,6 @@ type Line = { name: string; q: Partial<{ ccPerPart: number; parts: number; hours
 export interface DemoOrdersOptions {
   /** Blob folder for the sample PDFs (local / preview / live). */
   blobFolder: BlobEnv;
-  /** Called with every uploaded file path, so a failed reset can clean them up. */
-  onUpload?: (path: string) => void;
   log?: (msg: string) => void;
 }
 
@@ -61,16 +58,12 @@ export async function loadDemoOrders(conn: DB | Tx, custIds: Record<string, stri
   const day = (n: number) => addDays(today, n);
   const svcRows = await db.select().from(s.services);
   const svc = (name: string) => svcRows.find((x) => x.name === name)!;
-  if (!blobConfigured()) log("  Note: BLOB_READ_WRITE_TOKEN is not set, so the sample PDFs are listed but not uploaded.");
+  if (!process.env.BLOB_READ_WRITE_TOKEN) log("  Note: BLOB_READ_WRITE_TOKEN is not set, so the sample PDFs are recorded but not uploaded.");
 
   async function file(kind: "PO" | "INVOICE", fileName: string, title: string, rows: [string, string][]) {
     const bytes = await samplePdf(title, rows);
-    let path = uploadPath(opts.blobFolder, kind, fileName);
-    if (blobConfigured()) {
-      const b = await put(path, Buffer.from(bytes), { access: "private", addRandomSuffix: true, contentType: "application/pdf", ...blobAuth() });
-      path = b.pathname;
-      opts.onUpload?.(path);
-    }
+    // Uploaded after the demo data has saved (scripts/demo-files.ts).
+    const path = stageDemoFile(opts.blobFolder, kind, fileName, bytes);
     return registerFile(db, { kind, blobPath: path, fileName, size: bytes.length, mime: "application/pdf" });
   }
 

@@ -11,7 +11,7 @@
  *   already expired; three past per-hour jobs over 10% longer than quoted; custom-item jobs on
  *   the laser and the CMM.
  */
-import { put } from "@vercel/blob";
+import { stageDemoFile } from "./demo-files";
 import { eq, inArray, sql } from "drizzle-orm";
 import type { DB, Tx } from "../db/client";
 import { bookTime } from "../db/booking-writer";
@@ -23,8 +23,7 @@ import * as s from "../db/schema";
 import { changeQuotationStatus } from "../db/ticket-writer";
 import { addWorkingHours, dayPlus, istAt, istDate, maxAtOnce, nextWorkingMoment, overlaps, patternFromSettings, segmentsOn, snapTo30, type Span, type WorkPattern } from "../lib/planning/hours";
 import { machineUse, weekStart } from "../lib/planning/use";
-import { blobAuth, blobConfigured } from "../lib/blob";
-import { uploadPath, type BlobEnv } from "../lib/files";
+import type { BlobEnv } from "../lib/files";
 import { formatDate } from "../lib/format";
 import { financialYear, paiseToRupeeString, toPaise } from "../lib/pricing";
 import { DEFAULT_TERMS } from "../lib/settings-shared";
@@ -115,7 +114,7 @@ function logSpans(start: Date, hours: number, p: WorkPattern, nonstop: boolean):
   return out;
 }
 
-export async function loadPlanningDemo(conn: DB | Tx, opts: { log?: (m: string) => void; now?: Date; blobFolder?: BlobEnv; onUpload?: (path: string) => void } = {}) {
+export async function loadPlanningDemo(conn: DB | Tx, opts: { log?: (m: string) => void; now?: Date; blobFolder?: BlobEnv } = {}) {
   const db = conn as DB; // the writers open their own (nested) transactions
   const log = opts.log ?? (() => {});
   const now = opts.now ?? new Date();
@@ -254,12 +253,8 @@ export async function loadPlanningDemo(conn: DB | Tx, opts: { log?: (m: string) 
       ["Services", ts.map((t) => `${t.ticketNo}: ${t.snapshot.description}`).join("\n")],
       ["Invoice total incl. GST", `Rs. ${Number(paiseToRupeeString(total)).toLocaleString("en-IN", { minimumFractionDigits: 2 })}`],
     ]);
-    let path = uploadPath(opts.blobFolder ?? "local", "INVOICE", fileName);
-    if (blobConfigured()) {
-      const b = await put(path, Buffer.from(bytes), { access: "private", addRandomSuffix: true, contentType: "application/pdf", ...blobAuth() });
-      path = b.pathname;
-      opts.onUpload?.(path);
-    }
+    // Uploaded after the demo data has saved (scripts/demo-files.ts).
+    const path = stageDemoFile(opts.blobFolder ?? "local", "INVOICE", fileName, bytes);
     const fileId = await registerFile(db, { kind: "INVOICE", blobPath: path, fileName, size: bytes.length, mime: "application/pdf" });
     const r = await addInvoice(db, { ticketIds: ts.map((t) => t.id), invoiceNumber, invoiceDate: invDate, amountPaise: total, creditDays: 30, dueDate: dayPlus(invDate, 30), fileId }, today);
     await recordPayment(db, { invoiceId: r.invoiceId, amountPaise: total, tdsPaise: 0, paidOn: day(paidDay), mode: "BANK", reference: `NEFT ${String(810000 + invSeq * 731).padStart(6, "0")}` }, today);

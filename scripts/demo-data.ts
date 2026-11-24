@@ -17,7 +17,9 @@ import { loadPlanningDemo } from "./demo-planning";
 import { ensureDefaultRoles } from "../db/role-writer";
 import { ensureAppUsersForTeam } from "../db/user-writer";
 
-config({ path: ".env.local", quiet: true });
+// Local development: read .env.local. When a database is passed in another way (e.g. --env-file for
+// Preview or live), don't mix in .env.local: its DEMO_MODE must not apply to another database.
+if (!process.env.DATABASE_URL && !process.env.DATABASE_URL_UNPOOLED) config({ path: ".env.local", quiet: true });
 
 /** Scripts use the DIRECT (unpooled) connection, falling back to DATABASE_URL for local Postgres. */
 export function scriptDb() {
@@ -240,7 +242,7 @@ export async function loadDemoData(db: DB | Tx, opts: { quiet?: boolean; orders?
   if (opts.inventory) {
     // Before the story quotations, so those keep the last numbers.
     console.log("Adding the Inventory demo (suppliers, items, 6 months of jobs and stock records)...");
-    await loadInventoryDemo(db, custIds, { blobFolder: opts.orders?.blobFolder ?? "local", onUpload: opts.orders?.onUpload, log: (m) => console.log(m) });
+    await loadInventoryDemo(db, custIds, { blobFolder: opts.orders?.blobFolder ?? "local", log: (m) => console.log(m) });
   }
 
   console.log("Adding 3 sample quotations...");
@@ -322,7 +324,7 @@ export async function loadDemoData(db: DB | Tx, opts: { quiet?: boolean; orders?
 
   if (opts.planning) {
     console.log("Adding the Planning demo (33 machines, holidays, 8 weeks of jobs and the next 2 weeks)...");
-    return loadPlanningDemo(db, { log: (m) => console.log(m), now: opts.now, blobFolder: opts.orders?.blobFolder ?? "local", onUpload: opts.orders?.onUpload });
+    return loadPlanningDemo(db, { log: (m) => console.log(m), now: opts.now, blobFolder: opts.orders?.blobFolder ?? "local" });
   }
 
 }

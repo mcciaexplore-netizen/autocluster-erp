@@ -12,7 +12,7 @@
  * the real writers in date order. A fixed random seed makes every reset the same.
  * Runs before the story quotations, so those keep the last numbers.
  */
-import { put } from "@vercel/blob";
+import { stageDemoFile } from "./demo-files";
 import Decimal from "decimal.js";
 import { eq, inArray, sql } from "drizzle-orm";
 import type { DB, Tx } from "../db/client";
@@ -26,8 +26,6 @@ import { markOrdered } from "../db/reorder-writer";
 import * as s from "../db/schema";
 import { adjustStock, completeCount, issueStock, receiveStock } from "../db/stock-writer";
 import { changeQuotationStatus } from "../db/ticket-writer";
-import { blobAuth, blobConfigured } from "../lib/blob";
-import { uploadPath } from "../lib/files";
 import { formatDate } from "../lib/format";
 import { billableQuantity, financialYear, paiseToRupeeString, toPaise } from "../lib/pricing";
 import { DEFAULT_TERMS } from "../lib/settings-shared";
@@ -500,12 +498,8 @@ export async function loadInventoryDemo(conn: DB | Tx, custIds: Record<string, s
 
   async function invoiceFile(fileName: string, rows: [string, string][]) {
     const bytes = await samplePdf("SAMPLE TAX INVOICE", rows);
-    let path = uploadPath(opts.blobFolder, "INVOICE", fileName);
-    if (blobConfigured()) {
-      const b = await put(path, Buffer.from(bytes), { access: "private", addRandomSuffix: true, contentType: "application/pdf", ...blobAuth() });
-      path = b.pathname;
-      opts.onUpload?.(path);
-    }
+    // Uploaded after the demo data has saved (scripts/demo-files.ts).
+    const path = stageDemoFile(opts.blobFolder, "INVOICE", fileName, bytes);
     return registerFile(db, { kind: "INVOICE", blobPath: path, fileName, size: bytes.length, mime: "application/pdf" });
   }
   const at = (d: string) => sql`(${d}::date + time '11:00') at time zone 'Asia/Kolkata'`;

@@ -189,6 +189,16 @@ Each change is then reviewed before it reaches the live database, can be repeate
 - **Reorder list is not a purchase-order system yet.** "Send to supplier" sends a ready-written list (WhatsApp, email, PDF or Excel) and marks the items "Ordered on <date>" so nobody orders twice. There are no PO numbers, approvals or part deliveries; the mark clears when stock of the item is received from that supplier, or by hand.
 - **Stock counts:** more than one count can be open, as long as they don't share any items. Completing a count makes one Stock adjusted record ("Stock count dd/mm/yyyy"); lines not counted don't change.
 
+### Upgrading Better Auth (sign-in library)
+
+Better Auth lists optional support packages for other frameworks (e.g. SvelteKit), and one of them needs a newer `vite` than our test tools use. We don't use them, and normal installs are fine because `package-lock.json` already pins the right versions. Only when you **install or upgrade Better Auth itself** does npm stop with an `ERESOLVE` conflict. For that one command, add the flag:
+
+```powershell
+npm install better-auth@<version> --save-exact --legacy-peer-deps
+```
+
+Then commit the updated `package.json` and `package-lock.json`. No project-wide npm setting is needed.
+
 ## Where things are
 
 | Path | What it does |
