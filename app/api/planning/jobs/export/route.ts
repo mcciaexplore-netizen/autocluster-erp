@@ -1,11 +1,12 @@
 /** "Download as Excel" on the jobs list (same filters as the screen). */
-import { isSignedIn } from "@/lib/auth-guard";
+import { routeAllow } from "@/lib/auth/guard";
 import { jobFiltersFromParams, listJobs } from "@/lib/planning-data";
 import { jobsWorkbook } from "@/lib/planning/excel";
 import { todayInIndia } from "@/lib/tickets";
 
 export async function GET(request: Request) {
-  if (!(await isSignedIn())) return Response.json({ error: "Please sign in again." }, { status: 401 });
+  const gate = await routeAllow("planning.view");
+  if (gate.denied) return gate.denied;
   const sp = Object.fromEntries(new URL(request.url).searchParams);
   const f = jobFiltersFromParams(sp);
   const rows = await listJobs(f, 5000);

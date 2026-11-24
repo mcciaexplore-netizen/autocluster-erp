@@ -24,7 +24,7 @@ export function addDaysIso(iso: string, days: number): string {
   return toIso(d);
 }
 
-/** Formats a money value stored as a numeric string in the database. */
-export function money(rupees: string | number): string {
-  return formatINR(toPaise(rupees));
+/** Formats a money value stored as a numeric string in the database. null = hidden from this person. */
+export function money(rupees: string | number | null): string {
+  return rupees == null ? "Hidden" : formatINR(toPaise(rupees));
 }

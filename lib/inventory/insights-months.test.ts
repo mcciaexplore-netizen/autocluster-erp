@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 vi.mock("next/server", () => ({ connection: async () => {} }));
 vi.mock("@/db", () => ({ db: {} }));
+vi.mock("@/lib/auth/guard", () => ({ need: async () => ({ grants: {} }), moneyView: () => ({ sale: true, stock: true }) }));
 
 describe("insights helpers", async () => {
   const { monthsBetween, insightFiltersFromParams } = await import("@/lib/inventory-insights");

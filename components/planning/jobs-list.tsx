@@ -6,6 +6,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState, useTransition } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { useCan } from "@/components/auth/permissions-provider";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -23,6 +24,8 @@ const NONE = "none";
 
 export function JobsList({ jobs, departments, machines, team }: { jobs: JobRow[]; departments: { code: string; name: string }[]; machines: { id: string; name: string }[]; team: { id: string; name: string }[] }) {
   const params = useSearchParams();
+  // Ticking jobs (to change operator, priority or mark done) needs "planning.book".
+  const canBulk = useCan()("planning.book");
   const router = useRouter();
   const pathname = usePathname();
   const [q, setQ] = useState(params.get("q") ?? "");
@@ -165,7 +168,7 @@ export function JobsList({ jobs, departments, machines, team }: { jobs: JobRow[]
               <thead className="border-b text-left text-muted-foreground">
                 <tr>
                   <th className="w-10 px-3 py-2">
-                    <Checkbox aria-label="Tick all" checked={picked.length === jobs.length} onCheckedChange={(v) => setPicked(v === true ? jobs.map((j) => j.id) : [])} />
+                    {canBulk ? <Checkbox aria-label="Tick all" checked={picked.length === jobs.length} onCheckedChange={(v) => setPicked(v === true ? jobs.map((j) => j.id) : [])} /> : null}
                   </th>
                   <th className="px-2 py-2 font-medium">Job</th>
                   <th className="px-2 py-2 font-medium">Status</th>
@@ -180,7 +183,7 @@ export function JobsList({ jobs, departments, machines, team }: { jobs: JobRow[]
                 {jobs.map((j) => (
                   <tr key={j.id} className="cursor-pointer hover:bg-secondary/50" onClick={() => open(j.id)}>
                     <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
-                      <Checkbox aria-label={`Tick ${j.ticketNo}`} checked={picked.includes(j.id)} onCheckedChange={(v) => setPicked((p) => (v === true ? [...p, j.id] : p.filter((x) => x !== j.id)))} />
+                      {canBulk ? <Checkbox aria-label={`Tick ${j.ticketNo}`} checked={picked.includes(j.id)} onCheckedChange={(v) => setPicked((p) => (v === true ? [...p, j.id] : p.filter((x) => x !== j.id)))} /> : null}
                     </td>
                     <td className="px-2 py-2">
                       <button type="button" className="text-left font-medium text-primary tabular-nums hover:underline">

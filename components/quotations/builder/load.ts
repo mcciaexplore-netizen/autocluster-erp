@@ -1,5 +1,5 @@
 import "server-only";
-import { getCustomersForPicker, getDepartments, getNextQuoteNoPreview, getServices, getSettings } from "@/lib/data";
+import { getCustomersForPicker, getDepartments, getNextQuoteNoPreview, getServicesWithRates, getSettings } from "@/lib/data";
 import { getServiceMaterials } from "@/lib/inventory-data";
 import type { BuilderCustomer } from "./quotation-builder";
 
@@ -7,7 +7,7 @@ export async function loadBuilderData() {
   const [customers, departments, services, settings, nextQuoteNo, materials] = await Promise.all([
     getCustomersForPicker(),
     getDepartments(),
-    getServices(),
+    getServicesWithRates(),
     getSettings(),
     getNextQuoteNoPreview(),
     getServiceMaterials(),

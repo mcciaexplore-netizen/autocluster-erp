@@ -5,8 +5,8 @@ import { z } from "zod";
 import { db } from "@/db";
 import { importLeads } from "@/db/lead-writer";
 import { UserFacingError } from "@/db/quote-writer";
-import { isSignedIn } from "@/lib/auth-guard";
-import { SIGNED_OUT_MESSAGE } from "@/lib/auth-messages";
+import { allow } from "@/lib/auth/guard";
+import type { Permission } from "@/lib/auth/permissions";
 import { getImportLists } from "@/lib/crm-data";
 import { problemRowsWorkbook, readImportFile } from "@/lib/crm/excel";
 import { checkImportRow, IMPORT_COLUMNS, MAX_IMPORT_ROWS, type CheckedRow, type RawRow } from "@/lib/crm/import";
@@ -23,8 +23,9 @@ export interface PreviewRow {
   stage: string;
 }
 
-async function guard<T>(fn: () => Promise<T>): Promise<Result<T>> {
-  if (!(await isSignedIn())) return { ok: false, message: SIGNED_OUT_MESSAGE };
+async function guard<T>(perm: Permission | Permission[], fn: () => Promise<T>): Promise<Result<T>> {
+  const g = await allow(perm);
+  if (!g.ok) return { ok: false, message: g.message };
   try {
     return { ok: true, data: await fn() };
   } catch (e) {
@@ -57,7 +58,7 @@ function preview(c: CheckedRow, stages: Map<string, string>): PreviewRow {
 
 /** Step 3: reads the uploaded file and checks every row. Nothing is saved yet. */
 export async function previewImportAction(form: FormData): Promise<Result<{ fileName: string; rows: PreviewRow[]; skippedExample: boolean }>> {
-  return guard(async () => {
+  return guard("crm.import", async () => {
     const file = form.get("file");
     if (!(file instanceof File) || !file.size) throw new UserFacingError("Please choose the filled-in Excel file first.");
     if (!/\.xlsx$/i.test(file.name)) throw new UserFacingError("Please upload an Excel file (.xlsx). If you have a .xls or .csv file, open it in Excel and save it as .xlsx.");
@@ -70,7 +71,7 @@ export async function previewImportAction(form: FormData): Promise<Result<{ file
 
 /** Step 4: imports the good rows. Every row is checked again here, so only good rows are ever saved. */
 export async function importLeadsAction(rows: { rowNo: number; raw: RawRow }[], fileName: string): Promise<Result<{ imported: number; leadNos: string[]; nowFailing: number }>> {
-  return guard(async () => {
+  return guard("crm.import", async () => {
     const checked = await check(rowsSchema.parse(rows) as { rowNo: number; raw: RawRow }[]);
     const good = checked.filter((c) => c.input);
     if (!good.length) throw new UserFacingError("None of these rows can be imported. Please fix the problems and upload the file again.");
@@ -86,7 +87,7 @@ export async function importLeadsAction(rows: { rowNo: number; raw: RawRow }[], 
 
 /** "Download problem rows": the bad rows with their problems listed, as an Excel file (base64). */
 export async function problemRowsAction(rows: { rowNo: number; raw: RawRow }[]): Promise<Result<{ base64: string; fileName: string }>> {
-  return guard(async () => {
+  return guard("crm.import", async () => {
     const checked = (await check(rowsSchema.parse(rows) as { rowNo: number; raw: RawRow }[])).filter((c) => !c.input);
     const bytes = await problemRowsWorkbook(checked);
     return { base64: Buffer.from(bytes).toString("base64"), fileName: `Enquiries-to-fix-${checked.length}-${checked.length === 1 ? "row" : "rows"}.xlsx` };

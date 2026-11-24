@@ -1,6 +1,8 @@
 /** Read-only queries for the Orders & Billing board. */
 import "server-only";
 import { asc, desc, eq, inArray, sql } from "drizzle-orm";
+import { moneyView, need } from "@/lib/auth/guard";
+import { blankKeys } from "@/lib/auth/redact";
 import { connection } from "next/server";
 import { db } from "@/db";
 import {
@@ -28,10 +30,13 @@ export interface BoardInvoice {
   date: string;
   dueDate: string;
   creditDays: number;
-  amountPaise: number;
-  leftPaise: number;
-  paidPaise: number;
-  tdsPaise: number;
+  /** Money fields are null for people who may not see sale prices. */
+  amountPaise: number | null;
+  leftPaise: number | null;
+  /** Something is still to be paid (kept even when the amounts are hidden). */
+  balanceDue: boolean;
+  paidPaise: number | null;
+  tdsPaise: number | null;
   ticketCount: number;
   fileId: string | null;
   nextFollowUpDate: string | null;
@@ -48,20 +53,22 @@ export interface BoardTicket {
   description: string;
   deptCode: string | null;
   quantityText: string;
-  listPaise: number;
-  discountPaise: number;
-  taxablePaise: number;
-  gstPaise: number;
-  totalPaise: number;
+  /** Sale prices: null for people who may not see them (removed on the server). */
+  listPaise: number | null;
+  discountPaise: number | null;
+  taxablePaise: number | null;
+  gstPaise: number | null;
+  totalPaise: number | null;
   stage: TicketStage;
   stageChangedAt: string;
   cancelReason: string | null;
   contact: { name: string; phone: string; email: string; creditDays: number; gstin: string | null };
-  po: { id: string; number: string; date: string; amountPaise: number; fileId: string | null } | null;
+  po: { id: string; number: string; date: string; amountPaise: number | null; fileId: string | null } | null;
   invoice: BoardInvoice | null;
   /** Inventory: stock used for this job (net of reversals), and whether its service has a materials list. */
   materialsRecorded: boolean;
-  materialCostPaise: number;
+  /** Stock cost: null for people who may not see stock costs. */
+  materialCostPaise: number | null;
   hasMaterialsList: boolean;
   /** Planning: the ticket's job, and its first booking still to come (or the latest). */
   job: { id: string; status: string; bookedOn: string | null; machine: string | null; checkWorkDone: boolean } | null;
@@ -82,6 +89,7 @@ async function lastContactByInvoice(invoiceIds: string[]) {
 
 export async function invoiceSummaries(invoiceIds: string[]): Promise<Map<string, BoardInvoice>> {
   await connection();
+  await need();
   const ids = [...new Set(invoiceIds)].filter((i) => /^[0-9a-f-]{36}$/i.test(i));
   if (!ids.length) return new Map();
   const [inv, pays, counts, nextFu, lastContact] = await Promise.all([
@@ -111,6 +119,7 @@ export async function invoiceSummaries(invoiceIds: string[]): Promise<Map<string
       creditDays: i.creditDays,
       amountPaise,
       leftPaise: amountLeft({ amountPaise, payments: ps }),
+      balanceDue: amountLeft({ amountPaise, payments: ps }) > 0,
       paidPaise: ps.reduce((s, p) => s + p.amountPaise, 0),
       tdsPaise: ps.reduce((s, p) => s + p.tdsPaise, 0),
       ticketCount: counts.find((c) => c.invoiceId === i.id)?.n ?? 0,
@@ -125,6 +134,9 @@ export async function invoiceSummaries(invoiceIds: string[]): Promise<Map<string
 
 export async function getBoardTickets(customerId?: string): Promise<BoardTicket[]> {
   await connection();
+  const me = await need(["orders.view", "customers.view"]);
+  const { sale, stock } = moneyView(me);
+  const m = <T,>(v: T) => (sale ? v : null);
   const rows = await db
     .select({
       t: tickets,
@@ -170,25 +182,35 @@ export async function getBoardTickets(customerId?: string): Promise<BoardTicket[
     description: t.snapshot.description,
     deptCode: t.snapshot.deptCode,
     quantityText: t.snapshot.quantityText,
-    listPaise: toPaise(t.listAmount),
-    discountPaise: toPaise(t.discountAmount),
-    taxablePaise: toPaise(t.taxableValue),
-    gstPaise: toPaise(t.cgst) + toPaise(t.sgst) + toPaise(t.igst),
-    totalPaise: toPaise(t.totalAmount),
+    listPaise: m(toPaise(t.listAmount)),
+    discountPaise: m(toPaise(t.discountAmount)),
+    taxablePaise: m(toPaise(t.taxableValue)),
+    gstPaise: m(toPaise(t.cgst) + toPaise(t.sgst) + toPaise(t.igst)),
+    totalPaise: m(toPaise(t.totalAmount)),
     stage: t.stage,
     stageChangedAt: t.stageChangedAt.toISOString(),
     cancelReason: t.cancelReason,
     contact: c,
-    po: po?.id ? { id: po.id, number: po.number!, date: po.date!, amountPaise: toPaise(po.amount!), fileId: po.fileId } : null,
-    invoice: t.invoiceId ? (inv.get(t.invoiceId) ?? null) : null,
+    po: po?.id ? { id: po.id, number: po.number!, date: po.date!, amountPaise: m(toPaise(po.amount!)), fileId: po.fileId } : null,
+    invoice: t.invoiceId ? hideInvoiceMoney(inv.get(t.invoiceId) ?? null, sale) : null,
     materialsRecorded: mats.recorded.has(t.id),
-    materialCostPaise: mats.cost.get(t.id) ?? 0,
+    materialCostPaise: stock ? (mats.cost.get(t.id) ?? 0) : null,
     hasMaterialsList: mats.withList.has(t.quotationItemId),
     job: (() => {
       const j = jobOf.get(t.id);
       return j ? { id: j.id, status: j.status, bookedOn: j.start_at, machine: j.machine, checkWorkDone: j.check_work_done } : null;
     })(),
   }));
+}
+
+/** "Payment of ₹4,248 received" -> "Payment of (amount hidden) received". */
+export function hideRupees(text: string): string {
+  return text.replace(/(?:₹|Rs\.?\s?)\s?[\d,]+(?:\.\d+)?/g, "(amount hidden)");
+}
+
+/** An invoice without amounts, for people who may not see sale prices. */
+function hideInvoiceMoney(i: BoardInvoice | null, sale: boolean): BoardInvoice | null {
+  return !i || sale ? i : { ...i, amountPaise: null, leftPaise: null, paidPaise: null, tdsPaise: null };
 }
 
 /** Material cost per ticket (stock used minus reversals), and which ticket lines' services have a materials list. */
@@ -211,6 +233,8 @@ async function materialsByTicket() {
 
 export async function getTicketDetail(id: string) {
   await connection();
+  const me = await need(["orders.view", "planning.view"]);
+  const sale = moneyView(me).sale;
   if (!/^[0-9a-f-]{36}$/i.test(id)) return null;
   const [t] = await db.select().from(tickets).where(eq(tickets.id, id));
   if (!t) return null;
@@ -243,10 +267,13 @@ export async function getTicketDetail(id: string) {
   ]);
   const serviceId = svcRow[0]?.serviceId ?? null;
   const suggestions = serviceId ? suggestMaterials(t.snapshot.billableQty, t.snapshot.unitLabel, svcMaterials[serviceId] ?? []) : [];
+  // For people who may not see sale prices: no amounts anywhere, not even inside history lines.
+  const m = <T,>(v: T) => (sale ? v : null);
+  const ticket = sale ? t : blankKeys(t, ["listAmount", "discountAmount", "taxableValue", "cgst", "sgst", "igst", "totalAmount"] as const);
   return {
     materials: {
       ...mats,
-      taxablePaise: toPaise(t.taxableValue),
+      taxablePaise: m(toPaise(t.taxableValue)),
       recorded: mats.docs.some((d) => !d.reverses && !d.reversedBy),
       hint: stockHint(suggestions),
       hasList: suggestions.length > 0,
@@ -254,17 +281,17 @@ export async function getTicketDetail(id: string) {
       noneNeeded: !!svcRow[0]?.noneNeeded && suggestions.length === 0,
     },
     ticket: {
-      ...t,
+      ...ticket,
       stageChangedAt: t.stageChangedAt.toISOString(),
       createdAt: t.createdAt.toISOString(),
       updatedAt: t.updatedAt.toISOString(),
     },
     quote: quote ?? null,
-    po: po ? { id: po.id, number: po.poNumber, date: po.poDate, amount: po.poAmount, notes: po.notes, file: fileInfo(po.fileId) } : null,
-    invoice: invoice ? { ...invoice, file: fileInfo(invoice.fileId) } : null,
-    payments: pays.map((p) => ({ ...p, createdAt: p.createdAt.toISOString() })),
+    po: po ? { id: po.id, number: po.poNumber, date: po.poDate, amount: m(po.poAmount), notes: po.notes, file: fileInfo(po.fileId) } : null,
+    invoice: invoice ? { ...hideInvoiceMoney(invoice, sale)!, file: fileInfo(invoice.fileId) } : null,
+    payments: pays.map((p) => ({ ...(sale ? p : blankKeys(p, ["amount", "tdsAmount"] as const)), createdAt: p.createdAt.toISOString() })),
     notes: notes.map((n) => ({ ...n, createdAt: n.createdAt.toISOString() })),
-    events: events.map((e) => ({ id: e.id, type: e.type, message: e.message, by: e.createdBy, at: e.createdAt.toISOString() })),
+    events: events.map((e) => ({ id: e.id, type: e.type, message: sale ? e.message : hideRupees(e.message), by: e.createdBy, at: e.createdAt.toISOString() })),
   };
 }
 export type TicketDetail = NonNullable<Awaited<ReturnType<typeof getTicketDetail>>>;
@@ -272,13 +299,16 @@ export type TicketDetail = NonNullable<Awaited<ReturnType<typeof getTicketDetail
 /** Small helper for the home page cards. */
 export async function getOrdersStats() {
   await connection();
+  const me = await need(["orders.view"]);
   const all = await getBoardTickets();
+  const sale = moneyView(me).sale;
   const today = todayInIndia();
   const live = all.filter((t) => t.stage !== "CANCELLED");
   const invoicesSeen = new Map<string, BoardInvoice>();
   for (const t of live) if (t.stage === "PAYMENT" && t.invoice) invoicesSeen.set(t.invoice.id, t.invoice);
-  const outstanding = [...invoicesSeen.values()].reduce((s, i) => s + i.leftPaise, 0);
-  const overdue = [...invoicesSeen.values()].filter((i) => daysBetween(today, i.dueDate) < 0).reduce((s, i) => s + i.leftPaise, 0);
+  // Amounts only for people who may see sale prices.
+  const outstanding = sale ? [...invoicesSeen.values()].reduce((s, i) => s + (i.leftPaise ?? 0), 0) : null;
+  const overdue = sale ? [...invoicesSeen.values()].filter((i) => daysBetween(today, i.dueDate) < 0).reduce((s, i) => s + (i.leftPaise ?? 0), 0) : null;
   return {
     waitingPo: live.filter((t) => t.stage === "WAITING_PO").length,
     readyToBill: live.filter((t) => t.stage === "BILLING").length,

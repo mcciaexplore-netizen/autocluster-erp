@@ -107,18 +107,20 @@ function PaymentForm({ ticket, onClose, onDone }: { ticket: BoardTicket; onClose
   const [touched, setTouched] = useState(false);
   const [saving, setSaving] = useState(false);
 
+  // Only people who may record payments open this, and they always see amounts.
+  const leftPaise = inv.leftPaise ?? 0;
   const amount = amountText.trim() ? parseRupees(amountText) : 0;
   const tds = tdsText.trim() ? parseRupees(tdsText) : 0;
-  const leftAfter = amount !== null && tds !== null ? inv.leftPaise - amount - tds : null;
+  const leftAfter = amount !== null && tds !== null ? leftPaise - amount - tds : null;
   const errors = {
     amount: amount === null ? "Please enter the amount in rupees, e.g. 4000 or 4000.50." : undefined,
     tds: tds === null ? "Please enter the TDS in rupees, e.g. 170." : undefined,
-    both: amount !== null && tds !== null ? (paymentProblem(inv.leftPaise, amount, tds) ?? undefined) : undefined,
+    both: amount !== null && tds !== null ? (paymentProblem(leftPaise, amount, tds) ?? undefined) : undefined,
     paidOn: !paidOn ? "Please enter the payment date." : paidOn > today ? "The payment date can't be in the future." : undefined,
   };
   const hasErrors = Object.values(errors).some(Boolean);
   // Show "more than left" straight away; other problems after the first Save.
-  const overpaid = errors.both && amount !== null && tds !== null && amount + tds > inv.leftPaise;
+  const overpaid = errors.both && amount !== null && tds !== null && amount + tds > leftPaise;
 
   async function save() {
     setTouched(true);
@@ -152,14 +154,14 @@ function PaymentForm({ ticket, onClose, onDone }: { ticket: BoardTicket; onClose
 
       <div className="grid gap-4 sm:grid-cols-2">
         <Field label="Amount received" required error={touched || overpaid ? (errors.amount ?? (overpaid ? errors.both : touched ? errors.both : undefined)) : undefined}>
-          {(p) => <RupeeInput {...p} value={amountText} onChange={setAmountText} placeholder={paiseToRupeeString(inv.leftPaise)} autoFocus />}
+          {(p) => <RupeeInput {...p} value={amountText} onChange={setAmountText} placeholder={paiseToRupeeString(leftPaise)} autoFocus />}
         </Field>
         <Field label="TDS deducted" optional helper="If the customer deducted TDS, e.g. 2% of the taxable value." error={touched ? errors.tds : undefined}>
           {(p) => <RupeeInput {...p} value={tdsText} onChange={setTdsText} placeholder="0" />}
         </Field>
         {!amountText && !tdsText ? (
-          <Button type="button" variant="outline" size="sm" className="justify-self-start sm:col-span-2" onClick={() => setAmountText(paiseToRupeeString(inv.leftPaise))}>
-            Full amount left ({formatINR(inv.leftPaise)})
+          <Button type="button" variant="outline" size="sm" className="justify-self-start sm:col-span-2" onClick={() => setAmountText(paiseToRupeeString(leftPaise))}>
+            Full amount left ({formatINR(leftPaise)})
           </Button>
         ) : null}
         <Field label="Payment date" required error={touched ? errors.paidOn : undefined}>

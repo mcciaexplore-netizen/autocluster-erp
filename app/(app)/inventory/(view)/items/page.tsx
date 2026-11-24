@@ -1,3 +1,4 @@
+import { Can } from "@/components/auth/permissions-provider";
 import type { Metadata } from "next";
 import { Plus, Upload } from "lucide-react";
 import Link from "next/link";
@@ -20,16 +21,20 @@ export default function ItemsPage() {
         description="Materials and consumables, with stock, value and when they run out."
         actions={
           <div className="flex flex-wrap gap-2">
-            <Button asChild variant="outline">
-              <Link href="/inventory/items/import">
-                <Upload aria-hidden /> Import items
-              </Link>
-            </Button>
-            <Button asChild variant="outline">
-              <Link href="/inventory/items/new">
-                <Plus aria-hidden /> Add item
-              </Link>
-            </Button>
+            <Can perm="inventory.items">
+              <Button asChild variant="outline">
+                <Link href="/inventory/items/import">
+                  <Upload aria-hidden /> Import items
+                </Link>
+              </Button>
+            </Can>
+            <Can perm="inventory.items">
+              <Button asChild variant="outline">
+                <Link href="/inventory/items/new">
+                  <Plus aria-hidden /> Add item
+                </Link>
+              </Button>
+            </Can>
           </div>
         }
       />

@@ -9,7 +9,7 @@ import { FormSkeleton } from "@/components/common/form-skeleton";
 import { PageHeader } from "@/components/common/page-header";
 import { loadBuilderData } from "@/components/quotations/builder/load";
 import { QuotationBuilder } from "@/components/quotations/builder/quotation-builder";
-import { getQuotation } from "@/lib/data";
+import { getQuotationWithPrices } from "@/lib/data";
 import { itemToDraft } from "@/lib/quote-items";
 
 export const metadata: Metadata = { title: "Edit quotation" };
@@ -27,7 +27,7 @@ export default function EditQuotationPage({ params }: PageProps<"/quotations/[id
 
 async function Builder({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const [q, data] = await Promise.all([getQuotation(id), loadBuilderData()]);
+  const [q, data] = await Promise.all([getQuotationWithPrices(id), loadBuilderData()]);
   if (!q) notFound();
   if (q.locked) {
     return (

@@ -3,6 +3,7 @@ import { Suspense } from "react";
 import { NavLinkList, NavLinks } from "./nav-links";
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth/current-user";
+import { navFor } from "./nav";
 import { UserMenu } from "./user-menu";
 
 function Logo() {
@@ -30,6 +31,12 @@ async function LiveUserMenu() {
   return <UserMenu name={me.name} roles={me.roles.map((r) => r.name)} />;
 }
 
+/** Only the areas the signed-in person can view. */
+async function LiveNav({ variant }: { variant: "side" | "bottom" }) {
+  const me = await getCurrentUser();
+  return <NavLinks variant={variant} allowed={me ? navFor(me.grants) : ["/"]} />;
+}
+
 export function AppShell({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex min-h-dvh flex-col">
@@ -52,8 +59,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           aria-label="Main"
           className="sticky top-16 hidden h-[calc(100dvh-4rem)] w-60 shrink-0 flex-col gap-1 border-r bg-card p-3 md:flex print:hidden"
         >
-          <Suspense fallback={<NavLinkList variant="side" pathname={null} />}>
-            <NavLinks variant="side" />
+          <Suspense fallback={<NavLinkList variant="side" pathname={null} allowed={["/"]} />}>
+            <LiveNav variant="side" />
           </Suspense>
         </nav>
 
@@ -64,10 +71,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
       <nav
         aria-label="Main"
-        className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-5 border-t bg-card pb-[env(safe-area-inset-bottom)] md:hidden print:hidden"
+        className="fixed inset-x-0 bottom-0 z-30 grid auto-cols-fr grid-flow-col border-t bg-card pb-[env(safe-area-inset-bottom)] md:hidden print:hidden"
       >
-        <Suspense fallback={<NavLinkList variant="bottom" pathname={null} />}>
-          <NavLinks variant="bottom" />
+        <Suspense fallback={<NavLinkList variant="bottom" pathname={null} allowed={["/"]} />}>
+          <LiveNav variant="bottom" />
         </Suspense>
       </nav>
     </div>

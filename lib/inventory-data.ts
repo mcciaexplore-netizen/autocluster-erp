@@ -4,6 +4,8 @@
  */
 import "server-only";
 import { and, asc, desc, eq, gt, sql } from "drizzle-orm";
+import { moneyView, need } from "@/lib/auth/guard";
+import { stripStockCosts } from "@/lib/auth/redact";
 import { connection } from "next/server";
 import { db } from "@/db";
 import { ensureInventoryDefaults } from "@/db/inv-defaults";
@@ -37,11 +39,18 @@ import { stockStatus, type StockStatus } from "@/lib/inventory/stock";
 import { financialYear } from "@/lib/pricing";
 import { addDays, daysBetween, todayInIndia } from "@/lib/tickets";
 
+
+/** Stock costs only for people who may see them (removed on the server otherwise). */
+function costs<T>(me: Parameters<typeof moneyView>[0], data: T): T {
+  return moneyView(me).stock ? data : stripStockCosts(data);
+}
+
 export type InvListItem = { id: string; name: string; isActive: boolean };
 
 /** Categories, units, purposes and reasons (hidden ones included), team members and departments. */
 export async function getInvLists() {
   await connection();
+  await need(["inventory.view", "settings.edit", "inventory.use_own_jobs"]);
   const [first] = await db.select({ id: invCategories.id }).from(invCategories).limit(1);
   if (!first) await ensureInventoryDefaults(db);
   const list = (t: typeof invCategories | typeof invUnits | typeof invPurposes | typeof invAdjustReasons) =>
@@ -60,6 +69,7 @@ export type InvLists = Awaited<ReturnType<typeof getInvLists>>;
 
 export async function getInvSettings() {
   await connection();
+  await need(["inventory.view", "settings.edit", "inventory.use_own_jobs"]);
   const [s] = await db.select().from(settings).where(eq(settings.id, 1));
   if (!s) throw new Error("Settings are missing. Run: npm run db:seed");
   return s;
@@ -91,6 +101,7 @@ export interface ItemRow {
 /** Every item with what the list and filters need. */
 export async function listInvItems(): Promise<ItemRow[]> {
   await connection();
+  const me = await need(["inventory.view", "ratecard.view", "inventory.use_own_jobs"]);
   const [set] = await db.select({ days: settings.invExpiryWarningDays }).from(settings).where(eq(settings.id, 1));
   const until = addDays(todayInIndia(), set?.days ?? 30);
   const [rows, depts, expiring] = await Promise.all([
@@ -108,7 +119,7 @@ export async function listInvItems(): Promise<ItemRow[]> {
       .where(and(gt(invBatches.qtyOnHand, "0"), sql`${invBatches.expiryDate} is not null`, sql`${invBatches.expiryDate} <= ${until}`)),
   ]);
   const exp = new Set(expiring.map((e) => e.itemId));
-  return rows.map(({ i, categoryName, unit, supplier }) => ({
+  return costs(me, await rows.map(({ i, categoryName, unit, supplier }) => ({
     id: i.id,
     code: i.code,
     name: i.name,
@@ -129,12 +140,13 @@ export async function listInvItems(): Promise<ItemRow[]> {
     preferredSupplierName: supplier,
     packName: i.packName,
     packSize: i.packSize,
-  }));
+  })));
 }
 
 /** One item with its batches, suppliers and prices, and the services that use it. */
 export async function getInvItem(id: string) {
   await connection();
+  const me = await need(["inventory.view"]);
   const [row] = await db
     .select({ i: invItems, categoryName: invCategories.name, unit: invUnits.name, supplier: invSuppliers.name })
     .from(invItems)
@@ -168,7 +180,7 @@ export async function getInvItem(id: string) {
   const ordered = i.orderedOn
     ? { on: i.orderedOn, supplierName: orderedName, late: deliveryLate(i.orderedOn, i.leadTimeDays ?? orderedFrom?.leadTimeDays ?? set[0]?.lead ?? 14, todayInIndia()) }
     : null;
-  return {
+  return costs(me, await {
     ordered,
     item: {
       ...i,
@@ -187,13 +199,14 @@ export async function getInvItem(id: string) {
     expiryWarningDays: set[0]?.days ?? 30,
     /** Used when the item has no lead time of its own. */
     defaultLeadTimeDays: set[0]?.lead ?? 14,
-  };
+  });
 }
 export type InvItemDetail = NonNullable<Awaited<ReturnType<typeof getInvItem>>>;
 
 /** What the item form chooses from. */
 export async function getItemFormOptions() {
   await connection();
+  await need(["inventory.view"]);
   const [lists, suppliers, nextCode] = await Promise.all([
     getInvLists(),
     db.select({ id: invSuppliers.id, name: invSuppliers.name, isActive: invSuppliers.isActive }).from(invSuppliers).orderBy(asc(invSuppliers.name)),
@@ -206,6 +219,7 @@ export type ItemFormOptions = Awaited<ReturnType<typeof getItemFormOptions>>;
 /** Suppliers with how many items they supply and what was bought from them this financial year. */
 export async function listInvSuppliers() {
   await connection();
+  const me = await need(["inventory.view"]);
   const fy = financialYear(new Date(`${todayInIndia()}T00:00:00`));
   const fyStart = `${fy.slice(0, 4)}-04-01`;
   const rows = await db.execute<{ id: string; name: string; contact_name: string | null; phone: string | null; email: string | null; is_active: boolean; items: string; bought: string; last_in: string | null }>(sql`
@@ -215,7 +229,7 @@ export async function listInvSuppliers() {
          where d.supplier_id = s.id and d.type = 'IN' and d.doc_date >= ${fyStart} and d.reverses_doc_id is null and d.reversed_by_doc_id is null) as bought,
       (select max(d.doc_date)::text from inv_documents d where d.supplier_id = s.id and d.type = 'IN') as last_in
     from inv_suppliers s order by s.name`);
-  return rows.rows.map((r) => ({
+  return costs(me, await rows.rows.map((r) => ({
     id: r.id,
     name: r.name,
     contactName: r.contact_name,
@@ -225,11 +239,12 @@ export async function listInvSuppliers() {
     itemCount: Number(r.items),
     boughtThisYearPaise: Number(r.bought),
     lastReceivedOn: r.last_in,
-  }));
+  })));
 }
 
 export async function getInvSupplier(id: string) {
   await connection();
+  const me = await need(["inventory.view"]);
   const [s] = await db.select().from(invSuppliers).where(eq(invSuppliers.id, id));
   if (!s) return null;
   const list = await listInvSuppliers();
@@ -248,20 +263,21 @@ export async function getInvSupplier(id: string) {
     .innerJoin(invUnits, eq(invUnits.id, invItems.unitId))
     .where(eq(invItems.preferredSupplierId, id));
   const known = new Set(items.map((i) => i.id));
-  return {
+  return costs(me, await {
     supplier: { ...s, createdAt: s.createdAt.toISOString(), updatedAt: s.updatedAt.toISOString() },
     summary,
     items: [
       ...items,
       ...preferred.filter((p) => !known.has(p.id)).map((p) => ({ ...p, lastRate: null, lastRateDate: null, leadTimeDays: null })),
     ],
-  };
+  });
 }
 export type InvSupplierDetail = NonNullable<Awaited<ReturnType<typeof getInvSupplier>>>;
 
 /** Small helper for pickers. */
 export async function getActiveSuppliers() {
   await connection();
+  await need(["inventory.view"]);
   return db.select({ id: invSuppliers.id, name: invSuppliers.name }).from(invSuppliers).where(eq(invSuppliers.isActive, true)).orderBy(asc(invSuppliers.name));
 }
 
@@ -270,6 +286,7 @@ export async function getActiveSuppliers() {
 /** Everything the Stock received / Use stock / Adjust stock forms choose from. */
 export async function getStockFormData() {
   await connection();
+  const me = await need(["inventory.view", "inventory.use_own_jobs"]);
   const today = todayInIndia();
   const [lists, items, batches, supplierItems, suppliers] = await Promise.all([
     getInvLists(),
@@ -283,7 +300,7 @@ export async function getStockFormData() {
     db.select().from(invSupplierItems),
     db.select({ id: invSuppliers.id, name: invSuppliers.name }).from(invSuppliers).where(eq(invSuppliers.isActive, true)).orderBy(asc(invSuppliers.name)),
   ]);
-  return {
+  return costs(me, await {
     today,
     items: items.map(({ i, unit }) => ({
       id: i.id,
@@ -306,7 +323,7 @@ export async function getStockFormData() {
     team: lists.team.filter((t) => t.isActive),
     purposes: lists.purposes.filter((p) => p.isActive),
     reasons: lists.reasons.filter((r) => r.isActive),
-  };
+  });
 }
 export type StockFormData = Awaited<ReturnType<typeof getStockFormData>>;
 export type StockFormItem = StockFormData["items"][number];
@@ -319,6 +336,7 @@ export type StockFormItem = StockFormData["items"][number];
  */
 export async function getDailyUse(): Promise<{ days: number; perItem: Map<string, number> }> {
   await connection();
+  await need(["inventory.view"]);
   const [set] = await db.select({ days: settings.invAvgUseDays }).from(settings).where(eq(settings.id, 1));
   const days = set?.days ?? 90;
   const since = addDays(todayInIndia(), -days);
@@ -367,6 +385,7 @@ export function docFiltersFromParams(p: Record<string, string | string[] | undef
 /** Records, newest first, with their totals. */
 export async function listInvDocuments(f: DocFilters & { id?: string } = {}, limit = 300) {
   await connection();
+  const me = await need(["inventory.view"]);
   const where = [sql`true`];
   if (f.id) where.push(sql`d.id = ${f.id}`);
   if (f.type) where.push(sql`d.type = ${f.type}`);
@@ -401,7 +420,7 @@ export async function listInvDocuments(f: DocFilters & { id?: string } = {}, lim
     group by d.id, s.name, t.ticket_no, t.snapshot, p.name, tm.name, r1.doc_no, r2.doc_no
     order by d.doc_date desc, d.created_at desc
     limit ${limit}`);
-  return rows.rows.map((r) => ({
+  return costs(me, await rows.rows.map((r) => ({
     id: r.id,
     docNo: r.doc_no,
     type: r.type,
@@ -421,13 +440,14 @@ export async function listInvDocuments(f: DocFilters & { id?: string } = {}, lim
     valueOutPaise: Number(r.value_out),
     lines: Number(r.lines),
     items: r.items ?? "",
-  }));
+  })));
 }
 export type InvDocRow = Awaited<ReturnType<typeof listInvDocuments>>[number];
 
 /** One record with its lines. */
 export async function getInvDocument(id: string) {
   await connection();
+  const me = await need(["inventory.view"]);
   const [row] = await listInvDocuments({ id }, 1);
   if (!row) return null;
   const [doc] = await db.select().from(invDocuments).where(eq(invDocuments.id, id));
@@ -454,7 +474,7 @@ export async function getInvDocument(id: string) {
     .leftJoin(invAdjustReasons, eq(invAdjustReasons.id, invMovements.reasonId))
     .where(eq(invMovements.documentId, id))
     .orderBy(asc(invMovements.id));
-  return { ...row, fileId: doc.fileId, supplierBillDate: doc.supplierBillDate, reversesDocId: doc.reversesDocId, reversedByDocId: doc.reversedByDocId, lines };
+  return costs(me, await { ...row, fileId: doc.fileId, supplierBillDate: doc.supplierBillDate, reversesDocId: doc.reversesDocId, reversedByDocId: doc.reversedByDocId, lines });
 }
 export type InvDocDetail = NonNullable<Awaited<ReturnType<typeof getInvDocument>>>;
 
@@ -466,6 +486,7 @@ const countReason = (docCol: string) =>
 
 export async function getItemHistory(itemId: string, limit = 500) {
   await connection();
+  const me = await need(["inventory.view"]);
   const rows = await db.execute<{
     id: number; doc_id: string; doc_no: string; type: "IN" | "OUT" | "ADJ"; doc_date: string; qty_in: string; qty_out: string; value: string; unit_cost: string;
     balance_after: string; batch_no: string | null; supplier: string | null; bill_no: string | null; ticket_id: string | null; ticket_no: string | null;
@@ -486,7 +507,7 @@ export async function getItemHistory(itemId: string, limit = 500) {
     where m.item_id = ${itemId}
     order by m.id desc
     limit ${limit}`);
-  return rows.rows.map((r) => ({
+  return costs(me, await rows.rows.map((r) => ({
     id: r.id,
     docId: r.doc_id,
     docNo: r.doc_no,
@@ -508,13 +529,14 @@ export async function getItemHistory(itemId: string, limit = 500) {
     note: r.note ?? r.doc_note,
     isReversal: !!r.reverses,
     isReversed: !!r.reversed_by,
-  }));
+  })));
 }
 export type ItemHistoryRow = Awaited<ReturnType<typeof getItemHistory>>[number];
 
 /** Quantity used per month (jobs and internal use, not reversed), for the last 12 months (India time). */
 export async function getItemUsageByMonth(itemId: string) {
   await connection();
+  const me = await need(["inventory.view"]);
   const today = todayInIndia();
   const start = `${addDays(`${today.slice(0, 7)}-01`, -330).slice(0, 7)}-01`;
   const rows = await db.execute<{ month: string; used: string }>(sql`
@@ -535,23 +557,25 @@ export async function getItemUsageByMonth(itemId: string) {
       y -= 1;
     }
   }
-  return months;
+  return costs(me, await months);
 }
 
 /** Every purchase rate (stock received, not reversed), oldest first. */
 export async function getItemPriceHistory(itemId: string) {
   await connection();
+  const me = await need(["inventory.view"]);
   const rows = await db.execute<{ date: string; rate: string; supplier: string | null; doc_no: string }>(sql`
     select coalesce(d.supplier_bill_date, d.doc_date)::text as date, m.unit_cost as rate, s.name as supplier, d.doc_no
     from inv_movements m join inv_documents d on d.id = m.document_id left join inv_suppliers s on s.id = d.supplier_id
     where m.item_id = ${itemId} and d.type = 'IN' and m.qty_in > 0 and d.reverses_doc_id is null and d.reversed_by_doc_id is null
     order by 1, m.id`);
-  return rows.rows.map((r) => ({ date: r.date, rate: Number(r.rate), supplier: r.supplier ?? "", docNo: r.doc_no }));
+  return costs(me, await rows.rows.map((r) => ({ date: r.date, rate: Number(r.rate), supplier: r.supplier ?? "", docNo: r.doc_no })));
 }
 
 /** Every line of the given records (for the Excel download). */
 export async function getLinesForDocs(docIds: string[]) {
   await connection();
+  const me = await need(["inventory.view"]);
   if (!docIds.length) return [];
   const rows = await db.execute<{ document_id: string; item: string; code: string; unit: string; batch_no: string | null; qty_in: string; qty_out: string; unit_cost: string; value: string; reason: string | null; balance_after: string }>(sql`
     select m.document_id, i.name as item, i.code, u.name as unit, b.batch_no, m.qty_in, m.qty_out, m.unit_cost, m.value,
@@ -560,7 +584,7 @@ export async function getLinesForDocs(docIds: string[]) {
     left join inv_batches b on b.id = m.batch_id left join inv_adjust_reasons r on r.id = m.reason_id
     where m.document_id = any(${sql.param(docIds)}::uuid[])
     order by m.id`);
-  return rows.rows;
+  return costs(me, await rows.rows);
 }
 
 // ---- jobs: materials per service, tickets, material cost ------------------------------------------
@@ -568,6 +592,7 @@ export async function getLinesForDocs(docIds: string[]) {
 /** Each service's materials list, with the items' current stock. */
 export async function getServiceMaterials(): Promise<Record<number, Material[]>> {
   await connection();
+  await need();
   const rows = await db
     .select({ serviceId: invServiceMaterials.serviceId, itemId: invItems.id, name: invItems.name, unit: invUnits.name, qtyPerUnit: invServiceMaterials.qtyPerUnit, inStock: invItems.qtyOnHand })
     .from(invServiceMaterials)
@@ -582,6 +607,7 @@ export async function getServiceMaterials(): Promise<Record<number, Material[]>>
 /** Tickets that stock can be used for (not cancelled), newest first, with what the suggestions need. */
 export async function getTicketsForUse() {
   await connection();
+  await need(["inventory.view", "inventory.use_own_jobs"]);
   const rows = await db.execute<{
     id: string; ticket_no: string; company: string; description: string; stage: string; service_id: number | null; billable_qty: string; unit_label: string; recorded: boolean; quantity_text: string;
   }>(sql`
@@ -613,7 +639,11 @@ export type TicketForUse = Awaited<ReturnType<typeof getTicketsForUse>>[number];
  */
 export async function getTicketMaterials(ticketId: string) {
   await connection();
-  return ticketMaterialCost(db, ticketId);
+  const me = await need(["orders.view", "planning.view", "inventory.view"]);
+  const m = await ticketMaterialCost(db, ticketId);
+  // Stock costs only for people who may see them.
+  if (moneyView(me).stock) return m;
+  return { ...m, costPaise: null as number | null, items: m.items.map((i) => ({ ...i, valuePaise: null as number | null })) };
 }
 export type TicketMaterials = Awaited<ReturnType<typeof getTicketMaterials>>;
 
@@ -622,6 +652,7 @@ export type TicketMaterials = Awaited<ReturnType<typeof getTicketMaterials>>;
 /** All counts, newest first, with progress and the value of what changed. */
 export async function listCounts() {
   await connection();
+  const me = await need(["inventory.view"]);
   const rows = await db.execute<{
     id: string; count_no: string; status: "IN_PROGRESS" | "COMPLETED"; label: string | null; started_at: string; completed_at: string | null;
     done_by: string | null; lines: string; counted: string; adj_id: string | null; adj_no: string | null; gain: string | null; loss: string | null;
@@ -637,7 +668,7 @@ export async function listCounts() {
     left join inv_documents d on d.id = c.adjustment_doc_id
     order by c.started_at desc
     limit 200`);
-  return rows.rows.map((r) => ({
+  return costs(me, await rows.rows.map((r) => ({
     id: r.id,
     countNo: r.count_no,
     status: r.status,
@@ -650,7 +681,7 @@ export async function listCounts() {
     adjustment: r.adj_id ? { id: r.adj_id, docNo: r.adj_no! } : null,
     gainPaise: Number(r.gain ?? 0),
     lossPaise: Number(r.loss ?? 0),
-  }));
+  })));
 }
 export type CountListRow = Awaited<ReturnType<typeof listCounts>>[number];
 
@@ -661,6 +692,7 @@ export type CountListRow = Awaited<ReturnType<typeof listCounts>>[number];
  */
 export async function getCount(id: string) {
   await connection();
+  const me = await need(["inventory.view"]);
   const [c] = await db
     .select({
       id: invCounts.id,
@@ -735,7 +767,7 @@ export async function getCount(id: string) {
       valuePaise: valuePaise_,
     };
   });
-  return {
+  return costs(me, await {
     id: c.id,
     countNo: c.countNo,
     status: c.status,
@@ -745,7 +777,7 @@ export async function getCount(id: string) {
     doneBy: c.doneBy,
     adjustment: adj ?? null,
     lines,
-  };
+  });
 }
 export type CountDetail = NonNullable<Awaited<ReturnType<typeof getCount>>>;
 export type CountLine = CountDetail["lines"][number];
@@ -753,8 +785,9 @@ export type CountLine = CountDetail["lines"][number];
 /** The open count, if there is one (shown on the count list and the movement forms). */
 export async function getOpenCount() {
   await connection();
+  const me = await need(["inventory.view"]);
   const [c] = await db.select({ id: invCounts.id, countNo: invCounts.countNo }).from(invCounts).where(eq(invCounts.status, "IN_PROGRESS")).limit(1);
-  return c ?? null;
+  return costs(me, await c ?? null);
 }
 
 // ---- reorder list -----------------------------------------------------------------------------------
@@ -766,6 +799,7 @@ export async function getOpenCount() {
  */
 export async function getReorderList() {
   await connection();
+  const me = await need(["inventory.view"]);
   const [[set], use, rows, sups] = await Promise.all([
     db.select().from(settings).where(eq(settings.id, 1)),
     getDailyUse(),
@@ -828,14 +862,14 @@ export async function getReorderList() {
   const groups = [...new Set(items.map((i) => i.supplierId))]
     .map((sid) => ({ supplier: sups.find((s) => s.id === sid) ?? null, items: items.filter((i) => i.supplierId === sid) }))
     .sort((a, b) => (a.supplier ? 0 : 1) - (b.supplier ? 0 : 1) || (a.supplier?.name ?? "").localeCompare(b.supplier?.name ?? ""));
-  return {
+  return costs(me, await {
     groups,
     suppliers: sups,
     safetyDays,
     useDays: use.days,
     templates: { whatsapp: set?.invOrderWhatsappTemplate ?? "", emailSubject: set?.invOrderEmailSubjectTemplate ?? "", emailBody: set?.invOrderEmailBodyTemplate ?? "" },
     orgName: set?.orgName ?? "",
-  };
+  });
 }
 export type ReorderData = Awaited<ReturnType<typeof getReorderList>>;
 export type ReorderItem = ReorderData["groups"][number]["items"][number];
@@ -843,6 +877,7 @@ export type ReorderItem = ReorderData["groups"][number]["items"][number];
 /** Items and supplier for an order list download (PDF / Excel), in the order given. */
 export async function getOrderListData(supplierId: string | null, lines: { itemId: string; qty: string }[]) {
   await connection();
+  const me = await need(["inventory.view"]);
   const ids = lines.map((l) => l.itemId);
   const [[set], sup, rows] = await Promise.all([
     db.select().from(settings).where(eq(settings.id, 1)),
@@ -860,12 +895,12 @@ export async function getOrderListData(supplierId: string | null, lines: { itemI
     const r = rows.rows.find((x) => x.id === l.itemId);
     return r ? [{ ...r, qty: l.qty, valuePaise: r.rate ? valuePaise(l.qty, r.rate) : null }] : [];
   });
-  return {
+  return costs(me, await {
     org: { name: set.orgName, address: set.orgAddress, gstin: set.orgGstin, phone: set.orgPhone, email: set.orgEmail },
     supplier: sup[0] ?? null,
     items,
     today: todayInIndia(),
-  };
+  });
 }
 export type OrderListData = Awaited<ReturnType<typeof getOrderListData>>;
 
@@ -894,6 +929,7 @@ async function expiringItemCount(until: string) {
 /** The Inventory overview: cards, "Needs attention" and the last 10 records. */
 export async function getInvOverview() {
   await connection();
+  const me = await need(["inventory.view"]);
   const today = todayInIndia();
   const [set] = await db.select({ warn: settings.invExpiryWarningDays, lead: settings.invDefaultLeadTimeDays }).from(settings).where(eq(settings.id, 1));
   const warnDays = set?.warn ?? 30;
@@ -923,7 +959,7 @@ export async function getInvOverview() {
   ]);
   const toReorder = reorder.groups.flatMap((g) => g.items).sort((a, b) => (a.runsOutDays ?? Infinity) - (b.runsOutDays ?? Infinity));
   const batchRows = batches.rows.map((b) => ({ id: b.id, itemId: b.item_id, name: b.name, unit: b.unit, batchNo: b.batch_no, expiryDate: b.expiry_date, qty: b.qty, valuePaise: Number(b.value), days: daysBetween(today, b.expiry_date) }));
-  return {
+  return costs(me, await {
     warnDays,
     cards: { valuePaise: Number(totals.rows[0].value), toReorder: toReorder.length, outOfStock: Number(totals.rows[0].out), expiring: expiringItems },
     toReorder,
@@ -932,13 +968,14 @@ export async function getInvOverview() {
     expired: batchRows.filter((b) => b.days < 0),
     jobsWithoutMaterials: jobs.rows,
     recent,
-  };
+  });
 }
 export type InvOverview = Awaited<ReturnType<typeof getInvOverview>>;
 
 /** The 2 Inventory cards on the home page. */
 export async function getInvHomeStats() {
   await connection();
+  await need(["inventory.view"]);
   const [set] = await db.select({ warn: settings.invExpiryWarningDays }).from(settings).where(eq(settings.id, 1));
   const warnDays = set?.warn ?? 30;
   const [reorder, expiring] = await Promise.all([getReorderList(), expiringItemCount(addDays(todayInIndia(), warnDays))]);
@@ -950,6 +987,7 @@ export async function getInvHomeStats() {
 /** What an item import row may use, plus existing names and codes (to catch duplicates). */
 export async function getItemImportLists(): Promise<ItemImportLists> {
   await connection();
+  await need(["inventory.items"]);
   const [lists, sups, existing] = await Promise.all([
     getInvLists(),
     db.select({ id: invSuppliers.id, name: invSuppliers.name }).from(invSuppliers).where(eq(invSuppliers.isActive, true)).orderBy(asc(invSuppliers.name)),

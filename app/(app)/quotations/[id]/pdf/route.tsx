@@ -1,14 +1,17 @@
 import { renderToBuffer } from "@react-pdf/renderer";
-import { isSignedIn } from "@/lib/auth-guard";
-import { getQuotation, getSettings } from "@/lib/data";
+import { moneyView, routeAllow } from "@/lib/auth/guard";
+import { getQuotationWithPrices, getSettings } from "@/lib/data";
 import { stampPageNumbers } from "@/lib/pdf/page-numbers";
 import { QuotationPdf } from "@/lib/pdf/quotation-pdf";
 import { viewFromSaved } from "@/lib/quote-view";
 
 export async function GET(request: Request, ctx: RouteContext<"/quotations/[id]/pdf">) {
-  if (!(await isSignedIn())) return new Response("Please sign in first.", { status: 401 });
+  const gate = await routeAllow("quotes.view");
+  if (gate.denied) return gate.denied;
+  // The PDF shows prices, so it also needs "money.sale_prices".
+  if (!moneyView(gate.me).sale) return new Response("Only people who can see prices can open the quotation PDF.", { status: 403 });
   const { id } = await ctx.params;
-  const [q, settings] = await Promise.all([getQuotation(id), getSettings()]);
+  const [q, settings] = await Promise.all([getQuotationWithPrices(id), getSettings()]);
   if (!q) return new Response("This quotation could not be found.", { status: 404 });
 
   const rendered = await renderToBuffer(<QuotationPdf view={viewFromSaved(q, settings)} />);

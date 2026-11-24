@@ -4,6 +4,7 @@
  */
 import "server-only";
 import { sql } from "drizzle-orm";
+import { moneyView, need } from "@/lib/auth/guard";
 import { connection } from "next/server";
 import { db } from "@/db";
 import { dayPlus, istAt, istDate, type Span } from "@/lib/planning/hours";
@@ -41,6 +42,7 @@ export const MIN_EARNING_HOURS = 1;
 /** Default: the last 30 days (as on Inventory Insights). */
 export async function planningInsightFiltersFromParams(sp: Record<string, string | string[] | undefined>): Promise<PlanningInsightFilters> {
   await connection();
+  await need();
   const today = istDate(new Date());
   const one = (k: string) => (typeof sp[k] === "string" ? (sp[k] as string) : "");
   let from = DATE_RE.test(one("from")) ? one("from") : dayPlus(today, -30);
@@ -64,6 +66,8 @@ const DONE = sql`j.status in ('DONE', 'HANDED_OVER')`;
 
 export async function getPlanningInsights(f: PlanningInsightFilters) {
   await connection();
+  const me = await need(["insights.planning"]);
+  const sale = moneyView(me).sale;
   const now = new Date();
   const today = istDate(now);
   const range: Span = {
@@ -429,12 +433,14 @@ export async function getPlanningInsights(f: PlanningInsightFilters) {
     quiet: quiet.map((m) => ({ name: m.name, pct: m.actualPct ?? 0 })),
     unused,
     waiting,
+    // Sale prices (rates, value of extra hours, earnings) only for people who may see them.
+    moneyHidden: !sale,
     quoted: {
       jobs: overQuoted.length,
-      flagged,
+      flagged: flagged.map((j) => ({ ...j, ratePaise: sale ? j.ratePaise : null, extraPaise: sale ? j.extraPaise : null })),
       extraHours,
-      extraPaise,
-      aboutPaise: aboutPaise(extraPaise),
+      extraPaise: sale ? extraPaise : null,
+      aboutPaise: sale ? aboutPaise(extraPaise) : null,
     },
     onTime: { ...onTime, late: [...lateDone, ...lateOpen] },
     blocked: {
@@ -442,7 +448,7 @@ export async function getPlanningInsights(f: PlanningInsightFilters) {
       byMonth: blockedByMonth,
       types: blockTypesUsed,
     },
-    earnings,
+    earnings: sale ? earnings : [],
   };
 }
 export type PlanningInsights = Awaited<ReturnType<typeof getPlanningInsights>>;

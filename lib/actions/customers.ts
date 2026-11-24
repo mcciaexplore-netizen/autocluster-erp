@@ -1,7 +1,6 @@
 "use server";
 
-import { isSignedIn } from "@/lib/auth-guard";
-import { SIGNED_OUT_MESSAGE } from "@/lib/auth-messages";
+import { allow } from "@/lib/auth/guard";
 
 import { and, eq, inArray, isNull } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
@@ -26,7 +25,8 @@ export async function saveCustomerDetails(
   input: CustomerDetailsInput,
   id: string | null,
 ): Promise<ActionResult<{ id: string }>> {
-  if (!(await isSignedIn())) return { ok: false as const, message: SIGNED_OUT_MESSAGE };
+  const g = await allow("customers.edit");
+  if (!g.ok) return { ok: false as const, message: g.message };
   const parsed = customerDetailsSchema.safeParse(input);
   if (!parsed.success) {
     const fieldErrors: Record<string, string> = {};
@@ -85,7 +85,8 @@ export async function saveCustomerLinks(
   id: string,
   input: { deptCodes: string[]; serviceIds: number[] },
 ): Promise<ActionResult<{ id: string; companyName: string }>> {
-  if (!(await isSignedIn())) return { ok: false as const, message: SIGNED_OUT_MESSAGE };
+  const g = await allow("customers.edit");
+  if (!g.ok) return { ok: false as const, message: g.message };
   const parsed = customerLinksSchema.safeParse(input);
   if (!parsed.success) return { ok: false, message: parsed.error.issues[0].message };
   const { deptCodes, serviceIds } = parsed.data;
@@ -128,14 +129,16 @@ export async function saveCustomerLinks(
 
 /** Soft delete: the customer is hidden but can be brought back with Undo. */
 export async function deleteCustomer(id: string): Promise<ActionResult> {
-  if (!(await isSignedIn())) return { ok: false as const, message: SIGNED_OUT_MESSAGE };
+  const g = await allow("customers.edit");
+  if (!g.ok) return { ok: false as const, message: g.message };
   await db.update(customers).set({ deletedAt: new Date() }).where(eq(customers.id, id));
   refresh();
   return { ok: true };
 }
 
 export async function restoreCustomer(id: string): Promise<ActionResult> {
-  if (!(await isSignedIn())) return { ok: false as const, message: SIGNED_OUT_MESSAGE };
+  const g = await allow("customers.edit");
+  if (!g.ok) return { ok: false as const, message: g.message };
   await db.update(customers).set({ deletedAt: null }).where(eq(customers.id, id));
   refresh();
   return { ok: true };

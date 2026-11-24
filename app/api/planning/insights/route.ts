@@ -1,12 +1,13 @@
 /** "Download as Excel" on each Planning Insights section. ?section=&from=&to=&dept= */
-import { isSignedIn } from "@/lib/auth-guard";
+import { routeAllow } from "@/lib/auth/guard";
 import { formatDate } from "@/lib/format";
 import { insightTableWorkbook } from "@/lib/inventory/excel";
 import { PLANNING_SECTIONS, planningTable, type PlanningSection } from "@/lib/planning/insights-tables";
 import { getPlanningInsights, planningInsightFiltersFromParams } from "@/lib/planning-insights";
 
 export async function GET(request: Request) {
-  if (!(await isSignedIn())) return Response.json({ error: "Please sign in again." }, { status: 401 });
+  const gate = await routeAllow("insights.planning");
+  if (gate.denied) return gate.denied;
   const sp = new URL(request.url).searchParams;
   const section = sp.get("section") as PlanningSection;
   if (!PLANNING_SECTIONS.includes(section)) return Response.json({ error: "Unknown table." }, { status: 400 });

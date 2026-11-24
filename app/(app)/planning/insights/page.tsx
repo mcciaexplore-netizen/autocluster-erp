@@ -163,7 +163,7 @@ async function Body({ searchParams }: { searchParams: Sp }) {
               }))}
             />
           ) : (
-            <Empty>No jobs with recorded running time were done in this period.</Empty>
+            <Empty>{d.moneyHidden ? "Earnings are sale prices, so they are hidden for your role." : "No jobs with recorded running time were done in this period."}</Empty>
           )}
         </Section>
       </div>
@@ -216,8 +216,8 @@ function QuotedSection({ d }: { d: PlanningInsights }) {
       <p className="mb-4 flex items-start gap-2 rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-950">
         <AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden />
         <span>
-          {flagged.length === 1 ? "This job" : `These ${flagged.length} jobs`} took {Math.round(extraHours).toLocaleString("en-IN")} more hours than quoted, worth about {formatINRShort(aboutPaise)}{" "}
-          not billed. ({flagged.length} of {jobs} per-hour jobs done.)
+          {flagged.length === 1 ? "This job" : `These ${flagged.length} jobs`} took {Math.round(extraHours).toLocaleString("en-IN")} more hours than quoted{aboutPaise != null ? `, worth about ${formatINRShort(aboutPaise)} not billed` : ""}. ({flagged.length} of {jobs}{" "}
+          per-hour jobs done.)
         </span>
       </p>
       <Table

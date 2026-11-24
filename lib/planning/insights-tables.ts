@@ -5,7 +5,7 @@ import type { PlanningInsights } from "@/lib/planning-insights";
 export const PLANNING_SECTIONS = ["use", "waiting", "quoted", "on-time", "not-available", "earnings"] as const;
 export type PlanningSection = (typeof PLANNING_SECTIONS)[number];
 
-const rs = (paise: number) => paise / 100;
+const rs = (paise: number | null) => (paise == null ? null : paise / 100);
 const h1 = (v: number) => Math.round(v * 10) / 10;
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 const monthName = (ym: string) => `${MONTHS[Number(ym.slice(5, 7)) - 1]} ${ym.slice(0, 4)}`;

@@ -18,6 +18,7 @@ import {
   PackageMinus,
 } from "lucide-react";
 import Link from "next/link";
+import { useCan } from "@/components/auth/permissions-provider";
 import { useEffect, useState } from "react";
 import { DeptChip } from "@/components/common/badges";
 import { JobChip } from "@/components/planning/job-chip";
@@ -145,7 +146,7 @@ export function TicketPanel({
                 {t.snapshot.intraState ? (
                   <>
                     <dt className="text-muted-foreground">CGST + SGST</dt>
-                    <dd className="text-right tabular-nums">{formatINR(toPaise(t.cgst) + toPaise(t.sgst))}</dd>
+                    <dd className="text-right tabular-nums">{t.cgst == null || t.sgst == null ? "Hidden" : formatINR(toPaise(t.cgst) + toPaise(t.sgst))}</dd>
                   </>
                 ) : (
                   <>
@@ -321,14 +322,16 @@ export function TicketPanel({
 
 /** Materials used for this job, the material cost, and "Kept after materials". */
 function MaterialsSection({ ticketId, m, cancelled }: { ticketId: string; m: TicketDetail["materials"]; cancelled: boolean }) {
-  const kept = keptAfterMaterials(m.taxablePaise, m.costPaise);
+  const can = useCan();
+  // Hidden when either the sale price or the stock cost is hidden from this person.
+  const kept = m.taxablePaise == null || m.costPaise == null ? null : keptAfterMaterials(m.taxablePaise, m.costPaise);
   return (
     <section className="rounded-xl border p-4" aria-labelledby={`mat-${ticketId}`}>
       <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
         <h3 id={`mat-${ticketId}`} className="flex items-center gap-2 font-semibold">
           <FlaskConical className="size-4 text-primary" aria-hidden /> Materials used
         </h3>
-        {!cancelled ? (
+        {!cancelled && (can("inventory.use") || can("inventory.use_own_jobs")) ? (
           <Link href={`/inventory/movements/new?type=out&ticket=${ticketId}`} className="inline-flex h-9 items-center gap-1.5 rounded-lg border px-3 text-sm font-medium hover:bg-secondary">
             <PackageMinus className="size-4" aria-hidden /> Record materials
           </Link>
@@ -358,8 +361,8 @@ function MaterialsSection({ ticketId, m, cancelled }: { ticketId: string; m: Tic
             <dd className="text-right tabular-nums">- {formatINR(m.costPaise)}</dd>
             <dt className="font-semibold">Kept after materials</dt>
             <dd className="text-right font-semibold tabular-nums">
-              {formatINR(kept.keptPaise)}
-              {kept.pct != null ? <span className="ml-1 font-normal text-muted-foreground">({kept.pct}%)</span> : null}
+              {kept ? formatINR(kept.keptPaise) : "Hidden"}
+              {kept?.pct != null ? <span className="ml-1 font-normal text-muted-foreground">({kept.pct}%)</span> : null}
             </dd>
           </dl>
         </>

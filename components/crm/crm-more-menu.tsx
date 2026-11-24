@@ -2,6 +2,7 @@
 
 import { Download, FileSpreadsheet, MoreHorizontal } from "lucide-react";
 import { useState } from "react";
+import { Can } from "@/components/auth/permissions-provider";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { ImportDialog } from "./import-dialog";
@@ -20,9 +21,11 @@ export function CrmMoreMenu() {
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-60">
-          <DropdownMenuItem className="h-10" onSelect={() => setImporting(true)}>
-            <FileSpreadsheet /> Import enquiries
-          </DropdownMenuItem>
+          <Can perm="crm.import">
+            <DropdownMenuItem className="h-10" onSelect={() => setImporting(true)}>
+              <FileSpreadsheet /> Import enquiries
+            </DropdownMenuItem>
+          </Can>
           <DropdownMenuItem className="h-10" asChild>
             <a href={`/api/crm/export${query}`} download data-skip-unsaved>
               <Download /> Download as Excel

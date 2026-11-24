@@ -21,7 +21,7 @@ import { cancelTicketAction, moveTicketBackAction } from "@/lib/actions/orders";
 import type { BlobEnv } from "@/lib/files";
 import type { BoardTicket } from "@/lib/orders-data";
 import { formatINR } from "@/lib/pricing";
-import { daysBetween, followUpDue, moveKind, moveProblem, STAGE_INFO, STAGES, todayInIndia, type BoardStage } from "@/lib/tickets";
+import { daysBetween, followUpDue, moveKind, moveProblem, STAGE_INFO, STAGES, todayInIndia, type BoardStage, hasBalance } from "@/lib/tickets";
 import { cn } from "@/lib/utils";
 import { useAutoRefresh } from "@/hooks/use-auto-refresh";
 import { BoardForms } from "./forms";
@@ -94,7 +94,7 @@ export function OrdersBoard({ tickets, customers, uploadEnv, departments }: { ti
         if (f.stage && t.stage !== f.stage) return false;
         if (f.noMaterials && !(t.hasMaterialsList && !t.materialsRecorded)) return false;
         if (f.workNotDone && (t.stage === "CANCELLED" || !t.job || ["DONE", "HANDED_OVER", "CANCELLED"].includes(t.job.status))) return false;
-        if (f.overdue && !(t.stage === "PAYMENT" && t.invoice && t.invoice.leftPaise > 0 && daysBetween(today, t.invoice.dueDate) < 0)) return false;
+        if (f.overdue && !(t.stage === "PAYMENT" && t.invoice && hasBalance(t.invoice) && daysBetween(today, t.invoice.dueDate) < 0)) return false;
         if (f.followup && !(t.stage === "PAYMENT" && t.invoice && followUpDue(t.invoice, today))) return false;
         if (f.q) {
           const hay = [t.ticketNo, t.quoteNo, t.companyName, t.po?.number, t.invoice?.number, t.description].join(" ").toLowerCase();
@@ -168,9 +168,11 @@ export function OrdersBoard({ tickets, customers, uploadEnv, departments }: { ti
 
   // Payment follow-up shows what is still to collect (each invoice counted once); other columns show the services' value.
   const columnTotal = (s: BoardStage) => {
-    if (s !== "PAYMENT") return byStage(s).reduce((sum, t) => sum + t.totalPaise, 0);
+    // Hidden (null) for people who may not see prices.
+    if (byStage(s).some((t) => t.totalPaise == null)) return null;
+    if (s !== "PAYMENT") return byStage(s).reduce((sum, t) => sum + (t.totalPaise ?? 0), 0);
     const left = new Map<string, number>();
-    for (const t of byStage(s)) if (t.invoice) left.set(t.invoice.id, t.invoice.leftPaise);
+    for (const t of byStage(s)) if (t.invoice) left.set(t.invoice.id, t.invoice.leftPaise ?? 0);
     return [...left.values()].reduce((a, b) => a + b, 0);
   };
 
@@ -409,7 +411,7 @@ function Chip({ active, onClick, children }: { active: boolean; onClick: () => v
   );
 }
 
-function ColumnHeader({ stage, count, totalPaise }: { stage: BoardStage; count: number; totalPaise: number }) {
+function ColumnHeader({ stage, count, totalPaise }: { stage: BoardStage; count: number; totalPaise: number | null }) {
   return (
     <header className="mb-3">
       <div className="flex items-baseline justify-between gap-2">
@@ -434,7 +436,7 @@ function Column({
 }: {
   stage: BoardStage;
   count: number;
-  totalPaise: number;
+  totalPaise: number | null;
   dragging: BoardTicket | null;
   children: React.ReactNode;
 }) {

@@ -19,12 +19,21 @@ export function MaterialsButton({
   service,
   current,
   items,
+  readOnly = false,
 }: {
   service: { id: number; name: string; unitLabel: string };
   current: { itemId: string; qtyPerUnit: string }[];
   items: PickItem[];
+  /** People who may not change materials lists see the count only. */
+  readOnly?: boolean;
 }) {
   const [open, setOpen] = useState(false);
+  if (readOnly)
+    return (
+      <span className="inline-flex h-8 items-center gap-1 text-xs text-muted-foreground">
+        <FlaskConical className="size-3.5" aria-hidden /> Materials used{current.length ? ` (${current.length})` : ""}
+      </span>
+    );
   return (
     <>
       <Button type="button" variant="ghost" size="sm" className="-ml-2 h-8 px-2 text-xs font-normal text-primary" onClick={() => setOpen(true)}>

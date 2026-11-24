@@ -1,18 +1,22 @@
 "use server";
 
+import { can } from "@/lib/auth/can";
+import { signedInUser } from "@/lib/auth/guard";
+import { assertInScope, jobDept } from "@/lib/auth/scope";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { db } from "@/db";
 import { UserFacingError } from "@/db/quote-writer";
 import { finishJob, handOverJob, holdJob, logReadyMessage, NeedMachineError, OtherJobRunningError, pauseJob, startJob } from "@/db/work-writer";
-import { isSignedIn } from "@/lib/auth-guard";
-import { SIGNED_OUT_MESSAGE } from "@/lib/auth-messages";
+import { allow } from "@/lib/auth/guard";
+import type { Permission } from "@/lib/auth/permissions";
 
 export type NeedMachine = { suggestedMachineId: string | null; machines: { id: string; name: string; deptCode: string; suitable: boolean }[]; hours: number; later: { bookingId: string; machine: string; start: string } | null };
 type Result<T> = { ok: true; data: T } | { ok: false; message: string; otherRunning?: string; needMachine?: NeedMachine };
 
-async function run<T>(fn: () => Promise<T>): Promise<Result<T>> {
-  if (!(await isSignedIn())) return { ok: false, message: SIGNED_OUT_MESSAGE };
+async function run<T>(perm: Permission | Permission[], fn: () => Promise<T>): Promise<Result<T>> {
+  const g = await allow(perm);
+  if (!g.ok) return { ok: false, message: g.message };
   try {
     const data = await fn();
     revalidatePath("/", "layout");
@@ -31,34 +35,48 @@ const id = z.string().uuid();
 const opt = id.nullable();
 
 export async function startJobAction(jobId: string, operatorId: string | null, more: { pauseOther?: boolean; machineId?: string | null; removeLaterBookingId?: string | null } = {}) {
-  return run(() =>
-    startJob(db, id.parse(jobId), {
+  return run("planning.operate", async () => {
+    await assertInScope("planning.operate", [await jobDept(id.parse(jobId))]);
+    return startJob(db, id.parse(jobId), {
       operatorId: opt.parse(operatorId),
       pauseOther: !!more.pauseOther,
       machineId: more.machineId ? id.parse(more.machineId) : null,
       removeLaterBookingId: more.removeLaterBookingId ? id.parse(more.removeLaterBookingId) : null,
-    }),
-  );
+    });
+  });
 }
 export async function pauseJobAction(jobId: string, reason: string, note: string | null, operatorId: string | null) {
-  return run(() => pauseJob(db, id.parse(jobId), z.string().max(60).parse(reason), z.string().max(500).nullable().parse(note), { operatorId: opt.parse(operatorId) }));
+  return run("planning.operate", async () => {
+    await assertInScope("planning.operate", [await jobDept(id.parse(jobId))]);
+    return pauseJob(db, id.parse(jobId), z.string().max(60).parse(reason), z.string().max(500).nullable().parse(note), { operatorId: opt.parse(operatorId) });
+  });
 }
 export async function holdJobAction(jobId: string, reason: string, note: string | null) {
-  return run(() => holdJob(db, id.parse(jobId), z.string().max(60).parse(reason), z.string().max(500).nullable().parse(note)));
+  return run(["planning.operate", "planning.book"], async () => {
+    await assertInScope(can(await signedInUser(), "planning.book") ? "planning.book" : "planning.operate", [await jobDept(id.parse(jobId))]);
+    return holdJob(db, id.parse(jobId), z.string().max(60).parse(reason), z.string().max(500).nullable().parse(note));
+  });
 }
 export async function finishJobAction(jobId: string, input: { note: string; qtyDone?: string | null; problems?: string | null }, operatorId: string | null) {
-  return run(() =>
-    finishJob(db, id.parse(jobId), {
+  return run("planning.operate", async () => {
+    await assertInScope("planning.operate", [await jobDept(id.parse(jobId))]);
+    return finishJob(db, id.parse(jobId), {
       note: z.string().max(2000).parse(input.note),
       qtyDone: z.string().max(200).nullish().parse(input.qtyDone),
       problems: z.string().max(2000).nullish().parse(input.problems),
       operatorId: opt.parse(operatorId),
-    }),
-  );
+    });
+  });
 }
 export async function handOverAction(jobId: string, date: string, receivedBy: string) {
-  return run(() => handOverJob(db, id.parse(jobId), z.string().max(10).parse(date), z.string().max(200).parse(receivedBy)));
+  return run("planning.operate", async () => {
+    await assertInScope("planning.operate", [await jobDept(id.parse(jobId))]);
+    return handOverJob(db, id.parse(jobId), z.string().max(10).parse(date), z.string().max(200).parse(receivedBy));
+  });
 }
 export async function readySentAction(jobId: string, phone: string | null) {
-  return run(() => logReadyMessage(db, id.parse(jobId), z.string().max(30).nullable().parse(phone)));
+  return run("planning.operate", async () => {
+    await assertInScope("planning.operate", [await jobDept(id.parse(jobId))]);
+    return logReadyMessage(db, id.parse(jobId), z.string().max(30).nullable().parse(phone));
+  });
 }

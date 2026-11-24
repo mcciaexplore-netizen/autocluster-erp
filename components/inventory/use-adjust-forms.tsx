@@ -79,10 +79,12 @@ export function UseForm({
   const itemOf = (id: string) => data.items.find((i) => i.id === id);
   const update = (key: number, patch: Partial<UseLine>) => setLines((ls) => ls.map((l) => (l.key === key ? { ...l, ...patch } : l)));
   const isOther = data.purposes.find((p) => p.id === purposeId)?.name.toLowerCase() === "other";
+  // Stock costs are removed (null) for people who may not see them: then no value is shown.
+  const costsHidden = data.items.some((i) => i.avgCost == null);
   const value = lines.reduce((a, l) => {
     const i = itemOf(l.itemId);
     const q = parseQty(l.qty);
-    return a + (i && q ? valuePaise(q, i.avgCost) : 0);
+    return a + (i && q && i.avgCost != null ? valuePaise(q, i.avgCost) : 0);
   }, 0);
 
   const save = () => {
@@ -219,7 +221,11 @@ export function UseForm({
       </section>
 
       <SaveBar label="Save stock used" pending={pending} onSave={save}>
-        Value at average cost: <strong className="tabular-nums">{formatINR(value)}</strong>
+        {costsHidden ? null : (
+          <>
+            Value at average cost: <strong className="tabular-nums">{formatINR(value)}</strong>
+          </>
+        )}
       </SaveBar>
     </div>
   );

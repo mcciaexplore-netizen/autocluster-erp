@@ -98,8 +98,8 @@ function AddPoForm({
   const shownDuplicate = poNumber.trim() && duplicate && duplicate.number.toLowerCase() === poNumber.trim().replace(/\s+/g, " ").toLowerCase() ? duplicate : null;
 
   const chosen = candidates.filter((t) => selected.has(t.id));
-  const beforeGst = chosen.reduce((s, t) => s + t.taxablePaise, 0);
-  const withGst = chosen.reduce((s, t) => s + t.totalPaise, 0);
+  const beforeGst = chosen.reduce((s, t) => s + (t.taxablePaise ?? 0), 0);
+  const withGst = chosen.reduce((s, t) => s + (t.totalPaise ?? 0), 0);
   const poPaise = linkTo ? linkTo.amountPaise : parseRupees(amountText);
 
   const errors = linkTo

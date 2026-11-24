@@ -14,7 +14,7 @@ import { isPerHour, suggestHours, timeSettingText, type UnitTypeName } from "@/l
 type Svc = { id: number; name: string; unitType: UnitTypeName; unitLabel: string; setupMinutes: number | null; minutesPerUnit: string | null };
 
 /** Rate Card: "Time needed" for a service, used only to suggest a job's hours. */
-export function TimeButton({ service, defaultOpen = false }: { service: Svc; defaultOpen?: boolean }) {
+export function TimeButton({ service, defaultOpen = false, readOnly = false }: { service: Svc; defaultOpen?: boolean; readOnly?: boolean }) {
   const router = useRouter();
   const [open, setOpen] = useState(defaultOpen);
   const [setup, setSetup] = useState(service.setupMinutes?.toString() ?? "");
@@ -22,6 +22,8 @@ export function TimeButton({ service, defaultOpen = false }: { service: Svc; def
   const [pending, start] = useTransition();
   if (isPerHour(service.unitType)) return <span className="text-xs font-normal text-muted-foreground">Time: the billed hours</span>;
   const set = service.setupMinutes != null || service.minutesPerUnit != null;
+  // People who may not change time settings see them only.
+  if (readOnly) return <span className="inline-flex min-h-8 items-center gap-1 text-xs text-muted-foreground">{set ? `Time: ${timeSettingText(service)}` : "No time set"}</span>;
   const bad = (v: string) => v.trim() !== "" && !(Number(v) >= 0);
   const example = suggestHours({ unitType: service.unitType, billableQty: service.unitType === "PER_CC" ? 200 : 5, setupMinutes: setup ? Number(setup) : null, minutesPerUnit: per ? Number(per) : null });
   return (

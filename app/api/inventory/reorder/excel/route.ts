@@ -1,11 +1,12 @@
 /** Order list as Excel (Reorder list > Send to supplier > Excel). */
-import { isSignedIn } from "@/lib/auth-guard";
+import { routeAllow } from "@/lib/auth/guard";
 import { getOrderListData } from "@/lib/inventory-data";
 import { orderListWorkbook } from "@/lib/inventory/excel";
 import { parseOrderListQuery } from "@/lib/inventory/order-params";
 
 export async function GET(request: Request) {
-  if (!(await isSignedIn())) return Response.json({ error: "Please sign in again." }, { status: 401 });
+  const gate = await routeAllow("inventory.view");
+  if (gate.denied) return gate.denied;
   const q = parseOrderListQuery(new URL(request.url).searchParams);
   if (!q) return Response.json({ error: "This order list link doesn't look right." }, { status: 400 });
   const data = await getOrderListData(q.supplierId, q.lines);

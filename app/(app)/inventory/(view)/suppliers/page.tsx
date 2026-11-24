@@ -1,3 +1,4 @@
+import { Can } from "@/components/auth/permissions-provider";
 import type { Metadata } from "next";
 import { Plus } from "lucide-react";
 import Link from "next/link";
@@ -17,11 +18,13 @@ export default function SuppliersPage() {
         title="Suppliers"
         description="Who you buy materials from, what they supply and what was bought this financial year."
         actions={
-          <Button asChild>
-            <Link href="/inventory/suppliers/new">
-              <Plus aria-hidden /> Add supplier
-            </Link>
-          </Button>
+          <Can perm="inventory.suppliers">
+            <Button asChild>
+              <Link href="/inventory/suppliers/new">
+                <Plus aria-hidden /> Add supplier
+              </Link>
+            </Button>
+          </Can>
         }
       />
       <Suspense fallback={<ListSkeleton rows={4} />}>

@@ -1,7 +1,6 @@
 "use server";
 
-import { isSignedIn } from "@/lib/auth-guard";
-import { SIGNED_OUT_MESSAGE } from "@/lib/auth-messages";
+import { allow } from "@/lib/auth/guard";
 
 import { eq, inArray, sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
@@ -15,7 +14,8 @@ const changesSchema = z.array(z.object({ id: z.number().int(), rateMsme: rate, r
 
 /** Saves new rates. They apply to new quotations only; saved quotations keep their own rates. */
 export async function updateRates(changes: { id: number; rateMsme: number; rateOem: number }[]) {
-  if (!(await isSignedIn())) return { ok: false as const, message: SIGNED_OUT_MESSAGE };
+  const g = await allow("ratecard.rates");
+  if (!g.ok) return { ok: false as const, message: g.message };
   const parsed = changesSchema.safeParse(changes);
   if (!parsed.success) return { ok: false as const, message: "Please check the rates. They must be numbers of 0 or more." };
   if (!parsed.data.length) return { ok: true as const, count: 0 };
@@ -37,7 +37,8 @@ export async function updateRates(changes: { id: number; rateMsme: number; rateO
 
 /** "No materials needed" on a service. Only allowed when it has no materials list. */
 export async function setNoMaterialsNeeded(id: number, on: boolean) {
-  if (!(await isSignedIn())) return { ok: false as const, message: SIGNED_OUT_MESSAGE };
+  const g = await allow("ratecard.time_materials");
+  if (!g.ok) return { ok: false as const, message: g.message };
   if (on) {
     const [m] = await db.select({ n: sql<number>`count(*)::int` }).from(invServiceMaterials).where(eq(invServiceMaterials.serviceId, id));
     if ((m?.n ?? 0) > 0) return { ok: false as const, message: "This service has a materials list. Remove it first, then switch on “No materials needed”." };
@@ -48,7 +49,8 @@ export async function setNoMaterialsNeeded(id: number, on: boolean) {
 }
 
 export async function setServiceActive(id: number, isActive: boolean) {
-  if (!(await isSignedIn())) return { ok: false as const, message: SIGNED_OUT_MESSAGE };
+  const g = await allow("ratecard.rates");
+  if (!g.ok) return { ok: false as const, message: g.message };
   await db.update(services).set({ isActive }).where(eq(services.id, id));
   revalidatePath("/", "layout");
   return { ok: true as const };

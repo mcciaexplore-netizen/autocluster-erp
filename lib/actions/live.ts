@@ -3,9 +3,12 @@
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
-import { isSignedIn } from "@/lib/auth-guard";
+import { allow } from "@/lib/auth/guard";
+import type { Permission } from "@/lib/auth/permissions";
 
 export type LiveScope = "crm" | "orders" | "inventory";
+
+const LIVE_PERMS: Record<string, Permission> = { crm: "crm.view", orders: "orders.view", inventory: "inventory.view" };
 
 /**
  * "Has anything changed since X?" for the auto-refresh. A few EXISTS checks that stop at the
@@ -13,7 +16,8 @@ export type LiveScope = "crm" | "orders" | "inventory";
  * by the previous check (the browser's clock is never used).
  */
 export async function changedSinceAction(scope: LiveScope, since: string | null): Promise<{ changed: boolean; at: string } | null> {
-  if (!(await isSignedIn())) return null;
+  const g = await allow(LIVE_PERMS[scope] ?? "orders.view");
+  if (!g.ok) return null;
   const s = z.enum(["crm", "orders", "inventory"]).parse(scope);
   const t = since && !Number.isNaN(Date.parse(since)) ? new Date(since) : null;
   if (!t) {

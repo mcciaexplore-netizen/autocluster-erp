@@ -5,6 +5,8 @@
  */
 import "server-only";
 import { and, asc, desc, eq, gte, ilike, inArray, isNull, lte, or, sql, type SQL } from "drizzle-orm";
+import { moneyView, need } from "@/lib/auth/guard";
+import { blankKeys, type Blanked } from "@/lib/auth/redact";
 import { connection } from "next/server";
 import { db } from "@/db";
 import {
@@ -23,6 +25,7 @@ import { financialYear, formatQuoteNo } from "@/lib/pricing";
 
 export async function getSettings() {
   await connection();
+  await need();
   const [row] = await db.select().from(settings).where(eq(settings.id, 1));
   if (!row) throw new Error("Settings are missing. Run: npm run db:seed");
   return row;
@@ -30,11 +33,27 @@ export async function getSettings() {
 
 export async function getDepartments() {
   await connection();
+  await need();
   return db.select().from(departments).orderBy(asc(departments.sortOrder));
 }
 
 export async function getServices(opts: { activeOnly?: boolean } = {}) {
   await connection();
+  const me = await need();
+  const rows = await db
+    .select()
+    .from(services)
+    .where(opts.activeOnly ? eq(services.isActive, true) : undefined)
+    .orderBy(asc(services.sortOrder));
+  // Rates are sale prices: removed on the server for people who may not see them.
+  const sale = moneyView(me).sale;
+  return rows.map((r) => ({ ...r, rateMsme: sale ? r.rateMsme : null, rateOem: sale ? r.rateOem : null }));
+}
+
+/** The rate card with its rates, for building quotations: needs "money.sale_prices". */
+export async function getServicesWithRates(opts: { activeOnly?: boolean } = {}) {
+  await connection();
+  await need(["money.sale_prices"]);
   return db
     .select()
     .from(services)
@@ -51,6 +70,7 @@ export type CustomerFilters = {
 
 export async function listCustomers(f: CustomerFilters = {}) {
   await connection();
+  await need(["customers.view"]);
   const where: (SQL | undefined)[] = [isNull(customers.deletedAt), eq(customers.status, "ACTIVE")];
   if (f.q?.trim()) {
     const term = `%${f.q.trim()}%`;
@@ -97,6 +117,7 @@ async function deptSorter() {
 
 export async function getCustomer(id: string, opts: { includeDrafts?: boolean } = {}) {
   await connection();
+  await need(["customers.view", "quotes.view", "crm.edit"]);
   if (!/^[0-9a-f-]{36}$/i.test(id)) return null;
   const [row] = await db
     .select()
@@ -119,6 +140,7 @@ export type CustomerWithLinks = NonNullable<Awaited<ReturnType<typeof getCustome
 /** All active customers with their departments and services, for the quotation builder picker. */
 export async function getCustomersForPicker() {
   await connection();
+  await need(["customers.view", "quotes.edit", "crm.edit"]);
   const rows = await db
     .select()
     .from(customers)
@@ -148,6 +170,8 @@ export type QuotationFilters = {
 
 export async function listQuotations(f: QuotationFilters = {}) {
   await connection();
+  const me = await need(["quotes.view", "customers.view"]);
+  const sale = moneyView(me).sale;
   const where: (SQL | undefined)[] = [isNull(quotations.deletedAt)];
   if (f.q?.trim()) {
     const term = `%${f.q.trim()}%`;
@@ -172,12 +196,13 @@ export async function listQuotations(f: QuotationFilters = {}) {
     })
     .from(quotations)
     .where(and(...where))
-    .orderBy(desc(quotations.quoteDate), desc(quotations.seq));
+    .orderBy(desc(quotations.quoteDate), desc(quotations.seq))
+    .then((rows) => rows.map((r) => ({ ...r, grandTotal: sale ? r.grandTotal : null })));
 }
 export type QuotationListRow = Awaited<ReturnType<typeof listQuotations>>[number];
 
-export async function getQuotation(id: string) {
-  await connection();
+/** A quotation with all its prices (internal: callers check who may see what). */
+async function loadQuotation(id: string) {
   if (!/^[0-9a-f-]{36}$/i.test(id)) return null;
   const [q] = await db.select().from(quotations).where(and(eq(quotations.id, id), isNull(quotations.deletedAt)));
   if (!q) return null;
@@ -198,10 +223,41 @@ export async function getQuotation(id: string) {
   ]);
   return { ...q, items, tickets: ticketRows, locked: ticketRows.length > 0 };
 }
+
+/** A quotation to show. For people who may not see sale prices, every price is removed (null). */
+export async function getQuotation(id: string) {
+  await connection();
+  const me = await need(["quotes.view"]);
+  const q = await loadQuotation(id);
+  if (!q) return null;
+  if (moneyView(me).sale) return { ...q, pricesHidden: false } as ShownQuotation;
+  return {
+    ...blankKeys(q, ["subtotal", "discountTotal", "taxableValue", "cgst", "sgst", "igst", "roundOff", "grandTotal"] as const),
+    items: q.items.map((it) => blankKeys(it, ["listRate", "finalRate", "amount", "discountPct"] as const)),
+    tickets: q.tickets.map((t) => blankKeys(t, ["totalAmount"] as const)),
+    pricesHidden: true,
+  } as ShownQuotation;
+}
+type FullQuotation = NonNullable<Awaited<ReturnType<typeof loadQuotation>>>;
+type ShownQuotation = Blanked<Omit<FullQuotation, "items" | "tickets">, "subtotal" | "discountTotal" | "taxableValue" | "cgst" | "sgst" | "igst" | "roundOff" | "grandTotal"> & {
+  items: Blanked<FullQuotation["items"][number], "listRate" | "finalRate" | "amount" | "discountPct">[];
+  tickets: Blanked<FullQuotation["tickets"][number], "totalAmount">[];
+  pricesHidden: boolean;
+};
+
+/** A quotation with all its prices (editing and the PDF): needs "money.sale_prices". */
+export async function getQuotationWithPrices(id: string) {
+  await connection();
+  await need(["quotes.view"]);
+  await need(["money.sale_prices"]);
+  return loadQuotation(id);
+}
+
 export type QuotationWithItems = NonNullable<Awaited<ReturnType<typeof getQuotation>>>;
 
 export async function getDashboardStats() {
   await connection();
+  const me = await need();
   const now = new Date();
   const monthStart = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-01`;
   const [[c], [m], [p]] = await Promise.all([
@@ -218,12 +274,13 @@ export async function getDashboardStats() {
       .from(quotations)
       .where(and(isNull(quotations.deletedAt), inArray(quotations.status, ["DRAFT", "SENT"]))),
   ]);
-  return { customers: c.n, quotesThisMonth: m.n, totalThisMonth: m.total, pending: p.n };
+  return { customers: c.n, quotesThisMonth: m.n, totalThisMonth: moneyView(me).sale ? m.total : null, pending: p.n };
 }
 
 /** The number the next quotation will most likely get. The real number is only taken on save. */
 export async function getNextQuoteNoPreview() {
   await connection();
+  await need(["quotes.edit"]);
   const fy = financialYear(new Date());
   const [s] = await db.select({ prefix: settings.quotePrefix }).from(settings).where(eq(settings.id, 1));
   const [c] = await db.select().from(quoteCounters).where(eq(quoteCounters.fy, fy));

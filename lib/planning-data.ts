@@ -4,6 +4,8 @@
  */
 import "server-only";
 import { and, asc, eq, gt, isNull, lt, sql } from "drizzle-orm";
+import { can } from "@/lib/auth/can";
+import { moneyView, need } from "@/lib/auth/guard";
 import { connection } from "next/server";
 import { db } from "@/db";
 import { bookingsClashingWithBlocks } from "@/db/booking-writer";
@@ -16,8 +18,15 @@ import { machineUse, weekStart } from "@/lib/planning/use";
 import { isOverrun, quotedVsActual } from "@/lib/planning/work";
 
 /** Working hours and holidays, as a pattern for the working-hours maths. */
+
+/** Someone who runs jobs but doesn't plan them (the Operator role). */
+function isOperatorOnly(me: Parameters<typeof can>[0]) {
+  return can(me, "planning.operate") && !can(me, "planning.book") && !can(me, "planning.blocks") && !can(me, "planning.machines");
+}
+
 export async function getPlanningSettings() {
   await connection();
+  await need(["planning.view", "settings.edit"]);
   const [[s], hs] = await Promise.all([db.select().from(settings).where(eq(settings.id, 1)), db.select().from(holidays).orderBy(asc(holidays.date))]);
   if (!s) throw new Error("Settings are missing. Run: npm run db:seed");
   return {
@@ -30,17 +39,20 @@ export type PlanningSettings = Awaited<ReturnType<typeof getPlanningSettings>>;
 
 export async function listHolidays() {
   await connection();
+  await need(["planning.view", "settings.edit"]);
   return db.select().from(holidays).orderBy(asc(holidays.date));
 }
 
 export async function listDepartments() {
   await connection();
+  await need();
   return db.select({ code: departments.code, name: departments.name }).from(departments).orderBy(asc(departments.sortOrder));
 }
 
 /** What the machine form chooses from: departments, the whole rate card, and the next code. */
 export async function getMachineFormOptions() {
   await connection();
+  await need(["planning.machines"]);
   const [depts, svcs, nextCode] = await Promise.all([
     db.select({ code: departments.code, name: departments.name }).from(departments).orderBy(asc(departments.sortOrder)),
     db.select({ id: services.id, name: services.name, deptCode: services.deptCode, unitLabel: services.unitLabel, isActive: services.isActive }).from(services).orderBy(asc(services.sortOrder)),
@@ -122,6 +134,7 @@ async function overdueBreakdowns(now: Date): Promise<Map<string, Date>> {
 /** For "Needs attention": machines still broken down after their expected end. */
 export async function listOverdueBreakdowns() {
   await connection();
+  await need(["planning.view"]);
   const now = new Date();
   const map = await overdueBreakdowns(now);
   if (!map.size) return [];
@@ -132,6 +145,7 @@ export async function listOverdueBreakdowns() {
 /** Machines with their services, what's running now, the next booking and use % this week. */
 export async function listMachines() {
   await connection();
+  await need(["planning.view"]);
   const now = new Date();
   const week = weekWindow(istDate(now));
   const [plan, rows, links, depts, weekBookings, weekBlocks, upcoming, blockedNow, overdue, running] = await Promise.all([
@@ -166,6 +180,7 @@ export type MachineListRow = Awaited<ReturnType<typeof listMachines>>["machines"
 /** One machine: its week (bookings and blocked time), use %, services and job history. */
 export async function getMachine(id: string, weekOf?: string) {
   await connection();
+  await need(["planning.view"]);
   const [m] = await db.select().from(machines).where(eq(machines.id, id));
   if (!m) return null;
   const now = new Date();
@@ -213,6 +228,7 @@ export type MachineDetail = NonNullable<Awaited<ReturnType<typeof getMachine>>>;
 /** Active machines for pickers (block time etc.). */
 export async function getMachinePicks() {
   await connection();
+  await need(["planning.view"]);
   return db
     .select({ id: machines.id, name: machines.name, code: machines.code, deptCode: machines.deptCode, status: machines.status })
     .from(machines)
@@ -261,6 +277,7 @@ const ACTUAL_SQL = sql`(select coalesce(sum(extract(epoch from (coalesce(l.ended
 /** The jobs list (and its Excel), newest first, with planned and actual hours. */
 export async function listJobs(f: JobFilters = {}, limit = 500) {
   await connection();
+  await need(["planning.view"]);
   const today = istDate(new Date());
   const [set] = await db.select({ alert: settings.actualVsQuotedAlertPct }).from(settings).where(eq(settings.id, 1));
   const alert = set?.alert ?? 10;
@@ -338,6 +355,7 @@ export type JobRow = Awaited<ReturnType<typeof listJobs>>[number];
 /** Machines for booking: the ones linked to the job's service first; all machines grouped by department. */
 export async function getBookingOptions() {
   await connection();
+  await need(["planning.view"]);
   const [ms, links, depts, team, plan] = await Promise.all([
     db
       .select({ id: machines.id, name: machines.name, code: machines.code, deptCode: machines.deptCode, status: machines.status, runsNonstop: machines.runsNonstop, parallelJobs: machines.parallelJobs })
@@ -364,6 +382,7 @@ export type BookingOptions = Awaited<ReturnType<typeof getBookingOptions>>;
 /** Everything the job panel shows. */
 export async function getJobDetail(id: string) {
   await connection();
+  const me = await need(["planning.view"]);
   if (!/^[0-9a-f-]{36}$/i.test(id)) return null;
   const [row] = await db
     .select({ job: jobs, ticket: tickets, operator: teamMembers.name })
@@ -410,7 +429,8 @@ export async function getJobDetail(id: string) {
       quantityText: row.ticket.snapshot.quantityText,
       quoteNo: row.ticket.snapshot.quoteNo,
       notes: row.ticket.snapshot.notes,
-      taxablePaise: Math.round(Number(row.ticket.taxableValue) * 100),
+      // Sale price: hidden (null) for people who may not see it.
+      taxablePaise: moneyView(me).sale ? Math.round(Number(row.ticket.taxableValue) * 100) : null,
     },
     serviceId: item?.service_id ?? null,
     isCustomItem: !!item?.custom,
@@ -442,6 +462,7 @@ export interface TimelineFilters {
 
 export async function timelineFiltersFromParams(sp: Record<string, string | string[] | undefined>): Promise<TimelineFilters> {
   await connection();
+  const me = await need();
   const one = (k: string) => (typeof sp[k] === "string" ? (sp[k] as string) : "");
   const uuid = (v: string) => (/^[0-9a-f-]{36}$/i.test(v) ? v : undefined);
   const view = (["day", "week", "2w"] as const).find((v) => v === one("view")) ?? "week";
@@ -451,7 +472,8 @@ export async function timelineFiltersFromParams(sp: Record<string, string | stri
   return {
     view,
     date,
-    dept: /^[A-Z]{2,6}$/.test(one("dept")) ? one("dept") : undefined,
+    // Operators start on their own department's machines (they can still pick another to view).
+    dept: /^[A-Z]{2,6}$/.test(one("dept")) ? one("dept") : one("dept") === "all" ? undefined : isOperatorOnly(me) && me.departments.length === 1 ? me.departments[0] : undefined,
     machine: uuid(one("machine")),
     operator: uuid(one("operator")),
     customer: uuid(one("customer")),
@@ -465,6 +487,7 @@ export const VIEW_DAYS: Record<TimelineView, number> = { day: 1, week: 7, "2w": 
 /** Machines, bookings and blocked time in the window, and the jobs still to plan. */
 export async function getTimeline(f: TimelineFilters) {
   await connection();
+  await need(["planning.view"]);
   const start = istAt(f.date, 0);
   const end = istAt(dayPlus(f.date, VIEW_DAYS[f.view]), 0);
   const today = istDate(new Date());
@@ -554,6 +577,7 @@ export type TimelineData = Awaited<ReturnType<typeof getTimeline>>;
 /** For booking from the timeline: one job's details for the Book time form. */
 export async function getBookJob(jobId: string) {
   await connection();
+  await need(["planning.book"]);
   const d = await getJobDetail(jobId);
   if (!d) return null;
   return {
@@ -575,6 +599,7 @@ export async function getBookJob(jobId: string) {
 /** "Needs attention" (top of the Timeline): everything someone should act on now. */
 export async function getNeedsAttention() {
   await connection();
+  await need(["planning.view"]);
   const now = new Date();
   const today = istDate(now);
   const [[set], late, holds, running, unplannedLate, clashes, broken] = await Promise.all([
@@ -629,6 +654,7 @@ export type NeedsAttention = Awaited<ReturnType<typeof getNeedsAttention>>;
  */
 export async function getToday() {
   await connection();
+  const me = await need(["planning.view"]);
   const now = new Date();
   const today = istDate(now);
   const dayStart = istAt(today, 0);
@@ -640,7 +666,7 @@ export async function getToday() {
       job_id: string; status: JobStatusName; ticket_id: string; ticket_no: string; company: string; service: string; instructions: string | null; hold_reason: string | null;
       job_operator: string | null; booking_id: string | null; booking_operator: string | null; machine: string | null; start_at: string | null; end_at: string | null;
       log_operator: string | null; log_started: string | null; first_started: string | null; actual: string; done_at: string | null; done_note: string | null;
-      contact: string | null; phone: string | null; per_hour: boolean; billable: string; has_list: boolean; recorded: boolean;
+      contact: string | null; phone: string | null; per_hour: boolean; billable: string; has_list: boolean; recorded: boolean; dept: string | null;
     }>(sql`
       with day_bookings as (
         select b.* from job_bookings b where b.cancelled_at is null and b.start_at < ${dayEnd} and b.end_at > ${dayStart}
@@ -649,7 +675,7 @@ export async function getToday() {
         union select db.job_id from day_bookings db
         union select j.id from jobs j where j.status = 'DONE' and j.done_at > ${new Date(now.getTime() - 7 * 86_400_000)}
       )
-      select j.id as job_id, j.status, t.id as ticket_id, t.ticket_no, t.snapshot->>'companyName' as company, t.snapshot->>'description' as service,
+      select j.id as job_id, j.status, t.id as ticket_id, t.ticket_no, t.snapshot->>'companyName' as company, t.snapshot->>'description' as service, t.snapshot->>'deptCode' as dept,
         j.instructions, j.hold_reason, j.operator_id as job_operator,
         b.id as booking_id, b.operator_id as booking_operator, m.name as machine, b.start_at::text, b.end_at::text,
         l.operator_id as log_operator, l.started_at::text as log_started,
@@ -682,6 +708,7 @@ export async function getToday() {
     return {
       jobId: r.job_id,
       status: r.status,
+      deptCode: r.dept,
       ticketId: r.ticket_id,
       ticketNo: r.ticket_no,
       company: r.company,
@@ -706,7 +733,9 @@ export async function getToday() {
       materialsMissing: r.has_list && !r.recorded,
     };
   });
-  return { today, team, cards, readyTemplate: set?.readyWhatsappTemplate ?? "", orgName: set?.orgName ?? "", warnPct: warn };
+  // Operators (who run jobs but don't plan them) see the jobs of their own departments.
+  const shown = isOperatorOnly(me) ? cards.filter((c) => can(me, "planning.operate", { dept: c.deptCode })) : cards;
+  return { today, team, cards: shown, readyTemplate: set?.readyWhatsappTemplate ?? "", orgName: set?.orgName ?? "", warnPct: warn };
 }
 export type TodayData = Awaited<ReturnType<typeof getToday>>;
 export type TodayCard = TodayData["cards"][number];
@@ -714,6 +743,7 @@ export type TodayCard = TodayData["cards"][number];
 /** The 4 Planning cards on the home page. */
 export async function getPlanningHomeStats() {
   await connection();
+  await need(["planning.view"]);
   const now = new Date();
   const [counts, late, blocked] = await Promise.all([
     db.execute<{ to_plan: string; running: string }>(sql`select count(*) filter (where status = 'TO_PLAN') as to_plan, count(*) filter (where status = 'RUNNING') as running from jobs`),
@@ -728,6 +758,7 @@ export async function getPlanningHomeStats() {
 /** Internal-use stock records from the last 60 days, so a maintenance block can point to the spares used. */
 export async function getRecentInternalUse() {
   await connection();
+  await need(["planning.blocks"]);
   const rows = await db.execute<{ id: string; doc_no: string; doc_date: string; purpose: string; items: string | null }>(sql`
     select d.id, d.doc_no, d.doc_date::text, p.name as purpose,
       (select string_agg(i.name, ', ' order by i.name) from inv_movements m join inv_items i on i.id = m.item_id where m.document_id = d.id) as items

@@ -5,8 +5,8 @@ import { z } from "zod";
 import { db } from "@/db";
 import { importItems } from "@/db/inv-import-writer";
 import { UserFacingError } from "@/db/quote-writer";
-import { isSignedIn } from "@/lib/auth-guard";
-import { SIGNED_OUT_MESSAGE } from "@/lib/auth-messages";
+import { allow } from "@/lib/auth/guard";
+import type { Permission } from "@/lib/auth/permissions";
 import { getItemImportLists } from "@/lib/inventory-data";
 import { itemProblemRowsWorkbook, readItemImportFile } from "@/lib/inventory/excel";
 import { checkItemRows, ITEM_IMPORT_COLUMNS, MAX_ITEM_IMPORT_ROWS, type CheckedItemRow, type ItemRawRow } from "@/lib/inventory/import";
@@ -25,8 +25,9 @@ export interface ItemPreviewRow {
   opening: string | null;
 }
 
-async function guard<T>(fn: () => Promise<T>): Promise<Result<T>> {
-  if (!(await isSignedIn())) return { ok: false, message: SIGNED_OUT_MESSAGE };
+async function guard<T>(perm: Permission | Permission[], fn: () => Promise<T>): Promise<Result<T>> {
+  const g = await allow(perm);
+  if (!g.ok) return { ok: false, message: g.message };
   try {
     return { ok: true, data: await fn() };
   } catch (e) {
@@ -60,7 +61,7 @@ function preview(c: CheckedItemRow, all: CheckedItemRow[]): ItemPreviewRow {
 
 /** Reads the uploaded file and checks every row. Nothing is saved yet. */
 export async function previewItemImportAction(form: FormData): Promise<Result<{ fileName: string; rows: ItemPreviewRow[]; skippedExample: boolean }>> {
-  return guard(async () => {
+  return guard("inventory.items", async () => {
     const file = form.get("file");
     if (!(file instanceof File) || !file.size) throw new UserFacingError("Please choose the filled-in Excel file first.");
     if (!/\.xlsx$/i.test(file.name)) throw new UserFacingError("Please upload an Excel file (.xlsx). If you have a .xls or .csv file, open it in Excel and save it as .xlsx.");
@@ -72,7 +73,7 @@ export async function previewItemImportAction(form: FormData): Promise<Result<{ 
 
 /** Imports the good rows. Every row is checked again here, so only good rows are ever saved. */
 export async function importItemsAction(rows: { rowNo: number; raw: ItemRawRow }[], fileName: string, doneBy: string | null) {
-  return guard(async () => {
+  return guard("inventory.items", async () => {
     const good = (await check(rows)).filter((c) => !c.problems.length);
     if (!good.length) throw new UserFacingError("None of these rows can be imported. Please fix the problems and upload the file again.");
     const r = await importItems(
@@ -88,7 +89,7 @@ export async function importItemsAction(rows: { rowNo: number; raw: ItemRawRow }
 
 /** "Download problem rows": the bad rows with their problems listed, as an Excel file (base64). */
 export async function itemProblemRowsAction(rows: { rowNo: number; raw: ItemRawRow }[]): Promise<Result<{ base64: string; fileName: string }>> {
-  return guard(async () => {
+  return guard("inventory.items", async () => {
     const bad = (await check(rows)).filter((c) => c.problems.length);
     const bytes = await itemProblemRowsWorkbook(bad);
     return { base64: Buffer.from(bytes).toString("base64"), fileName: `Items-to-fix-${bad.length}-${bad.length === 1 ? "row" : "rows"}.xlsx` };

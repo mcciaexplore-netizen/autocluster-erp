@@ -1,12 +1,13 @@
 /** "Download as Excel" on each Insights table. ?section=&from=&to=&dept= */
-import { isSignedIn } from "@/lib/auth-guard";
+import { routeAllow } from "@/lib/auth/guard";
 import { formatDate } from "@/lib/format";
 import { getInsights, insightFiltersFromParams } from "@/lib/inventory-insights";
 import { insightTableWorkbook } from "@/lib/inventory/excel";
 import { INSIGHT_SECTIONS, insightTable, type InsightSection } from "@/lib/inventory/insights-tables";
 
 export async function GET(request: Request) {
-  if (!(await isSignedIn())) return Response.json({ error: "Please sign in again." }, { status: 401 });
+  const gate = await routeAllow("insights.inventory");
+  if (gate.denied) return gate.denied;
   const sp = new URL(request.url).searchParams;
   const section = sp.get("section") as InsightSection;
   if (!INSIGHT_SECTIONS.includes(section)) return Response.json({ error: "Unknown table." }, { status: 400 });

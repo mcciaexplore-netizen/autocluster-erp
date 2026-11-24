@@ -5,9 +5,8 @@ import { z } from "zod";
 import { db } from "@/db";
 import { addListItem, deleteListItem, moveListItem, setListItemActive, updateListItem, type CrmListKey, type ListItemInput } from "@/db/crm-lists-writer";
 import { UserFacingError } from "@/db/quote-writer";
-import { isSignedIn } from "@/lib/auth-guard";
-import { SIGNED_OUT_MESSAGE } from "@/lib/auth-messages";
-import { canManagePipeline } from "@/lib/crm/permissions";
+import { allow } from "@/lib/auth/guard";
+import type { Permission } from "@/lib/auth/permissions";
 
 type Result<T> = { ok: true; data: T } | { ok: false; message: string };
 
@@ -15,9 +14,9 @@ const listKey = z.enum(["sources", "lostReasons", "tags", "team", "invCategories
 const id = z.string().uuid();
 const item = z.object({ name: z.string().max(200), phone: z.string().max(30).nullish(), email: z.string().max(200).nullish() });
 
-async function run<T>(fn: () => Promise<T>): Promise<Result<T>> {
-  if (!(await isSignedIn())) return { ok: false, message: SIGNED_OUT_MESSAGE };
-  if (!(await canManagePipeline())) return { ok: false, message: "Only an admin can change these lists." };
+async function run<T>(perm: Permission | Permission[], fn: () => Promise<T>): Promise<Result<T>> {
+  const g = await allow(perm);
+  if (!g.ok) return { ok: false, message: g.message };
   try {
     const data = await fn();
     revalidatePath("/", "layout");
@@ -31,17 +30,17 @@ async function run<T>(fn: () => Promise<T>): Promise<Result<T>> {
 }
 
 export async function addCrmListItem(key: CrmListKey, input: ListItemInput) {
-  return run(() => addListItem(db, listKey.parse(key), item.parse(input)));
+  return run("settings.edit", () => addListItem(db, listKey.parse(key), item.parse(input)));
 }
 export async function updateCrmListItem(key: CrmListKey, itemId: string, input: ListItemInput) {
-  return run(() => updateListItem(db, listKey.parse(key), id.parse(itemId), item.parse(input)));
+  return run("settings.edit", () => updateListItem(db, listKey.parse(key), id.parse(itemId), item.parse(input)));
 }
 export async function setCrmListItemActive(key: CrmListKey, itemId: string, active: boolean) {
-  return run(() => setListItemActive(db, listKey.parse(key), id.parse(itemId), z.boolean().parse(active)));
+  return run("settings.edit", () => setListItemActive(db, listKey.parse(key), id.parse(itemId), z.boolean().parse(active)));
 }
 export async function moveCrmListItem(key: CrmListKey, itemId: string, dir: -1 | 1) {
-  return run(() => moveListItem(db, listKey.parse(key), id.parse(itemId), z.union([z.literal(-1), z.literal(1)]).parse(dir)));
+  return run("settings.edit", () => moveListItem(db, listKey.parse(key), id.parse(itemId), z.union([z.literal(-1), z.literal(1)]).parse(dir)));
 }
 export async function deleteCrmListItem(key: CrmListKey, itemId: string) {
-  return run(() => deleteListItem(db, listKey.parse(key), id.parse(itemId)));
+  return run("settings.edit", () => deleteListItem(db, listKey.parse(key), id.parse(itemId)));
 }

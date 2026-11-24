@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { useState, useSyncExternalStore, useTransition } from "react";
 import { toast } from "sonner";
 import { useConfirm } from "@/components/common/confirm";
+import { useCan } from "@/components/auth/permissions-provider";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -60,6 +61,7 @@ type DoneFlow = { card: TodayCard; step: "form" | "materials" | "ready" };
 
 /** "Today" for operators: their jobs, with big Start / Pause / Resume / Done buttons. */
 export function TodayBoard({ data }: { data: TodayData }) {
+  const can = useCan();
   const router = useRouter();
   const who = useSyncExternalStore(subscribe, read, () => "");
   const me = data.team.find((t) => t.id === who) ? who : "";
@@ -127,6 +129,8 @@ export function TodayBoard({ data }: { data: TodayData }) {
           </p>
         ) : null}
         {c.status === "DONE" && c.doneNote ? <p className="mt-2 text-sm text-muted-foreground">Done: {c.doneNote}</p> : null}
+        {/* Start / Pause / Done need "planning.operate" for the job's department (the server checks again). */}
+        {can("planning.operate", { dept: c.deptCode }) ? (
         <div className="mt-3 grid grid-cols-2 gap-2">
           {c.status === "PLANNED" || c.status === "TO_PLAN" ? (
             <Button size="lg" className="col-span-2 h-14 text-base" disabled={pending} onClick={() => doStart(c)}>
@@ -164,6 +168,7 @@ export function TodayBoard({ data }: { data: TodayData }) {
             </>
           ) : null}
         </div>
+        ) : null}
       </article>
     );
   };

@@ -1,11 +1,12 @@
 /** "Download as Excel" on Stock in & out: every line of the records matching the filters. */
-import { isSignedIn } from "@/lib/auth-guard";
+import { routeAllow } from "@/lib/auth/guard";
 import { docFiltersFromParams, getLinesForDocs, listInvDocuments } from "@/lib/inventory-data";
 import { movementsWorkbook } from "@/lib/inventory/excel";
 import { todayInIndia } from "@/lib/tickets";
 
 export async function GET(request: Request) {
-  if (!(await isSignedIn())) return Response.json({ error: "Please sign in again." }, { status: 401 });
+  const gate = await routeAllow("inventory.view");
+  if (gate.denied) return gate.denied;
   const params = new URL(request.url).searchParams;
   const f = docFiltersFromParams(Object.fromEntries(params.entries()));
   const docs = await listInvDocuments(f, 5000);

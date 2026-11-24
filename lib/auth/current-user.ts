@@ -7,8 +7,9 @@ import { eq } from "drizzle-orm";
 import { headers } from "next/headers";
 import { cache } from "react";
 import { db } from "@/db";
-import { appUsers, roles, userDepartments, userRoles } from "@/db/schema";
+import { appUsers, rolePermissions, roles, userDepartments, userRoles } from "@/db/schema";
 import { setActorResolver } from "./actor";
+import { buildGrants, type Grants } from "./can";
 import { auth } from "./server";
 
 export interface CurrentUser {
@@ -25,6 +26,8 @@ export interface CurrentUser {
   allDepartments: boolean;
   departments: string[];
   roles: { id: number; name: string }[];
+  /** What they may do (from their roles, read fresh on every request so role changes apply at once). */
+  grants: Grants;
 }
 
 export const getCurrentUser = cache(async (): Promise<CurrentUser | null> => {
@@ -33,10 +36,16 @@ export const getCurrentUser = cache(async (): Promise<CurrentUser | null> => {
   const [u] = await db.select().from(appUsers).where(eq(appUsers.authUserId, s.user.id));
   // Deactivated or switched to "name only": no access, even with a session left over.
   if (!u || u.deactivatedAt || !u.canSignIn) return null;
-  const [depts, rs] = await Promise.all([
+  const [depts, rs, perms] = await Promise.all([
     db.select({ code: userDepartments.deptCode }).from(userDepartments).where(eq(userDepartments.userId, u.id)),
-    db.select({ id: roles.id, name: roles.name }).from(userRoles).innerJoin(roles, eq(roles.id, userRoles.roleId)).where(eq(userRoles.userId, u.id)),
+    db.select({ id: roles.id, name: roles.name, scope: roles.scopeOwnDepartments }).from(userRoles).innerJoin(roles, eq(roles.id, userRoles.roleId)).where(eq(userRoles.userId, u.id)).orderBy(roles.sortOrder),
+    db.select({ roleId: rolePermissions.roleId, permission: rolePermissions.permission }).from(rolePermissions).innerJoin(userRoles, eq(userRoles.roleId, rolePermissions.roleId)).where(eq(userRoles.userId, u.id)),
   ]);
+  const departments = depts.map((d) => d.code);
+  const grants = buildGrants(
+    rs.map((r) => ({ scopeOwnDepartments: r.scope, permissions: perms.filter((p) => p.roleId === r.id).map((p) => p.permission) })),
+    { allDepartments: u.allDepartments, departments },
+  );
   return {
     id: u.id,
     authUserId: s.user.id,
@@ -48,8 +57,9 @@ export const getCurrentUser = cache(async (): Promise<CurrentUser | null> => {
     mustChangePassword: u.mustChangePassword,
     isDemo: u.isDemo,
     allDepartments: u.allDepartments,
-    departments: depts.map((d) => d.code),
-    roles: rs,
+    departments,
+    roles: rs.map((r) => ({ id: r.id, name: r.name })),
+    grants,
   };
 });
 

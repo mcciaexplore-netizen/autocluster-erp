@@ -1,6 +1,7 @@
 "use client";
 
 import { useDraggable } from "@dnd-kit/core";
+import { useCan } from "@/components/auth/permissions-provider";
 import { CSS } from "@dnd-kit/utilities";
 import { ArrowLeftRight, Eye, MoreHorizontal, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -47,7 +48,9 @@ export function LeadCard({
   draggable?: boolean;
   overlay?: boolean;
 }) {
-  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({ id: l.id, data: { lead: l }, disabled: !draggable });
+  // Moving cards needs "crm.edit" (the server checks again).
+  const canEdit = useCan()("crm.edit");
+  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({ id: l.id, data: { lead: l }, disabled: !draggable || !canEdit });
   const stop = { onPointerDown: (e: React.PointerEvent) => e.stopPropagation() };
 
   return (

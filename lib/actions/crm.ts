@@ -25,9 +25,8 @@ import {
   type MoveResult,
 } from "@/db/lead-writer";
 import { UserFacingError } from "@/db/quote-writer";
-import { isSignedIn } from "@/lib/auth-guard";
-import { SIGNED_OUT_MESSAGE } from "@/lib/auth-messages";
-import { canManagePipeline } from "@/lib/crm/permissions";
+import { allow } from "@/lib/auth/guard";
+import type { Permission } from "@/lib/auth/permissions";
 import { parseRupees } from "@/lib/money-input";
 import { parseMobileOrEmail } from "@/lib/crm/contact";
 import { getLeadDetail, type LeadDetail } from "@/lib/crm-data";
@@ -38,8 +37,9 @@ type Result<T> = { ok: true; data: T } | { ok: false; message: string };
 const id = z.string().uuid();
 const idList = z.array(id).min(1, { message: "Please tick at least one enquiry." }).max(500);
 
-async function run<T>(fn: () => Promise<T>): Promise<Result<T>> {
-  if (!(await isSignedIn())) return { ok: false, message: SIGNED_OUT_MESSAGE };
+async function run<T>(perm: Permission | Permission[], fn: () => Promise<T>): Promise<Result<T>> {
+  const g = await allow(perm);
+  if (!g.ok) return { ok: false, message: g.message };
   try {
     const data = await fn();
     revalidatePath("/", "layout");
@@ -65,7 +65,7 @@ export type QuickAddInput = z.input<typeof quickAdd>;
 
 /** Quick add from the top of a column. */
 export async function quickAddLeadAction(input: QuickAddInput) {
-  return run(async () => {
+  return run("crm.edit", async () => {
     const v = quickAdd.parse(input);
     if (!v.sourceId) throw new UserFacingError("Please choose where the enquiry came from (the source).");
     const contact = parseMobileOrEmail(v.mobileOrEmail);
@@ -90,45 +90,46 @@ export async function quickAddLeadAction(input: QuickAddInput) {
 }
 
 export async function moveLeadAction(leadId: string, stageId: string, lost?: { reasonId: string; note?: string | null }): Promise<Result<MoveResult>> {
-  return run(() => moveLead(db, id.parse(leadId), id.parse(stageId), { lostReasonId: lost?.reasonId ?? null, lostNote: lost?.note ?? null }));
+  return run("crm.edit", () => moveLead(db, id.parse(leadId), id.parse(stageId), { lostReasonId: lost?.reasonId ?? null, lostNote: lost?.note ?? null }));
 }
 
 export async function setLeadPriorityAction(leadId: string, priority: number) {
-  return run(() => setLeadPriority(db, id.parse(leadId), z.number().int().min(0).max(3).parse(priority)));
+  return run("crm.edit", () => setLeadPriority(db, id.parse(leadId), z.number().int().min(0).max(3).parse(priority)));
 }
 
 export async function bulkMoveAction(leadIds: string[], stageId: string, lost?: { reasonId: string; note?: string | null }) {
-  return run(() => bulkMove(db, idList.parse(leadIds), id.parse(stageId), { lostReasonId: lost?.reasonId ?? null, lostNote: lost?.note ?? null }));
+  return run("crm.edit", () => bulkMove(db, idList.parse(leadIds), id.parse(stageId), { lostReasonId: lost?.reasonId ?? null, lostNote: lost?.note ?? null }));
 }
 
 export async function bulkAssignAction(leadIds: string[], memberId: string | null) {
-  return run(() => bulkAssign(db, idList.parse(leadIds), memberId ? id.parse(memberId) : null));
+  return run("crm.edit", () => bulkAssign(db, idList.parse(leadIds), memberId ? id.parse(memberId) : null));
 }
 
 export async function bulkAddTagAction(leadIds: string[], tagId: string) {
-  return run(() => bulkAddTag(db, idList.parse(leadIds), id.parse(tagId)));
+  return run("crm.edit", () => bulkAddTag(db, idList.parse(leadIds), id.parse(tagId)));
 }
 
 export async function deleteLeadsAction(leadIds: string[]) {
-  return run(() => deleteLeads(db, idList.parse(leadIds)));
+  return run("crm.edit", () => deleteLeads(db, idList.parse(leadIds)));
 }
 
 export async function restoreLeadsAction(leadIds: string[]) {
-  return run(() => restoreLeads(db, idList.parse(leadIds)));
+  return run("crm.edit", () => restoreLeads(db, idList.parse(leadIds)));
 }
 
 
 // ---- full form, detail panel ----------------------------------------------------------------
 
 export async function loadLeadDetail(leadId: string): Promise<Result<LeadDetail>> {
-  if (!(await isSignedIn())) return { ok: false, message: SIGNED_OUT_MESSAGE };
+  const g = await allow("crm.view");
+  if (!g.ok) return { ok: false, message: g.message };
   const parsed = id.safeParse(leadId);
   const d = parsed.success ? await getLeadDetail(parsed.data) : null;
   return d ? { ok: true, data: d } : { ok: false, message: "This enquiry could not be found. It may have been deleted." };
 }
 
 export async function createLeadAction(values: LeadFormValues) {
-  return run(async () => {
+  return run("crm.edit", async () => {
     const v = leadFormSchema.parse(values);
     const lead = await createLead(db, leadInputFromForm(v));
     return { id: lead.id, leadNo: lead.leadNo };
@@ -136,7 +137,7 @@ export async function createLeadAction(values: LeadFormValues) {
 }
 
 export async function updateLeadAction(leadId: string, values: LeadFormValues) {
-  return run(async () => {
+  return run("crm.edit", async () => {
     const v = leadFormSchema.parse(values);
     const r = await updateLead(db, id.parse(leadId), leadInputFromForm(v));
     return { changed: r.changed, moved: r.moved };
@@ -144,11 +145,11 @@ export async function updateLeadAction(leadId: string, values: LeadFormValues) {
 }
 
 export async function addLeadNoteAction(leadId: string, note: string) {
-  return run(() => addLeadNote(db, id.parse(leadId), z.string().max(5000).parse(note)));
+  return run("crm.edit", () => addLeadNote(db, id.parse(leadId), z.string().max(5000).parse(note)));
 }
 
 export async function logLeadContactAction(leadId: string, kind: "CALL" | "WHATSAPP" | "EMAIL") {
-  return run(() => logLeadContact(db, id.parse(leadId), z.enum(["CALL", "WHATSAPP", "EMAIL"]).parse(kind)));
+  return run("crm.edit", () => logLeadContact(db, id.parse(leadId), z.enum(["CALL", "WHATSAPP", "EMAIL"]).parse(kind)));
 }
 
 const dupQuery = z.object({
@@ -161,7 +162,8 @@ const dupQuery = z.object({
 
 /** Read-only: customers and enquiries with the same mobile, email or company name. */
 export async function findDuplicatesAction(q: z.input<typeof dupQuery>): Promise<Result<Duplicates>> {
-  if (!(await isSignedIn())) return { ok: false, message: SIGNED_OUT_MESSAGE };
+  const g = await allow("crm.view");
+  if (!g.ok) return { ok: false, message: g.message };
   const parsed = dupQuery.safeParse(q);
   if (!parsed.success) return { ok: true, data: { customers: [], leads: [] } };
   return { ok: true, data: await findDuplicates(db, parsed.data) };
@@ -169,7 +171,7 @@ export async function findDuplicatesAction(q: z.input<typeof dupQuery>): Promise
 
 /** "Pick or type a new tag" in the enquiry form. */
 export async function createTagAction(name: string) {
-  return run(async () => ({ id: await addListItem(db, "tags", { name: z.string().max(200).parse(name) }), name: name.trim().replace(/\s+/g, " ") }));
+  return run("crm.edit", async () => ({ id: await addListItem(db, "tags", { name: z.string().max(200).parse(name) }), name: name.trim().replace(/\s+/g, " ") }));
 }
 
 // ---- activities ---------------------------------------------------------------------------
@@ -185,27 +187,25 @@ const planSchema = z.object({
 export type PlanActivityInput = z.input<typeof planSchema>;
 
 export async function planActivityAction(input: PlanActivityInput) {
-  return run(async () => {
+  return run("crm.edit", async () => {
     const a = await planActivity(db, planSchema.parse(input), todayInIndia());
     return { id: a.id };
   });
 }
 
 export async function markActivityDoneAction(activityId: string, outcome: string) {
-  return run(() => markActivityDone(db, id.parse(activityId), z.string().max(2000).parse(outcome)));
+  return run("crm.edit", () => markActivityDone(db, id.parse(activityId), z.string().max(2000).parse(outcome)));
 }
 
 export async function cancelActivityAction(activityId: string) {
-  return run(() => cancelActivity(db, id.parse(activityId)));
+  return run("crm.edit", () => cancelActivity(db, id.parse(activityId)));
 }
 
 // ---- stages (Edit stages panel and the column menu) -------------------------------------------
 
+/** Changing the pipeline stages needs "crm.stages". */
 async function pipeline<T>(fn: () => Promise<T>) {
-  return run(async () => {
-    if (!(await canManagePipeline())) throw new UserFacingError("Only an admin can change the stages.");
-    return fn();
-  });
+  return run("crm.stages", fn);
 }
 const stageName = z.string().max(200);
 
@@ -241,5 +241,5 @@ export async function deleteStageAction(stageId: string, moveToId: string | null
 
 /** After "Convert to customer": links the enquiry to the customer just saved. */
 export async function linkLeadToCustomerAction(leadId: string, customerId: string) {
-  return run(() => linkLeadToCustomer(db, id.parse(leadId), id.parse(customerId)));
+  return run("crm.edit", () => linkLeadToCustomer(db, id.parse(leadId), id.parse(customerId)));
 }

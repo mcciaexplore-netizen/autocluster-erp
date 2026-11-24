@@ -1,7 +1,6 @@
 "use server";
 
-import { isSignedIn } from "@/lib/auth-guard";
-import { SIGNED_OUT_MESSAGE } from "@/lib/auth-messages";
+import { allow } from "@/lib/auth/guard";
 
 import { eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
@@ -10,7 +9,8 @@ import { crmStages, settings } from "@/db/schema";
 import { settingsSchema, type SettingsInput } from "@/lib/validation/settings";
 
 export async function saveSettings(input: SettingsInput) {
-  if (!(await isSignedIn())) return { ok: false as const, message: SIGNED_OUT_MESSAGE };
+  const g = await allow("settings.edit");
+  if (!g.ok) return { ok: false as const, message: g.message };
   const parsed = settingsSchema.safeParse(input);
   if (!parsed.success) return { ok: false as const, message: parsed.error.issues[0]?.message ?? "Some settings need a second look." };
   const v = parsed.data;

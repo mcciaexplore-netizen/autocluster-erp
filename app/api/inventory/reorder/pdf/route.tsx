@@ -1,6 +1,6 @@
 /** Order list as a PDF (Reorder list > Send to supplier > PDF). */
 import { renderToBuffer } from "@react-pdf/renderer";
-import { isSignedIn } from "@/lib/auth-guard";
+import { routeAllow } from "@/lib/auth/guard";
 import { formatDate } from "@/lib/format";
 import { getOrderListData } from "@/lib/inventory-data";
 import { parseOrderListQuery } from "@/lib/inventory/order-params";
@@ -8,7 +8,8 @@ import { OrderListPdf } from "@/lib/pdf/order-pdf";
 import { stampPageNumbers } from "@/lib/pdf/page-numbers";
 
 export async function GET(request: Request) {
-  if (!(await isSignedIn())) return new Response("Please sign in first.", { status: 401 });
+  const gate = await routeAllow("inventory.view");
+  if (gate.denied) return gate.denied;
   const q = parseOrderListQuery(new URL(request.url).searchParams);
   if (!q) return new Response("This order list link doesn't look right.", { status: 400 });
   const data = await getOrderListData(q.supplierId, q.lines);

@@ -1,5 +1,6 @@
 "use client";
 
+import { Can } from "@/components/auth/permissions-provider";
 import { AlertTriangle, CalendarPlus, Loader2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
@@ -49,8 +50,10 @@ export function StillBrokenDown({
         </span>
       </p>
       <div className="flex flex-wrap gap-2">
-        <FixedButton machineId={machineId} size="sm" />
-        <ExtendButton machineId={machineId} machineName={machineName} />
+        <Can perm="planning.blocks">
+          <FixedButton machineId={machineId} size="sm" />
+          <ExtendButton machineId={machineId} machineName={machineName} />
+        </Can>
       </div>
     </div>
   );

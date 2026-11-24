@@ -1,11 +1,12 @@
 /** "Download as Excel" on an item's stock history. */
-import { isSignedIn } from "@/lib/auth-guard";
+import { routeAllow } from "@/lib/auth/guard";
 import { getInvItem, getItemHistory } from "@/lib/inventory-data";
 import { itemHistoryWorkbook } from "@/lib/inventory/excel";
 import { UUID_RE } from "@/lib/inventory/uuid";
 
 export async function GET(_req: Request, ctx: RouteContext<"/api/inventory/items/[id]/history">) {
-  if (!(await isSignedIn())) return Response.json({ error: "Please sign in again." }, { status: 401 });
+  const gate = await routeAllow("inventory.view");
+  if (gate.denied) return gate.denied;
   const { id } = await ctx.params;
   if (!UUID_RE.test(id)) return Response.json({ error: "Not found." }, { status: 404 });
   const d = await getInvItem(id);

@@ -8,6 +8,7 @@ import { usePatches } from "./use-patches";
 import { toast } from "sonner";
 import { useConfirm } from "@/components/common/confirm";
 import { EmptyState } from "@/components/common/empty-state";
+import { Can } from "@/components/auth/permissions-provider";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -222,9 +223,11 @@ export function CrmBoard({ stages, leads, options: pickers, canManage }: { stage
           title="No enquiries yet"
           description="Add each phone call, walk-in, website or event enquiry as a card, then move it along as you follow up."
           action={
-            <Button onClick={() => openNew()}>
-              <Plus aria-hidden /> Add the first enquiry
-            </Button>
+            <Can perm="crm.edit">
+              <Button onClick={() => openNew()}>
+                <Plus aria-hidden /> Add the first enquiry
+              </Button>
+            </Can>
           }
         />
       ) : (
@@ -320,9 +323,11 @@ function ColumnHeader({ stage, count, totalPaise, onQuickAdd, menu }: { stage: B
           {stage.name} <span className="font-normal text-muted-foreground">({count})</span>
         </h2>
         <span className="flex shrink-0 items-center">
-          <Button variant="ghost" size="icon-sm" className="size-8" aria-label={`Quick add to ${stage.name}`} title="Quick add" onClick={onQuickAdd}>
-            <Plus aria-hidden />
-          </Button>
+          <Can perm="crm.edit">
+            <Button variant="ghost" size="icon-sm" className="size-8" aria-label={`Quick add to ${stage.name}`} title="Quick add" onClick={onQuickAdd}>
+              <Plus aria-hidden />
+            </Button>
+          </Can>
           {menu ? (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>

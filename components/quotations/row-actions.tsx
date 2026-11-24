@@ -7,6 +7,7 @@ import { useTransition } from "react";
 import { toast } from "sonner";
 import { useConfirm } from "@/components/common/confirm";
 import { duplicateQuotation, previewStatusChange, setQuotationStatus } from "@/lib/actions/quotations";
+import { useCan } from "@/components/auth/permissions-provider";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -75,6 +76,7 @@ export function useQuotationActions(id: string) {
 }
 
 export function QuotationRowActions({ id, quoteNo, status }: { id: string; quoteNo: string; status: QuoteStatus }) {
+  const can = useCan();
   const { pending, duplicate, changeStatus, dialog } = useQuotationActions(id);
   return (
     <div className="flex items-center justify-end gap-1">
@@ -84,11 +86,14 @@ export function QuotationRowActions({ id, quoteNo, status }: { id: string; quote
           <Eye />
         </Link>
       </Button>
-      <Button asChild variant="ghost" size="icon-sm" aria-label={`Download PDF of ${quoteNo}`}>
-        <a href={`/quotations/${id}/pdf?download=1`} download>
-          <Download />
-        </a>
-      </Button>
+      {can("money.sale_prices") ? (
+        <Button asChild variant="ghost" size="icon-sm" aria-label={`Download PDF of ${quoteNo}`}>
+          <a href={`/quotations/${id}/pdf?download=1`} download>
+            <Download />
+          </a>
+        </Button>
+      ) : null}
+      {can("quotes.edit") || can("quotes.status") ? (
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Button variant="ghost" size="icon-sm" aria-label={`More for ${quoteNo}`} disabled={pending}>
@@ -110,6 +115,7 @@ export function QuotationRowActions({ id, quoteNo, status }: { id: string; quote
           </DropdownMenuRadioGroup>
         </DropdownMenuContent>
       </DropdownMenu>
+      ) : null}
     </div>
   );
 }

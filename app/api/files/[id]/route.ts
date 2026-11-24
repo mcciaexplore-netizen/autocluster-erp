@@ -1,18 +1,20 @@
 /**
- * Shows an uploaded PO or tax invoice, only to signed-in users.
+ * Shows an uploaded file (PO, tax invoice, supplier bill, job file) to people allowed to see it.
  * The file is streamed from private Blob storage; the storage link never reaches the browser.
  */
 import { get } from "@vercel/blob";
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { files } from "@/db/schema";
-import { isSignedIn } from "@/lib/auth-guard";
+import { can } from "@/lib/auth/can";
+import { signedInUser } from "@/lib/auth/guard";
 import { blobAuth, blobConfigured } from "@/lib/blob";
 
 export async function GET(request: Request, ctx: RouteContext<"/api/files/[id]">) {
-  if (!(await isSignedIn())) {
+  const me = await signedInUser();
+  if (!me) {
     const url = new URL(request.url);
-    const login = new URL("/login", url);
+    const login = new URL("/sign-in", url);
     login.searchParams.set("next", url.pathname);
     return Response.redirect(login, 303);
   }
@@ -20,6 +22,10 @@ export async function GET(request: Request, ctx: RouteContext<"/api/files/[id]">
   if (!/^[0-9a-f-]{36}$/i.test(id)) return new Response("This file could not be found.", { status: 404 });
   const [f] = await db.select().from(files).where(eq(files.id, id));
   if (!f) return new Response("This file could not be found.", { status: 404 });
+  // POs and tax invoices show sale prices; supplier bills show stock costs.
+  const allowed =
+    f.kind === "JOB" ? can(me, "planning.view") : f.kind === "BILL" ? can(me, "inventory.view") && can(me, "money.stock_costs") : can(me, "orders.view") && can(me, "money.sale_prices");
+  if (!allowed) return new Response("You don't have access to this document. Ask your admin if you need it.", { status: 403 });
   if (!blobConfigured()) return new Response("File storage isn't set up on this copy of the app.", { status: 503 });
 
   const blob = await get(f.blobPath, { access: "private", ...blobAuth() }).catch((e) => {

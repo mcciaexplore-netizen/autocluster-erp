@@ -2,14 +2,15 @@
 import { z } from "zod";
 import { db } from "@/db";
 import { UserFacingError } from "@/db/quote-writer";
-import { isSignedIn } from "@/lib/auth-guard";
+import { routeAllow } from "@/lib/auth/guard";
 import { exportBilling } from "@/lib/tally";
 import { todayInIndia } from "@/lib/tickets";
 
 const body = z.object({ ticketIds: z.array(z.string().uuid()).min(1).max(100) });
 
 export async function POST(request: Request) {
-  if (!(await isSignedIn())) return Response.json({ error: "Please sign in again." }, { status: 401 });
+  const gate = await routeAllow("orders.billing");
+  if (gate.denied) return gate.denied;
   const parsed = body.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return Response.json({ error: "Please tick at least one service." }, { status: 400 });
   try {

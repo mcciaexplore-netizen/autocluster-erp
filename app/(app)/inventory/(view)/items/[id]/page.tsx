@@ -1,3 +1,4 @@
+import { Can } from "@/components/auth/permissions-provider";
 import type { Metadata } from "next";
 import { ArrowLeft, Boxes, Download, PackageMinus, PackagePlus, Pencil, SlidersHorizontal, Store, Wrench } from "lucide-react";
 import { PriceChart, UsageChart } from "@/components/inventory/item-charts";
@@ -69,11 +70,13 @@ async function Detail({ params }: { params: Promise<{ id: string }> }) {
           ) : null}
         </div>
         <div className="flex flex-wrap gap-2">
-          <Button asChild variant="outline">
-            <Link href={`/inventory/items/${i.id}/edit`}>
-              <Pencil aria-hidden /> Edit
-            </Link>
-          </Button>
+          <Can perm="inventory.items">
+            <Button asChild variant="outline">
+              <Link href={`/inventory/items/${i.id}/edit`}>
+                <Pencil aria-hidden /> Edit
+              </Link>
+            </Button>
+          </Can>
         </div>
       </header>
 
@@ -280,13 +283,27 @@ function HistoryTable({ rows, unit }: { rows: ItemHistoryRow[]; unit: string }) 
         <caption className="sr-only">Stock history, newest first</caption>
         <thead className="border-b text-left text-muted-foreground">
           <tr>
-            <th scope="col" className="py-2 pr-3 font-medium">Date</th>
-            <th scope="col" className="py-2 pr-3 font-medium">Record</th>
-            <th scope="col" className="py-2 pr-3 font-medium">For / from</th>
-            <th scope="col" className="py-2 pr-3 text-right font-medium">In / out</th>
-            <th scope="col" className="py-2 pr-3 text-right font-medium">Balance</th>
-            <th scope="col" className="py-2 pr-3 text-right font-medium">Value</th>
-            <th scope="col" className="py-2 font-medium">By</th>
+            <th scope="col" className="py-2 pr-3 font-medium">
+              Date
+            </th>
+            <th scope="col" className="py-2 pr-3 font-medium">
+              Record
+            </th>
+            <th scope="col" className="py-2 pr-3 font-medium">
+              For / from
+            </th>
+            <th scope="col" className="py-2 pr-3 text-right font-medium">
+              In / out
+            </th>
+            <th scope="col" className="py-2 pr-3 text-right font-medium">
+              Balance
+            </th>
+            <th scope="col" className="py-2 pr-3 text-right font-medium">
+              Value
+            </th>
+            <th scope="col" className="py-2 font-medium">
+              By
+            </th>
           </tr>
         </thead>
         <tbody>

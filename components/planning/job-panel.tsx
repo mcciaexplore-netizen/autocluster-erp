@@ -7,6 +7,7 @@ import { useCallback, useEffect, useState, useTransition } from "react";
 import { toast } from "sonner";
 import { useConfirm } from "@/components/common/confirm";
 import { FileField } from "@/components/orders/file-field";
+import { useCan } from "@/components/auth/permissions-provider";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -123,7 +124,9 @@ function Body({ data, reload, env, openMove }: { data: JobPanelData; reload: () 
   const today = todayInIndia();
   const needed = j.hoursNeeded != null ? Number(j.hoursNeeded) : null;
   const unplanned = needed != null ? Math.max(0, needed - d.plannedHours) : 0;
-  const open = !["DONE", "HANDED_OVER", "CANCELLED"].includes(j.status);
+  const can = useCan();
+  // Changing the job (details, bookings, files) needs "planning.book" for its department; others see it read-only.
+  const open = !["DONE", "HANDED_OVER", "CANCELLED"].includes(j.status) && can("planning.book", { dept: d.ticket.deptCode });
   const late = !!j.promisedDate && open && today > j.promisedDate;
   const status = JOB_STATUS_UI[j.status];
   const bookJob: BookJob = {
@@ -158,7 +161,7 @@ function Body({ data, reload, env, openMove }: { data: JobPanelData; reload: () 
 
   const quoted = d.quotedHours;
   const overPct = quoted && d.actualHours > 0 ? ((d.actualHours - quoted) / quoted) * 100 : null;
-  const kept = materials && materials.recorded ? keptAfterMaterials(materials.taxablePaise, materials.costPaise) : null;
+  const kept = materials && materials.recorded && materials.taxablePaise != null && materials.costPaise != null ? keptAfterMaterials(materials.taxablePaise, materials.costPaise) : null;
 
   return (
     <>
@@ -370,7 +373,7 @@ function Body({ data, reload, env, openMove }: { data: JobPanelData; reload: () 
         title="Materials used"
         icon={<PackageMinus className="size-4" />}
         action={
-          j.status !== "CANCELLED" ? (
+          j.status !== "CANCELLED" && (can("inventory.use") || can("inventory.use_own_jobs", { dept: d.ticket.deptCode })) ? (
             <Button asChild size="sm" variant="outline">
               <Link href={`/inventory/movements/new?type=out&ticket=${d.ticket.id}`}>Record materials</Link>
             </Button>

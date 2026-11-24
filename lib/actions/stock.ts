@@ -1,12 +1,15 @@
 "use server";
 
+import { can } from "@/lib/auth/can";
+import { signedInUser } from "@/lib/auth/guard";
+import { assertInScope, assertItemsInScope, ticketDept } from "@/lib/auth/scope";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { db } from "@/db";
 import { UserFacingError } from "@/db/quote-writer";
 import { adjustStock, receiveStock, reverseDocument, issueStock } from "@/db/stock-writer";
-import { isSignedIn } from "@/lib/auth-guard";
-import { SIGNED_OUT_MESSAGE } from "@/lib/auth-messages";
+import { allow } from "@/lib/auth/guard";
+import type { Permission } from "@/lib/auth/permissions";
 
 type Result<T> = { ok: true; data: T } | { ok: false; message: string };
 
@@ -16,8 +19,9 @@ const date = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullish().or(z.literal("").
 const text = (max: number) => z.string().max(max).nullish();
 const qty = z.string().max(20);
 
-async function run<T>(fn: () => Promise<T>): Promise<Result<T>> {
-  if (!(await isSignedIn())) return { ok: false, message: SIGNED_OUT_MESSAGE };
+async function run<T>(perm: Permission | Permission[], fn: () => Promise<T>): Promise<Result<T>> {
+  const g = await allow(perm);
+  if (!g.ok) return { ok: false, message: g.message };
   try {
     const data = await fn();
     revalidatePath("/", "layout");
@@ -55,7 +59,11 @@ const receiveSchema = z.object({
 export type ReceiveFormInput = z.input<typeof receiveSchema>;
 
 export async function receiveStockAction(input: ReceiveFormInput) {
-  return run(() => receiveStock(db, receiveSchema.parse(input)));
+  return run("inventory.receive", async () => {
+    const v = receiveSchema.parse(input);
+    await assertItemsInScope("inventory.receive", v.lines.map((l) => l.itemId));
+    return receiveStock(db, v);
+  });
 }
 
 const useSchema = z.object({
@@ -68,7 +76,19 @@ const useSchema = z.object({
 export type UseFormInput = z.input<typeof useSchema>;
 
 export async function issueStockAction(input: UseFormInput) {
-  return run(() => issueStock(db, useSchema.parse(input)));
+  return run(["inventory.use", "inventory.use_own_jobs"], async () => {
+    const v = useSchema.parse(input);
+    const me = await signedInUser();
+    if (can(me, "inventory.use")) {
+      await assertItemsInScope("inventory.use", v.lines.map((l) => l.itemId));
+    } else {
+      // Operators: only materials for a job of their own departments.
+      if (!v.ticketId) throw new UserFacingError("You can only record materials for your own jobs. Choose the job first.");
+      await assertInScope("inventory.use_own_jobs", [await ticketDept(v.ticketId)]);
+      await assertItemsInScope("inventory.use_own_jobs", v.lines.map((l) => l.itemId));
+    }
+    return issueStock(db, v);
+  });
 }
 
 const adjustSchema = z.object({
@@ -94,9 +114,13 @@ const adjustSchema = z.object({
 export type AdjustFormInput = z.input<typeof adjustSchema>;
 
 export async function adjustStockAction(input: AdjustFormInput) {
-  return run(() => adjustStock(db, adjustSchema.parse(input)));
+  return run("inventory.adjust", async () => {
+    const v = adjustSchema.parse(input);
+    await assertItemsInScope("inventory.adjust", v.lines.map((l) => l.itemId));
+    return adjustStock(db, v);
+  });
 }
 
 export async function reverseDocumentAction(docId: string, reason: string, doneBy: string | null) {
-  return run(() => reverseDocument(db, id.parse(docId), z.string().max(500).parse(reason), { doneBy: doneBy ? id.parse(doneBy) : null }));
+  return run("inventory.adjust", () => reverseDocument(db, id.parse(docId), z.string().max(500).parse(reason), { doneBy: doneBy ? id.parse(doneBy) : null }));
 }

@@ -57,7 +57,8 @@ interface DraftState {
 
 export interface CustomerWizardProps {
   departments: Department[];
-  services: Service[];
+  /** Rates may be hidden (null) for people who can't see prices; the form doesn't use them. */
+  services: (Omit<Service, "rateMsme" | "rateOem"> & { rateMsme: string | null; rateOem: string | null })[];
   pricing: PricingSettings;
   /** Pre-filled credit period for new customers (Settings > default credit period). */
   defaultCreditDays?: number;
@@ -736,8 +737,9 @@ export function CustomerWizard({ departments, services, pricing, initial, onSave
                   <div className="grid gap-3 md:grid-cols-2">
                     {list.map((s) => {
                       const checked = serviceIds.includes(s.id);
-                      const r = customerRate(s, priceType);
-                      const discounted = r.finalRatePaise !== r.listRatePaise;
+                      // Rates are hidden (null) for people who may not see prices.
+                      const r = s.rateMsme == null || s.rateOem == null ? null : customerRate({ ...s, rateMsme: s.rateMsme, rateOem: s.rateOem }, priceType);
+                      const discounted = !!r && r.finalRatePaise !== r.listRatePaise;
                       return (
                         <label
                           key={s.id}
@@ -760,18 +762,22 @@ export function CustomerWizard({ departments, services, pricing, initial, onSave
                           <span className="min-w-0 flex-1">
                             <span className="block font-semibold text-primary">{s.name}</span>
                             <span className="block text-sm text-muted-foreground">Charged {UNIT_LABELS[s.unitType]}</span>
-                            <span className="mt-1.5 block">
-                              Their price:{" "}
-                              {discounted ? (
-                                <s className="mr-1 text-muted-foreground" aria-label={`List rate ${formatINRShort(r.listRatePaise)}`}>
-                                  {formatINRShort(r.listRatePaise)}
-                                </s>
-                              ) : null}
-                              <strong className="text-success">
-                                {formatINRShort(r.finalRatePaise)} {s.unitLabel}
-                              </strong>
-                            </span>
-                            <span className="block text-sm text-muted-foreground">({priceType.label})</span>
+                            {r ? (
+                              <>
+                                <span className="mt-1.5 block">
+                                  Their price:{" "}
+                                  {discounted ? (
+                                    <s className="mr-1 text-muted-foreground" aria-label={`List rate ${formatINRShort(r.listRatePaise)}`}>
+                                      {formatINRShort(r.listRatePaise)}
+                                    </s>
+                                  ) : null}
+                                  <strong className="text-success">
+                                    {formatINRShort(r.finalRatePaise)} {s.unitLabel}
+                                  </strong>
+                                </span>
+                                <span className="block text-sm text-muted-foreground">({priceType.label})</span>
+                              </>
+                            ) : null}
                           </span>
                         </label>
                       );

@@ -103,12 +103,14 @@ const inrWholeFormatter = new Intl.NumberFormat("en-IN", {
 });
 
 /** ₹1,25,000.00 */
-export function formatINR(paise: number): string {
-  return inrFormatter.format(paiseToRupees(paise));
+/** "₹1,234.00". null = hidden from this person (prices they may not see). */
+export function formatINR(paise: number | null): string {
+  return paise == null ? "Hidden" : inrFormatter.format(paiseToRupees(paise));
 }
 
 /** ₹36 or ₹22.50 (drops .00 for short in-sentence prices). */
-export function formatINRShort(paise: number): string {
+export function formatINRShort(paise: number | null): string {
+  if (paise == null) return "Hidden";
   return paise % 100 === 0 ? inrWholeFormatter.format(paiseToRupees(paise)) : inrFormatter.format(paiseToRupees(paise));
 }
 

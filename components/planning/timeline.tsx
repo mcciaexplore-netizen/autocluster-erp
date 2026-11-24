@@ -13,6 +13,7 @@ import { loadBookJobAction, moveBookingAction } from "@/lib/actions/jobs";
 import { formatDate } from "@/lib/format";
 import type { TimelineData } from "@/lib/planning-data";
 import { dayPlus, formatHours, formatWhen, hhmm, istAt, istDate, istMinutes, patternFromSettings, segmentsOn, workingMinutesBetween } from "@/lib/planning/hours";
+import { useCan } from "@/components/auth/permissions-provider";
 import { cn } from "@/lib/utils";
 import { BLOCK_TYPES } from "@/lib/validation/planning";
 import { localValue } from "./block-time";
@@ -385,18 +386,20 @@ function MachineRow({
           </div>
         ))}
         {bookings.map((b) => (
-          <Bar key={b.id} b={b} x={x} width={width} top={5 + (lane.get(b.id) ?? 0) * LANE} nonstop={m.runsNonstop} onOpen={() => onOpen(b.jobId)} pph={pph} />
+          <Bar key={b.id} b={b} x={x} width={width} top={5 + (lane.get(b.id) ?? 0) * LANE} nonstop={m.runsNonstop} onOpen={() => onOpen(b.jobId)} pph={pph} dept={m.deptCode} />
         ))}
       </div>
     </div>
   );
 }
 
-function Bar({ b, x, width, top, nonstop, onOpen, pph }: { b: Booking; x: (iso: string) => number; width: number; top: number; nonstop: boolean; onOpen: () => void; pph: number }) {
+function Bar({ b, x, width, top, nonstop, onOpen, pph, dept }: { b: Booking; x: (iso: string) => number; width: number; top: number; nonstop: boolean; onOpen: () => void; pph: number; dept: string }) {
   const started = new Date(b.start) <= new Date();
   const done = ["DONE", "HANDED_OVER"].includes(b.status);
-  const { setNodeRef, attributes, listeners, transform, isDragging } = useDraggable({ id: `move:${b.id}`, data: { type: "move", booking: b }, disabled: started || done });
-  const { setNodeRef: setResizeRef, attributes: resizeAttributes, listeners: resizeListeners, transform: resizeTransform } = useDraggable({ id: `resize:${b.id}`, data: { type: "resize", booking: b, nonstop }, disabled: done });
+  // Moving and resizing need "planning.book" for this machine's department (the server checks again).
+  const canBook = useCan()("planning.book", { dept });
+  const { setNodeRef, attributes, listeners, transform, isDragging } = useDraggable({ id: `move:${b.id}`, data: { type: "move", booking: b }, disabled: started || done || !canBook });
+  const { setNodeRef: setResizeRef, attributes: resizeAttributes, listeners: resizeListeners, transform: resizeTransform } = useDraggable({ id: `resize:${b.id}`, data: { type: "resize", booking: b, nonstop }, disabled: done || !canBook });
   const left = Math.max(0, x(b.start));
   const right = Math.min(width, x(b.end));
   const w = Math.max(6, right - left + (resizeTransform?.x ?? 0));
@@ -419,13 +422,13 @@ function Bar({ b, x, width, top, nonstop, onOpen, pph }: { b: Booking; x: (iso: 
       onClick={onOpen}
       onKeyDown={(e) => e.key === "Enter" && onOpen()}
       title={`${b.ticketNo} · ${b.company} · ${b.service}\n${formatWhen(new Date(b.start))} to ${formatWhen(new Date(b.end))} (${formatHours(b.hours)})${b.operator ? `\n${b.operator}` : ""}${b.tentative ? `\nTentative: waiting for PO (held until ${b.holdUntil?.split("-").reverse().join("/")})` : ""}${b.late ? "\nLate: past the promised date" : ""}${b.overrun ? "\nStill running? Past its booked end" : ""}`}
-      className={cn("absolute z-[5] flex items-center overflow-hidden rounded-md border text-[11px] leading-tight shadow-sm select-none", colour, b.late && "ring-2 ring-red-600", b.overrun && "animate-pulse ring-2 ring-red-600", !started && !done && "cursor-grab", isDragging && "z-30 opacity-80 shadow-lg")}
+      className={cn("absolute z-[5] flex items-center overflow-hidden rounded-md border text-[11px] leading-tight shadow-sm select-none", colour, b.late && "ring-2 ring-red-600", b.overrun && "animate-pulse ring-2 ring-red-600", !started && !done && canBook && "cursor-grab", isDragging && "z-30 opacity-80 shadow-lg")}
       style={{ left, width: w, top, height: LANE - 4, transform: CSS.Translate.toString(transform) }}
     >
       <span className="truncate px-1.5">
         <span className="font-semibold tabular-nums">{b.ticketNo.split("/").pop()}</span> {pph >= 8 || w > 120 ? `${b.company} · ${b.service}` : ""}
       </span>
-      {!done && w >= 20 ? (
+      {!done && canBook && w >= 20 ? (
         <span
           ref={setResizeRef}
           {...resizeAttributes}
@@ -440,7 +443,8 @@ function Bar({ b, x, width, top, nonstop, onOpen, pph }: { b: Booking; x: (iso: 
 }
 
 function JobCard({ job: j, onOpen }: { job: Job; onOpen: () => void }) {
-  const { setNodeRef, attributes, listeners, isDragging } = useDraggable({ id: `job:${j.id}`, data: { type: "job", job: j } });
+  const canBook = useCan()("planning.book", { dept: j.deptCode });
+  const { setNodeRef, attributes, listeners, isDragging } = useDraggable({ id: `job:${j.id}`, data: { type: "job", job: j }, disabled: !canBook });
   return (
     <li ref={setNodeRef} className={cn("flex items-start gap-1 rounded-lg border bg-card p-2 text-xs", isDragging && "opacity-40", j.late && "border-red-300")}>
       <span {...attributes} {...listeners} className="mt-0.5 cursor-grab text-muted-foreground" aria-label={`Drag ${j.ticketNo} onto a machine`}>

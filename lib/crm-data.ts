@@ -4,6 +4,7 @@
  */
 import "server-only";
 import { and, asc, desc, eq, inArray, isNull, sql } from "drizzle-orm";
+import { need } from "@/lib/auth/guard";
 import { connection } from "next/server";
 import { db } from "@/db";
 import { ensureCrmDefaults } from "@/db/crm-defaults";
@@ -33,6 +34,7 @@ import type { ActivityType, FilterableLead } from "@/lib/crm/leads";
 /** Stages in board order. Adds the default stages the first time, if there are none. */
 export async function getCrmStages() {
   await connection();
+  await need(["crm.view"]);
   let rows = await db.select().from(crmStages).orderBy(asc(crmStages.sortOrder), asc(crmStages.createdAt));
   if (!rows.length) {
     await ensureCrmDefaults(db);
@@ -46,6 +48,7 @@ export type CrmListItem = { id: string; name: string; isActive: boolean; phone?:
 /** Sources, lost reasons, tags and team members, in their set order (hidden ones included). */
 export async function getCrmLists() {
   await connection();
+  await need(["crm.view", "settings.edit"]);
   const [first] = await db.select({ id: crmSources.id }).from(crmSources).limit(1);
   if (!first) await ensureCrmDefaults(db);
   const list = (t: typeof crmSources | typeof crmLostReasons | typeof crmTags) =>
@@ -78,6 +81,7 @@ export interface BoardLead extends FilterableLead {
 /** Every enquiry that isn't deleted, with what the cards and the list need. */
 export async function getBoardLeads(): Promise<BoardLead[]> {
   await connection();
+  await need(["crm.view"]);
   const rows = await db
     .select({
       l: leads,
@@ -161,6 +165,7 @@ export async function getBoardLeads(): Promise<BoardLead[]> {
 /** What the board's filters, menus and forms choose from (active items only). */
 export async function getCrmPickers() {
   await connection();
+  await need(["crm.view"]);
   const lists = await getCrmLists();
   const active = <T extends { isActive: boolean }>(l: T[]) => l.filter((x) => x.isActive);
   return {
@@ -176,6 +181,7 @@ export type BoardStage = { id: string; name: string; color: string; type: "OPEN"
 /** Everything the enquiry panel and full page show. */
 export async function getLeadDetail(id: string) {
   await connection();
+  await need(["crm.view"]);
   const [row] = await db
     .select({ l: leads, sourceName: crmSources.name, assignedToName: teamMembers.name, lostReason: crmLostReasons.name })
     .from(leads)
@@ -282,6 +288,7 @@ export type LeadDetail = NonNullable<Awaited<ReturnType<typeof getLeadDetail>>>;
 /** What the enquiry form chooses from. */
 export async function getLeadFormOptions() {
   await connection();
+  await need(["crm.view"]);
   const [pickers, stages, depts, svcs, custs] = await Promise.all([
     getCrmPickers(),
     getCrmStages(),
@@ -318,6 +325,7 @@ export type LeadFormOptions = Awaited<ReturnType<typeof getLeadFormOptions>>;
 /** Enquiry number for a link (e.g. on a quotation made from it). */
 export async function getLeadRef(id: string | null) {
   await connection();
+  await need(["crm.view"]);
   if (!id) return null;
   const [r] = await db.select({ id: leads.id, leadNo: leads.leadNo, title: leads.title, deletedAt: leads.deletedAt }).from(leads).where(eq(leads.id, id));
   return r && !r.deletedAt ? { id: r.id, leadNo: r.leadNo, title: r.title } : null;
@@ -326,6 +334,7 @@ export async function getLeadRef(id: string | null) {
 /** A customer's enquiries, newest first (customer page, Enquiries tab). */
 export async function getCustomerLeads(customerId: string) {
   await connection();
+  await need(["crm.view"]);
   return db
     .select({
       id: leads.id,
@@ -348,6 +357,7 @@ export async function getCustomerLeads(customerId: string) {
 /** The 4 CRM cards on the home page. Months and days are in India time. */
 export async function getCrmHomeStats() {
   await connection();
+  await need(["crm.view"]);
   const r = await db.execute<{ new_month: string; open_count: string; open_value: string; due_today: string; overdue: string; won_count: string; won_value: string }>(sql`
     with t as (select (now() at time zone 'Asia/Kolkata')::date as today)
     select
@@ -380,6 +390,7 @@ export async function getCrmHomeStats() {
 /** Planned activities due today or overdue (not done), for "Today's activities" on the home page. */
 export async function getTodaysActivities() {
   await connection();
+  await need(["crm.view"]);
   const today = sql`(now() at time zone 'Asia/Kolkata')::date`;
   const rows = await db
     .select({
@@ -407,6 +418,7 @@ export type TodaysActivity = Awaited<ReturnType<typeof getTodaysActivities>>[num
 /** What imported rows are checked against (active items only). */
 export async function getImportLists() {
   await connection();
+  await need(["crm.view"]);
   const [pickers, stages, depts] = await Promise.all([getCrmPickers(), getCrmStages(), db.select().from(departmentsTable).orderBy(asc(departmentsTable.sortOrder))]);
   return {
     sources: pickers.sources,

@@ -1,6 +1,7 @@
 /** The profile page: the signed-in person, their devices, roles and departments. */
 import "server-only";
 import { and, asc, desc, eq, gt } from "drizzle-orm";
+import { need } from "@/lib/auth/guard";
 import { connection } from "next/server";
 import { db } from "@/db";
 import { authSessions, departments } from "@/db/schema";
@@ -8,6 +9,7 @@ import { getCurrentUser } from "@/lib/auth/current-user";
 
 export async function getProfile() {
   await connection();
+  await need();
   const me = await getCurrentUser();
   if (!me) return null;
   const [sessions, depts] = await Promise.all([

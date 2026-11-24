@@ -192,10 +192,11 @@ export function dueChip(dueDate: string, today: string = todayInIndia()): Status
   return { label: `Overdue by ${-d} ${d === -1 ? "day" : "days"}`, tone: "red", daysOverdue: -d };
 }
 
-export function invoiceChips(inv: { dueDate: string; amountPaise: number; leftPaise: number }, today: string = todayInIndia()): StatusChip[] {
-  if (inv.leftPaise <= 0) return [{ label: "Paid", tone: "green" }];
+/** Status chips for an invoice. Without amounts (hidden from this person), `balanceDue` gives the status. */
+export function invoiceChips(inv: { dueDate: string; amountPaise: number | null; leftPaise: number | null; balanceDue?: boolean }, today: string = todayInIndia()): StatusChip[] {
+  if (!hasBalance(inv)) return [{ label: "Paid", tone: "green" }];
   const chips: StatusChip[] = [dueChip(inv.dueDate, today)];
-  if (inv.leftPaise < inv.amountPaise) chips.push({ label: `Part paid: ${formatINR(inv.leftPaise).replace(/\.00$/, "")} left`, tone: "blue" });
+  if (inv.leftPaise != null && inv.amountPaise != null && inv.leftPaise < inv.amountPaise) chips.push({ label: `Part paid: ${formatINR(inv.leftPaise).replace(/\.00$/, "")} left`, tone: "blue" });
   return chips;
 }
 
@@ -203,11 +204,16 @@ export function invoiceChips(inv: { dueDate: string; amountPaise: number; leftPa
  * "Follow-up due today": the next follow-up date is today or earlier, OR the invoice
  * is overdue and nobody has added a note or sent a reminder in the last 7 days.
  */
+/** Is anything still to be paid? Uses the amount when it is shown, otherwise the balanceDue flag. */
+export function hasBalance(inv: { leftPaise: number | null; balanceDue?: boolean }): boolean {
+  return inv.leftPaise != null ? inv.leftPaise > 0 : !!inv.balanceDue;
+}
+
 export function followUpDue(
-  inv: { dueDate: string; leftPaise: number; nextFollowUpDate: string | null; lastContactDate: string | null },
+  inv: { dueDate: string; leftPaise: number | null; balanceDue?: boolean; nextFollowUpDate: string | null; lastContactDate: string | null },
   today: string = todayInIndia(),
 ): boolean {
-  if (inv.leftPaise <= 0) return false;
+  if (!hasBalance(inv)) return false;
   if (inv.nextFollowUpDate && inv.nextFollowUpDate <= today) return true;
   const overdue = inv.dueDate < today;
   const recent = inv.lastContactDate != null && daysBetween(inv.lastContactDate, today) < 7;

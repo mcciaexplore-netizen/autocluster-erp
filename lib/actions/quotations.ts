@@ -1,7 +1,7 @@
 "use server";
 
-import { isSignedIn } from "@/lib/auth-guard";
-import { SIGNED_OUT_MESSAGE } from "@/lib/auth-messages";
+import { allow } from "@/lib/auth/guard";
+import type { Permission } from "@/lib/auth/permissions";
 
 import { and, eq, isNull } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
@@ -73,11 +73,17 @@ function check(input: unknown): { ok: true; data: QuotationInput } | { ok: false
   return { ok: true, data };
 }
 
+/** Marking Accepted or Rejected needs "quotes.status"; other moves (e.g. Sent) are part of editing. */
+function statusPerm(status: unknown): Permission {
+  return status === "ACCEPTED" || status === "REJECTED" ? "quotes.status" : "quotes.edit";
+}
+
 export async function saveQuotation(
   input: QuotationInput,
   id: string | null,
 ): Promise<Result<{ id: string; quoteNo: string; movedTo?: string | null }>> {
-  if (!(await isSignedIn())) return { ok: false as const, message: SIGNED_OUT_MESSAGE };
+  const g = await allow("quotes.edit");
+  if (!g.ok) return { ok: false as const, message: g.message };
   const c = check(input);
   if (!c.ok) return c;
   try {
@@ -95,7 +101,8 @@ export async function saveQuotation(
 
 /** What changing the status would do to the quotation's tickets, so the screen can ask first. */
 export async function previewStatusChange(id: string, status: z.infer<typeof statusSchema>): Promise<Result<StatusChangePlan>> {
-  if (!(await isSignedIn())) return { ok: false as const, message: SIGNED_OUT_MESSAGE };
+  const g = await allow(statusPerm(status));
+  if (!g.ok) return { ok: false as const, message: g.message };
   const s = statusSchema.safeParse(status);
   if (!s.success) return { ok: false, message: "Unknown status." };
   return { ok: true, data: await planStatusChange(db, id, s.data) };
@@ -105,7 +112,8 @@ export async function setQuotationStatus(
   id: string,
   status: z.infer<typeof statusSchema>,
 ): Promise<Result<{ opened: number; reopened: number; cancelled: number; leadWon: string | null }>> {
-  if (!(await isSignedIn())) return { ok: false as const, message: SIGNED_OUT_MESSAGE };
+  const g = await allow(statusPerm(status));
+  if (!g.ok) return { ok: false as const, message: g.message };
   const s = statusSchema.safeParse(status);
   if (!s.success) return { ok: false, message: "Unknown status." };
   try {
@@ -129,7 +137,8 @@ async function liveLead(id: string) {
 }
 
 export async function duplicateQuotation(id: string): Promise<Result<{ id: string; quoteNo: string }>> {
-  if (!(await isSignedIn())) return { ok: false as const, message: SIGNED_OUT_MESSAGE };
+  const g = await allow("quotes.edit");
+  if (!g.ok) return { ok: false as const, message: g.message };
   const [q] = await db.select().from(quotations).where(and(eq(quotations.id, id), isNull(quotations.deletedAt)));
   if (!q) return { ok: false, message: "This quotation could not be found." };
   const items = await db.select().from(quotationItems).where(eq(quotationItems.quotationId, id)).orderBy(quotationItems.sortOrder);

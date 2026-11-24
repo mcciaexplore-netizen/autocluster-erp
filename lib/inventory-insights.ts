@@ -4,6 +4,7 @@
  */
 import "server-only";
 import { sql } from "drizzle-orm";
+import { moneyView, need } from "@/lib/auth/guard";
 import { connection } from "next/server";
 import { db } from "@/db";
 import { runsOutInDays } from "@/lib/inventory/calc";
@@ -22,6 +23,7 @@ const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 /** Default: the last 30 days. */
 export async function insightFiltersFromParams(sp: Record<string, string | string[] | undefined>): Promise<InsightFilters> {
   await connection();
+  await need();
   const today = todayInIndia();
   const one = (k: string) => (typeof sp[k] === "string" ? (sp[k] as string) : "");
   let from = DATE_RE.test(one("from")) ? one("from") : addDays(today, -30);
@@ -68,6 +70,10 @@ const itemInDept = (f: InsightFilters, col: string) =>
 
 export async function getInsights(f: InsightFilters) {
   await connection();
+  const me = await need(["insights.inventory"]);
+  // Inventory Insights is about stock money, so it also needs "money.stock_costs".
+  await need(["money.stock_costs"]);
+  const sale = moneyView(me).sale;
   const today = todayInIndia();
   const [[set], depts] = await Promise.all([
     db.execute<{ alert: number; share: number; use_days: number; safety: number; lead: number }>(
@@ -245,7 +251,8 @@ export async function getInsights(f: InsightFilters) {
     shareAlertPct,
     useDays,
     spend: { months, series: seriesKeys.map((k) => ({ key: k, name: seriesNames[k] ?? k })), rows: spendByMonth, totalPaise: spendTotal },
-    services: { ranked, leftOut: leftOut.map((s) => s.name) },
+    // "Kept after materials" uses sale prices (revenue): only for people who may see them.
+    services: sale ? { ranked, leftOut: leftOut.map((s) => s.name), hidden: false } : { ranked: [] as typeof ranked, leftOut: [] as string[], hidden: true },
     topItems,
     priceChanges,
     tiedUp: { totalPaise: stockValuePaise, byCategory, byDepartment, slow },

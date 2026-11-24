@@ -5,13 +5,14 @@ import { z } from "zod";
 import { db } from "@/db";
 import { UserFacingError } from "@/db/quote-writer";
 import { clearOrdered, markOrdered, SEND_METHODS } from "@/db/reorder-writer";
-import { isSignedIn } from "@/lib/auth-guard";
-import { SIGNED_OUT_MESSAGE } from "@/lib/auth-messages";
+import { allow } from "@/lib/auth/guard";
+import type { Permission } from "@/lib/auth/permissions";
 
 type Result<T> = { ok: true; data: T } | { ok: false; message: string };
 
-async function run<T>(fn: () => Promise<T>): Promise<Result<T>> {
-  if (!(await isSignedIn())) return { ok: false, message: SIGNED_OUT_MESSAGE };
+async function run<T>(perm: Permission | Permission[], fn: () => Promise<T>): Promise<Result<T>> {
+  const g = await allow(perm);
+  if (!g.ok) return { ok: false, message: g.message };
   try {
     const data = await fn();
     revalidatePath("/", "layout");
@@ -33,9 +34,9 @@ const sendSchema = z.object({
 
 /** "Send to supplier": notes the send and marks the items "Ordered on" today. */
 export async function markOrderedAction(input: z.input<typeof sendSchema>) {
-  return run(() => markOrdered(db, sendSchema.parse(input)));
+  return run("inventory.reorder", () => markOrdered(db, sendSchema.parse(input)));
 }
 
 export async function clearOrderedAction(itemId: string) {
-  return run(() => clearOrdered(db, z.string().uuid().parse(itemId)));
+  return run("inventory.reorder", () => clearOrdered(db, z.string().uuid().parse(itemId)));
 }

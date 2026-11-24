@@ -42,7 +42,8 @@ async function Detail({
   const [q, settings] = await Promise.all([getQuotation(id), getSettings()]);
   if (!q) notFound();
   const lead = await getLeadRef(q.leadId);
-  const view = viewFromSaved(q, settings);
+  // Prices hidden from this person: list the lines without the priced document.
+  const view = q.pricesHidden ? null : viewFromSaved(q as Parameters<typeof viewFromSaved>[0], settings);
 
   return (
     <>
@@ -66,7 +67,13 @@ async function Detail({
             </p>
           ) : null}
           <p className="text-muted-foreground">
-            {formatDate(q.quoteDate)} · valid until {formatDate(q.validUntil)} · <strong className="text-foreground">{money(q.grandTotal)}</strong>
+            {formatDate(q.quoteDate)} · valid until {formatDate(q.validUntil)}
+            {q.grandTotal != null ? (
+              <>
+                {" "}
+                · <strong className="text-foreground">{money(q.grandTotal)}</strong>
+              </>
+            ) : null}
           </p>
         </div>
         <QuotationDetailActions id={q.id} status={q.status} autoPrint={sp.print === "1"} locked={q.locked} />
@@ -88,7 +95,7 @@ async function Detail({
                   {t.ticketNo}
                 </Link>
                 <span className="min-w-0 flex-1">{t.description}</span>
-                <span className="font-semibold tabular-nums">{money(t.totalAmount)}</span>
+                {t.totalAmount != null ? <span className="font-semibold tabular-nums">{money(t.totalAmount)}</span> : null}
                 <StageChip stage={t.stage} />
               </li>
             ))}
@@ -99,7 +106,25 @@ async function Detail({
         <Info className="mt-0.5 size-4 shrink-0" aria-hidden />
         Customer details and rates were saved with this quotation, so later changes to the customer or the rate card do not affect it.
       </p>
-      <QuotationPaper view={view} />
+      {view ? (
+        <QuotationPaper view={view} />
+      ) : (
+        <section className="rounded-2xl border bg-card p-5" aria-labelledby="lines-h">
+          <h2 id="lines-h" className="mb-1 text-lg font-semibold">Services quoted</h2>
+          <p className="mb-4 text-sm text-muted-foreground">Prices are hidden for your role.</p>
+          <ul className="divide-y rounded-xl border">
+            {q.items.map((it) => (
+              <li key={it.id} className="px-4 py-3">
+                <span className="font-medium">{it.description}</span>
+                <span className="block text-sm text-muted-foreground">
+                  {Number(it.billableQty).toLocaleString("en-IN")} {it.unitLabel}
+                  {it.notes ? ` · ${it.notes}` : ""}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
     </>
   );
 }

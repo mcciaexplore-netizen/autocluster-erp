@@ -1,8 +1,8 @@
-/**
- * Who may change the CRM pipeline (stages and lists).
- * The demo has one shared sign-in, so everyone signed in may. When real admin
- * roles arrive, change only this function; the screens already call it.
- */
+/** Who may change the CRM pipeline stages: anyone with "crm.stages" (Admin and Manager by default). */
+import "server-only";
+import { can } from "@/lib/auth/can";
+import { signedInUser } from "@/lib/auth/guard";
+
 export async function canManagePipeline(): Promise<boolean> {
-  return true;
+  return can(await signedInUser(), "crm.stages");
 }

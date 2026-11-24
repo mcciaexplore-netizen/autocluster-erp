@@ -1,5 +1,8 @@
 "use server";
 
+import { can } from "@/lib/auth/can";
+import { signedInUser } from "@/lib/auth/guard";
+import { assertInScope, bookingJobId, jobDept, machineDept } from "@/lib/auth/scope";
 import { and, eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
@@ -9,15 +12,16 @@ import { addJobEvent, bulkMarkDone, bulkUpdateJobs, updateJobDetails } from "@/d
 import { UserFacingError } from "@/db/quote-writer";
 import { files, jobFiles, jobs, machineServices, services } from "@/db/schema";
 import { suggestHours } from "@/lib/planning/time-needed";
-import { isSignedIn } from "@/lib/auth-guard";
-import { SIGNED_OUT_MESSAGE } from "@/lib/auth-messages";
+import { allow } from "@/lib/auth/guard";
+import type { Permission } from "@/lib/auth/permissions";
 import { istAt } from "@/lib/planning/hours";
 import { LOCAL_DT_RE } from "@/lib/validation/planning";
 
 type Result<T> = { ok: true; data: T } | { ok: false; message: string; past?: boolean };
 
-async function run<T>(fn: () => Promise<T>): Promise<Result<T>> {
-  if (!(await isSignedIn())) return { ok: false, message: SIGNED_OUT_MESSAGE };
+async function run<T>(perm: Permission | Permission[], fn: () => Promise<T>): Promise<Result<T>> {
+  const g = await allow(perm);
+  if (!g.ok) return { ok: false, message: g.message };
   try {
     const data = await fn();
     revalidatePath("/", "layout");
@@ -43,12 +47,22 @@ const detailsSchema = z.object({
   instructions: z.string().max(4000).nullable(),
 });
 
+/** A booking's job (and the machine it moves to) must be in the person's departments. */
+async function assertBookingInScope(bookingId: string, toMachineId?: string | null) {
+  const jobId = await bookingJobId(id.parse(bookingId));
+  await assertInScope("planning.book", [jobId ? await jobDept(jobId) : null, ...(toMachineId ? [await machineDept(id.parse(toMachineId))] : [])]);
+}
+
 export async function saveJobDetailsAction(jobId: string, input: z.input<typeof detailsSchema>) {
-  return run(() => updateJobDetails(db, id.parse(jobId), detailsSchema.parse(input)));
+  return run("planning.book", async () => {
+    await assertInScope("planning.book", [await jobDept(id.parse(jobId))]);
+    return updateJobDetails(db, id.parse(jobId), detailsSchema.parse(input));
+  });
 }
 
 export async function bulkJobsAction(jobIds: string[], change: { operatorId?: string | null; priority?: "NORMAL" | "URGENT" }) {
-  return run(async () => {
+  return run("planning.book", async () => {
+    for (const j of z.array(id).max(500).parse(jobIds)) await assertInScope("planning.book", [await jobDept(j)]);
     const ids = z.array(id).min(1).max(500).parse(jobIds);
     const c = z.object({ operatorId: id.nullable().optional(), priority: z.enum(["NORMAL", "URGENT"]).optional() }).parse(change);
     return { updated: await bulkUpdateJobs(db, ids, c) };
@@ -56,7 +70,10 @@ export async function bulkJobsAction(jobIds: string[], change: { operatorId?: st
 }
 
 export async function bulkMarkDoneAction(jobIds: string[], note: string) {
-  return run(async () => ({ done: await bulkMarkDone(db, z.array(id).min(1).max(500).parse(jobIds), z.string().max(2000).parse(note)) }));
+  return run("planning.book", async () => {
+    for (const j of z.array(id).max(500).parse(jobIds)) await assertInScope("planning.book", [await jobDept(j)]);
+    return ({ done: await bulkMarkDone(db, z.array(id).min(1).max(500).parse(jobIds), z.string().max(2000).parse(note)) });
+  });
 }
 
 const bookSchema = z.object({
@@ -70,7 +87,8 @@ const bookSchema = z.object({
 });
 
 export async function bookTimeAction(input: z.input<typeof bookSchema>) {
-  return run(async () => {
+  return run("planning.book", async () => {
+    await assertInScope("planning.book", [await jobDept(id.parse(input.jobId)), await machineDept(id.parse(input.machineId))]);
     const r = await bookTime(db, bookSchema.parse(input));
     return { machine: r.machine, ticketNo: r.ticketNo, tentative: r.booking.isTentative, holdUntil: r.booking.holdUntil, start: r.booking.startAt.toISOString(), end: r.booking.endAt.toISOString(), warning: r.warning };
   });
@@ -78,7 +96,8 @@ export async function bookTimeAction(input: z.input<typeof bookSchema>) {
 
 /** Instant booking from a "Find next free slot" option (the start is the exact slot time). */
 export async function bookSlotAction(input: { jobId: string; machineId: string; start: string; hours: number; operatorId?: string | null; note?: string | null }) {
-  return run(async () => {
+  return run("planning.book", async () => {
+    await assertInScope("planning.book", [await jobDept(id.parse(input.jobId)), await machineDept(id.parse(input.machineId))]);
     const r = await bookTime(db, {
       jobId: id.parse(input.jobId),
       machineId: id.parse(input.machineId),
@@ -92,7 +111,7 @@ export async function bookSlotAction(input: { jobId: string; machineId: string; 
 }
 
 export async function findSlotsAction(machineIds: string[], h: number, ignoreBookingId?: string | null) {
-  return run(async () => {
+  return run("planning.view", async () => {
     const slots = await findFreeSlots(db, z.array(id).max(200).parse(machineIds), hours.parse(h), { ignoreBookingId: ignoreBookingId ? id.parse(ignoreBookingId) : undefined });
     return slots.map((s) => ({ machineId: s.machineId, machine: s.machine, start: s.start.toISOString(), end: s.end.toISOString() }));
   });
@@ -101,7 +120,8 @@ export async function findSlotsAction(machineIds: string[], h: number, ignoreBoo
 const moveSchema = z.object({ machineId: id.optional(), start: localDt.optional(), startExact: z.string().datetime().optional(), hours: hours.optional(), allowPast: z.boolean().optional() });
 
 export async function moveBookingAction(bookingId: string, change: z.input<typeof moveSchema>) {
-  return run(async () => {
+  return run("planning.book", async () => {
+    await assertBookingInScope(bookingId, change?.machineId);
     const c = moveSchema.parse(change);
     const r = await moveBooking(db, id.parse(bookingId), { machineId: c.machineId, start: c.startExact ? new Date(c.startExact) : c.start, hours: c.hours, allowPast: c.allowPast });
     return { machine: r.machine, start: r.start.toISOString(), end: r.end.toISOString(), warning: r.warning };
@@ -109,15 +129,22 @@ export async function moveBookingAction(bookingId: string, change: z.input<typeo
 }
 
 export async function cancelBookingAction(bookingId: string, release = false) {
-  return run(() => cancelBooking(db, id.parse(bookingId), release ? "Tentative hold released" : "Booking removed"));
+  return run("planning.book", async () => {
+    await assertBookingInScope(bookingId);
+    return cancelBooking(db, id.parse(bookingId), release ? "Tentative hold released" : "Booking removed");
+  });
 }
 
 export async function extendHoldAction(bookingId: string, until: string) {
-  return run(() => extendHold(db, id.parse(bookingId), z.string().max(10).parse(until)));
+  return run("planning.book", async () => {
+    await assertBookingInScope(bookingId);
+    return extendHold(db, id.parse(bookingId), z.string().max(10).parse(until));
+  });
 }
 
 export async function moveToNextFreeSlotAction(bookingId: string) {
-  return run(async () => {
+  return run("planning.book", async () => {
+    await assertBookingInScope(bookingId);
     const r = await moveToNextFreeSlot(db, id.parse(bookingId));
     return { machine: r.machine, start: r.start.toISOString(), end: r.end.toISOString() };
   });
@@ -125,7 +152,8 @@ export async function moveToNextFreeSlotAction(bookingId: string) {
 
 /** Attachments (drawings, test plan): files uploaded to Blob, then linked to the job. */
 export async function addJobFileAction(jobId: string, fileId: string) {
-  return run(async () => {
+  return run(["planning.book", "planning.operate"], async () => {
+    await assertInScope(can(await signedInUser(), "planning.book") ? "planning.book" : "planning.operate", [await jobDept(id.parse(jobId))]);
     const j = id.parse(jobId);
     const [f] = await db.select().from(files).where(eq(files.id, id.parse(fileId)));
     if (!f || f.kind !== "JOB") throw new UserFacingError("The file could not be found. Please upload it again.");
@@ -138,7 +166,8 @@ export async function addJobFileAction(jobId: string, fileId: string) {
 }
 
 export async function removeJobFileAction(jobId: string, fileId: string) {
-  return run(async () => {
+  return run(["planning.book", "planning.operate"], async () => {
+    await assertInScope(can(await signedInUser(), "planning.book") ? "planning.book" : "planning.operate", [await jobDept(id.parse(jobId))]);
     const [f] = await db.select({ name: files.fileName }).from(files).where(eq(files.id, id.parse(fileId)));
     await db.delete(jobFiles).where(and(eq(jobFiles.jobId, id.parse(jobId)), eq(jobFiles.fileId, fileId)));
     await addJobEvent(db, jobId, "FILE", `File removed: ${f?.name ?? "file"}`);
@@ -148,7 +177,8 @@ export async function removeJobFileAction(jobId: string, fileId: string) {
 
 /** The job panel's data: the job, booking options, and the ticket's materials. */
 export async function loadJobPanelAction(jobId: string) {
-  if (!(await isSignedIn())) return { ok: false as const, message: SIGNED_OUT_MESSAGE };
+  const g = await allow("planning.view");
+  if (!g.ok) return { ok: false as const, message: g.message };
   const { getJobDetail, getBookingOptions } = await import("@/lib/planning-data");
   const { getTicketDetail } = await import("@/lib/orders-data");
   const detail = await getJobDetail(z.string().uuid().parse(jobId));
@@ -160,7 +190,8 @@ export type JobPanelData = Extract<Awaited<ReturnType<typeof loadJobPanelAction>
 
 /** Dropping a job onto the timeline: its details for the Book time form. */
 export async function loadBookJobAction(jobId: string) {
-  if (!(await isSignedIn())) return { ok: false as const, message: SIGNED_OUT_MESSAGE };
+  const g = await allow("planning.book");
+  if (!g.ok) return { ok: false as const, message: g.message };
   const { getBookJob } = await import("@/lib/planning-data");
   const j = await getBookJob(z.string().uuid().parse(jobId));
   return j ? { ok: true as const, data: j } : { ok: false as const, message: "This job could not be found." };
@@ -171,7 +202,8 @@ export async function loadBookJobAction(jobId: string) {
  * the quantity suggests (1 h when there's nothing to go on). Never blocks anything.
  */
 export async function earliestSlotForServiceAction(serviceId: number, billableQty: number) {
-  if (!(await isSignedIn())) return null;
+  const g = await allow(["planning.view", "quotes.edit"]);
+  if (!g.ok) return null;
   try {
     const sid = z.number().int().positive().parse(serviceId);
     const qty = z.number().min(0).max(1_000_000).parse(billableQty);

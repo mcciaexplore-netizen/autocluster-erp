@@ -1,3 +1,4 @@
+import { Can } from "@/components/auth/permissions-provider";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -53,12 +54,27 @@ async function CustomerDetail({ params }: { params: Promise<{ id: string }> }) {
   const rows: [string, React.ReactNode][] = [
     ["Address", [c.addressLine1, c.addressLine2, `${c.city} - ${c.pincode}`, c.state].filter(Boolean).join(", ")],
     ["GST number", c.gstRegistered ? <span className="font-mono">{c.gstin}</span> : "Not registered under GST"],
-    ["PAN", <span key="pan" className="font-mono">{c.pan}</span>],
+    [
+      "PAN",
+      <span key="pan" className="font-mono">
+        {c.pan}
+      </span>,
+    ],
     ["TAN", c.tan ? <span className="font-mono">{c.tan}</span> : "Not given"],
     ...(c.category === "MSME" ? ([["Udyam registration no.", c.udyamNo || "Not given"]] as [string, React.ReactNode][]) : []),
     ["Contact person", [c.pocName, c.pocDesignation].filter(Boolean).join(", ")],
-    ["Mobile", <a key="tel" href={`tel:+91${c.pocPhone}`} className="text-primary hover:underline">+91 {c.pocPhone}</a>],
-    ["Email", <a key="mail" href={`mailto:${c.pocEmail}`} className="break-all text-primary hover:underline">{c.pocEmail}</a>],
+    [
+      "Mobile",
+      <a key="tel" href={`tel:+91${c.pocPhone}`} className="text-primary hover:underline">
+        +91 {c.pocPhone}
+      </a>,
+    ],
+    [
+      "Email",
+      <a key="mail" href={`mailto:${c.pocEmail}`} className="break-all text-primary hover:underline">
+        {c.pocEmail}
+      </a>,
+    ],
     ["MCCIA membership", c.isMcciaMember ? `Member, ID ${c.mcciaMembershipId}` : "Not a member"],
     ["Credit period", `${c.creditDays} days`],
   ];
@@ -77,17 +93,23 @@ async function CustomerDetail({ params }: { params: Promise<{ id: string }> }) {
           </div>
         </div>
         <div className="flex flex-wrap gap-3">
-          <Button asChild size="lg">
-            <Link href={`/quotations/new?customer=${c.id}`}>
-              <FilePlus2 aria-hidden /> Create quotation
-            </Link>
-          </Button>
-          <Button asChild variant="outline" size="lg">
-            <Link href={`/customers/${c.id}/edit`}>
-              <Pencil aria-hidden /> Edit
-            </Link>
-          </Button>
-          <DeleteCustomerButton id={c.id} companyName={c.companyName} redirectTo="/customers" />
+          <Can perm="quotes.edit">
+            <Button asChild size="lg">
+              <Link href={`/quotations/new?customer=${c.id}`}>
+                <FilePlus2 aria-hidden /> Create quotation
+              </Link>
+            </Button>
+          </Can>
+          <Can perm="customers.edit">
+            <Button asChild variant="outline" size="lg">
+              <Link href={`/customers/${c.id}/edit`}>
+                <Pencil aria-hidden /> Edit
+              </Link>
+            </Button>
+          </Can>
+          <Can perm="customers.edit">
+            <DeleteCustomerButton id={c.id} companyName={c.companyName} redirectTo="/customers" />
+          </Can>
         </div>
       </div>
 
@@ -144,7 +166,8 @@ async function CustomerDetail({ params }: { params: Promise<{ id: string }> }) {
               {theirServices.length ? (
                 <ul className="grid gap-3 md:grid-cols-2">
                   {theirServices.map((s) => {
-                    const r = customerRate(s, priceType);
+                    // Rates are hidden (null) for people who may not see prices.
+                    const r = s.rateMsme == null || s.rateOem == null ? null : customerRate({ ...s, rateMsme: s.rateMsme, rateOem: s.rateOem }, priceType);
                     return (
                       <li key={s.id} className="flex gap-3 rounded-xl border p-4">
                         <span className="grid size-10 shrink-0 place-items-center rounded-lg bg-secondary text-primary">
@@ -156,12 +179,14 @@ async function CustomerDetail({ params }: { params: Promise<{ id: string }> }) {
                             {s.deptCode} - {deptName(s.deptCode)}
                           </div>
                           <div className="mt-1">
-                            {r.finalRatePaise !== r.listRatePaise ? (
-                              <s className="mr-1.5 text-muted-foreground">{formatINRShort(r.listRatePaise)}</s>
-                            ) : null}
-                            <strong className="text-success">
-                              {formatINRShort(r.finalRatePaise)} {s.unitLabel}
-                            </strong>
+                            {!r ? null : r.finalRatePaise !== r.listRatePaise ? <s className="mr-1.5 text-muted-foreground">{formatINRShort(r.listRatePaise)}</s> : null}
+                            {r ? (
+                              <strong className="text-success">
+                                {formatINRShort(r.finalRatePaise)} {s.unitLabel}
+                              </strong>
+                            ) : (
+                              <span className="text-muted-foreground">{s.unitLabel}</span>
+                            )}
                             {!s.isActive ? <span className="ml-2 text-sm text-muted-foreground">(not offered right now)</span> : null}
                           </div>
                         </div>
@@ -172,9 +197,11 @@ async function CustomerDetail({ params }: { params: Promise<{ id: string }> }) {
               ) : (
                 <p className="text-muted-foreground">
                   No services chosen yet.{" "}
-                  <Link href={`/customers/${c.id}/edit`} className="font-medium text-primary underline-offset-4 hover:underline">
-                    Add services
-                  </Link>
+                  <Can perm="customers.edit">
+                    <Link href={`/customers/${c.id}/edit`} className="font-medium text-primary underline-offset-4 hover:underline">
+                      Add services
+                    </Link>
+                  </Can>
                 </p>
               )}
               <p className="mt-4 text-sm text-muted-foreground">Prices shown: {priceType.label}.</p>
@@ -212,11 +239,13 @@ async function CustomerQuotations({ id }: { id: string }) {
         icon={FileText}
         title="No quotations for this customer yet"
         action={
-          <Button asChild>
-            <Link href={`/quotations/new?customer=${id}`}>
-              <FilePlus2 aria-hidden /> Create quotation
-            </Link>
-          </Button>
+          <Can perm="quotes.edit">
+            <Button asChild>
+              <Link href={`/quotations/new?customer=${id}`}>
+                <FilePlus2 aria-hidden /> Create quotation
+              </Link>
+            </Button>
+          </Can>
         }
       />
     );
@@ -268,10 +297,7 @@ async function CustomerOrders({ id }: { id: string }) {
       <ul className="divide-y rounded-2xl border bg-card">
         {rows.map((t) => (
           <li key={t.id}>
-            <Link
-              href={`/orders?ticket=${t.id}${t.stage === "CANCELLED" ? "&cancelled=1" : ""}`}
-              className="flex flex-wrap items-center gap-x-4 gap-y-1.5 px-5 py-4 hover:bg-secondary/60"
-            >
+            <Link href={`/orders?ticket=${t.id}${t.stage === "CANCELLED" ? "&cancelled=1" : ""}`} className="flex flex-wrap items-center gap-x-4 gap-y-1.5 px-5 py-4 hover:bg-secondary/60">
               <span className="min-w-0 flex-1">
                 <span className="block font-semibold text-primary tabular-nums">{t.ticketNo}</span>
                 <span className="block text-sm text-muted-foreground">

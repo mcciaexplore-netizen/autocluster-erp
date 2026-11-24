@@ -1,3 +1,4 @@
+import { Can } from "@/components/auth/permissions-provider";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Suspense } from "react";
@@ -21,11 +22,13 @@ export default function CustomersPage({ searchParams }: PageProps<"/customers">)
         title="Customers"
         description="Companies that use AutoCluster services."
         actions={
-          <Button asChild size="lg">
-            <Link href="/customers/new">
-              <Plus aria-hidden /> Add new customer
-            </Link>
-          </Button>
+          <Can perm="customers.edit">
+            <Button asChild size="lg">
+              <Link href="/customers/new">
+                <Plus aria-hidden /> Add new customer
+              </Link>
+            </Button>
+          </Can>
         }
       />
 
@@ -86,11 +89,13 @@ async function CustomerResults({ searchParams }: { searchParams: PageProps<"/cus
         title="No customers yet"
         description="Add a company once, and its details fill in on every quotation."
         action={
-          <Button asChild size="lg">
-            <Link href="/customers/new">
-              <Plus aria-hidden /> Add your first customer
-            </Link>
-          </Button>
+          <Can perm="customers.edit">
+            <Button asChild size="lg">
+              <Link href="/customers/new">
+                <Plus aria-hidden /> Add your first customer
+              </Link>
+            </Button>
+          </Can>
         }
       />
     );
@@ -146,16 +151,20 @@ async function CustomerResults({ searchParams }: { searchParams: PageProps<"/cus
                         <Eye />
                       </Link>
                     </Button>
-                    <Button asChild variant="ghost" size="icon-sm" aria-label={`Edit ${c.companyName}`}>
-                      <Link href={`/customers/${c.id}/edit`}>
-                        <Pencil />
-                      </Link>
-                    </Button>
-                    <Button asChild variant="outline" size="sm">
-                      <Link href={`/quotations/new?customer=${c.id}`}>
-                        <FilePlus2 aria-hidden /> Create quotation
-                      </Link>
-                    </Button>
+                    <Can perm="customers.edit">
+                      <Button asChild variant="ghost" size="icon-sm" aria-label={`Edit ${c.companyName}`}>
+                        <Link href={`/customers/${c.id}/edit`}>
+                          <Pencil />
+                        </Link>
+                      </Button>
+                    </Can>
+                    <Can perm="quotes.edit">
+                      <Button asChild variant="outline" size="sm">
+                        <Link href={`/quotations/new?customer=${c.id}`}>
+                          <FilePlus2 aria-hidden /> Create quotation
+                        </Link>
+                      </Button>
+                    </Can>
                   </div>
                 </TableCell>
               </TableRow>
@@ -193,14 +202,18 @@ async function CustomerResults({ searchParams }: { searchParams: PageProps<"/cus
                   <Button asChild variant="outline" size="sm">
                     <Link href={`/customers/${c.id}`}>View</Link>
                   </Button>
-                  <Button asChild variant="outline" size="sm">
-                    <Link href={`/customers/${c.id}/edit`}>Edit</Link>
-                  </Button>
-                  <Button asChild className="col-span-2">
-                    <Link href={`/quotations/new?customer=${c.id}`}>
-                      <FilePlus2 aria-hidden /> Create quotation
-                    </Link>
-                  </Button>
+                  <Can perm="customers.edit">
+                    <Button asChild variant="outline" size="sm">
+                      <Link href={`/customers/${c.id}/edit`}>Edit</Link>
+                    </Button>
+                  </Can>
+                  <Can perm="quotes.edit">
+                    <Button asChild className="col-span-2">
+                      <Link href={`/quotations/new?customer=${c.id}`}>
+                        <FilePlus2 aria-hidden /> Create quotation
+                      </Link>
+                    </Button>
+                  </Can>
                 </div>
               </div>
             </Card>

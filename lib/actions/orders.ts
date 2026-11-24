@@ -12,8 +12,8 @@ import { eq } from "drizzle-orm";
 import { addPurchaseOrder, DuplicatePoError, findPo, registerFile, type ExistingPo } from "@/db/po-writer";
 import { UserFacingError } from "@/db/quote-writer";
 import { cancelTicket, moveTicketBack } from "@/db/ticket-writer";
-import { isSignedIn } from "@/lib/auth-guard";
-import { SIGNED_OUT_MESSAGE } from "@/lib/auth-messages";
+import { allow } from "@/lib/auth/guard";
+import type { Permission } from "@/lib/auth/permissions";
 import { BLOB_NOT_SET_MESSAGE, blobAuth, blobConfigured, blobEnv } from "@/lib/blob";
 import { ALLOWED_FILE_TYPES, isValidUploadPath, KIND_FOLDER, MAX_FILE_BYTES, type UploadedFile } from "@/lib/files";
 import { getTicketDetail, type TicketDetail } from "@/lib/orders-data";
@@ -28,8 +28,9 @@ function refresh() {
   revalidatePath("/", "layout");
 }
 
-async function run<T>(fn: () => Promise<T>): Promise<Result<T>> {
-  if (!(await isSignedIn())) return { ok: false, message: SIGNED_OUT_MESSAGE };
+async function run<T>(perm: Permission | Permission[], fn: () => Promise<T>): Promise<Result<T>> {
+  const g = await allow(perm);
+  if (!g.ok) return { ok: false, message: g.message };
   try {
     const data = await fn();
     refresh();
@@ -44,20 +45,24 @@ async function run<T>(fn: () => Promise<T>): Promise<Result<T>> {
 }
 
 export async function loadTicketDetail(ticketId: string): Promise<Result<TicketDetail>> {
-  if (!(await isSignedIn())) return { ok: false, message: SIGNED_OUT_MESSAGE };
+  const g = await allow("orders.view");
+  if (!g.ok) return { ok: false, message: g.message };
   const d = await getTicketDetail(ticketId);
   return d ? { ok: true, data: d } : { ok: false, message: "This ticket could not be found." };
 }
 
 export async function moveTicketBackAction(ticketId: string, why: string) {
-  return run(() => moveTicketBack(db, id.parse(ticketId), reason.parse(why)));
+  return run("orders.cancel", () => moveTicketBack(db, id.parse(ticketId), reason.parse(why)));
 }
 
 export async function cancelTicketAction(ticketId: string, why: string) {
-  return run(() => cancelTicket(db, id.parse(ticketId), reason.parse(why)));
+  return run("orders.cancel", () => cancelTicket(db, id.parse(ticketId), reason.parse(why)));
 }
 
 // ---- files ------------------------------------------------------------------------
+
+/** Who may attach each kind of file. */
+const UPLOAD_PERMS: Record<string, Permission | Permission[]> = { PO: "orders.po", INVOICE: "orders.billing", BILL: "inventory.receive", JOB: ["planning.book", "planning.operate"] };
 
 const uploadInput = z.object({
   pathname: z.string().min(1).max(200),
@@ -67,7 +72,8 @@ const uploadInput = z.object({
 
 /** Records a file the browser just uploaded to Blob, after checking it really is there and allowed. */
 export async function registerUpload(input: z.input<typeof uploadInput>): Promise<Result<UploadedFile>> {
-  if (!(await isSignedIn())) return { ok: false, message: SIGNED_OUT_MESSAGE };
+  const g = await allow(UPLOAD_PERMS[String(input?.kind)] ?? "orders.po");
+  if (!g.ok) return { ok: false, message: g.message };
   if (!blobConfigured()) return { ok: false, message: BLOB_NOT_SET_MESSAGE };
   const parsed = uploadInput.safeParse(input);
   if (!parsed.success) return { ok: false, message: "That upload didn't look right. Please try again." };
@@ -92,7 +98,8 @@ export async function registerUpload(input: z.input<typeof uploadInput>): Promis
 
 /** Live check while typing: does this customer already have this PO number? */
 export async function checkPoNumber(customerId: string, poNumber: string): Promise<Result<ExistingPo | null>> {
-  if (!(await isSignedIn())) return { ok: false, message: SIGNED_OUT_MESSAGE };
+  const g = await allow("orders.po");
+  if (!g.ok) return { ok: false, message: g.message };
   if (!id.safeParse(customerId).success) return { ok: true, data: null };
   return { ok: true, data: await findPo(db, customerId, poNumber.slice(0, 100)) };
 }
@@ -114,14 +121,15 @@ const addPoInput = z.union([
 ]);
 
 export async function addPoAction(input: z.input<typeof addPoInput>) {
-  return run(() => addPurchaseOrder(db, addPoInput.parse(input), todayInIndia()));
+  return run("orders.po", () => addPurchaseOrder(db, addPoInput.parse(input), todayInIndia()));
 }
 
 // ---- tax invoices ---------------------------------------------------------------------
 
 /** Live check while typing: is this invoice number already used? Returns a message or null. */
 export async function checkInvoiceNumber(invoiceNumber: string): Promise<Result<string | null>> {
-  if (!(await isSignedIn())) return { ok: false, message: SIGNED_OUT_MESSAGE };
+  const g = await allow("orders.billing");
+  if (!g.ok) return { ok: false, message: g.message };
   const used = await findInvoice(db, invoiceNumber.slice(0, 100));
   return { ok: true, data: used ? `Invoice number ${used.number} is already used (${used.company}). Please check the number.` : null };
 }
@@ -137,7 +145,7 @@ const addInvoiceInput = z.object({
 });
 
 export async function addInvoiceAction(input: z.input<typeof addInvoiceInput>) {
-  return run(() => addInvoice(db, addInvoiceInput.parse(input), todayInIndia()));
+  return run("orders.billing", () => addInvoice(db, addInvoiceInput.parse(input), todayInIndia()));
 }
 
 // ---- payment follow-up -----------------------------------------------------------------
@@ -159,7 +167,7 @@ const paymentInput = z.object({
 });
 
 export async function recordPaymentAction(input: z.input<typeof paymentInput>) {
-  return run(() => recordPayment(db, paymentInput.parse(input), todayInIndia()));
+  return run("orders.payments", () => recordPayment(db, paymentInput.parse(input), todayInIndia()));
 }
 
 const followUpInput = z.object({
@@ -171,12 +179,13 @@ const followUpInput = z.object({
 });
 
 export async function addFollowUpAction(input: z.input<typeof followUpInput>) {
-  return run(() => addFollowUp(db, followUpInput.parse(input)));
+  return run("orders.payments", () => addFollowUp(db, followUpInput.parse(input)));
 }
 
 /** Ready-written reminder for this ticket's invoice, filled from the Settings templates. */
 export async function loadReminder(ticketId: string): Promise<Result<Reminder & { invoiceId: string }>> {
-  if (!(await isSignedIn())) return { ok: false, message: SIGNED_OUT_MESSAGE };
+  const g = await allow("orders.payments");
+  if (!g.ok) return { ok: false, message: g.message };
   if (!id.safeParse(ticketId).success) return { ok: false, message: "This ticket could not be found." };
   const detail = await getTicketDetail(ticketId);
   if (!detail?.invoice) return { ok: false, message: "This service has no tax invoice yet." };
@@ -196,12 +205,12 @@ export async function loadReminder(ticketId: string): Promise<Result<Reminder & 
     invoiceNo: inv.number,
     invoiceDate: inv.date,
     dueDate: inv.dueDate,
-    leftPaise: inv.leftPaise,
+    leftPaise: inv.leftPaise ?? 0,
     today: todayInIndia(),
   });
   return { ok: true, data: { ...r, invoiceId: inv.id } };
 }
 
 export async function logReminderAction(invoiceId: string, channel: "WHATSAPP" | "EMAIL") {
-  return run(() => logReminder(db, id.parse(invoiceId), channel === "EMAIL" ? "EMAIL" : "WHATSAPP"));
+  return run("orders.payments", () => logReminder(db, id.parse(invoiceId), channel === "EMAIL" ? "EMAIL" : "WHATSAPP"));
 }

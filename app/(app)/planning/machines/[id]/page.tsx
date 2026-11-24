@@ -1,3 +1,4 @@
+import { Can } from "@/components/auth/permissions-provider";
 import type { Metadata } from "next";
 import { ArrowLeft, ChevronLeft, ChevronRight, Pencil } from "lucide-react";
 import Link from "next/link";
@@ -61,13 +62,19 @@ async function Detail({ params, searchParams }: { params: Promise<{ id: string }
           </div>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Button asChild variant="outline">
-            <Link href={`/planning/machines/${m.id}/edit`}>
-              <Pencil aria-hidden /> Edit
-            </Link>
-          </Button>
-          <BlockTimeButton machineId={m.id} stockRecords={stockRecords} />
-          {m.status === "BREAKDOWN" ? <FixedButton machineId={m.id} /> : m.isActive ? <BreakdownButton machineId={m.id} machineName={m.name} /> : null}
+          <Can perm="planning.machines">
+            <Button asChild variant="outline">
+              <Link href={`/planning/machines/${m.id}/edit`}>
+                <Pencil aria-hidden /> Edit
+              </Link>
+            </Button>
+          </Can>
+          <Can perm="planning.blocks" dept={m.deptCode}>
+            <BlockTimeButton machineId={m.id} stockRecords={stockRecords} />
+          </Can>
+          <Can perm="planning.blocks" dept={m.deptCode}>
+            {m.status === "BREAKDOWN" ? <FixedButton machineId={m.id} /> : m.isActive ? <BreakdownButton machineId={m.id} machineName={m.name} /> : null}
+          </Can>
         </div>
       </header>
 
@@ -220,7 +227,10 @@ function Week({ d }: { d: MachineDetail }) {
               <ul className="flex flex-col gap-1.5">
                 {list.map((it) =>
                   "block" in it && it.block ? (
-                    <li key={it.key} className="flex items-start justify-between gap-1 rounded-lg border border-slate-300 bg-[repeating-linear-gradient(135deg,#f1f5f9_0_6px,#e2e8f0_6px_12px)] p-1.5 text-xs text-slate-800">
+                    <li
+                      key={it.key}
+                      className="flex items-start justify-between gap-1 rounded-lg border border-slate-300 bg-[repeating-linear-gradient(135deg,#f1f5f9_0_6px,#e2e8f0_6px_12px)] p-1.5 text-xs text-slate-800"
+                    >
                       <span>
                         <span className="block font-medium">{BLOCK_TYPES[it.block.type]}</span>
                         {it.text}
@@ -231,10 +241,24 @@ function Week({ d }: { d: MachineDetail }) {
                           </Link>
                         ) : null}
                       </span>
-                      {it.block.endAt > new Date() ? <DeleteBlockButton blockId={it.block.id} label={BLOCK_TYPES[it.block.type].toLowerCase()} /> : null}
+                      {it.block.endAt > new Date() ? (
+                        <Can perm="planning.blocks" dept={d.machine.deptCode}>
+                          <DeleteBlockButton blockId={it.block.id} label={BLOCK_TYPES[it.block.type].toLowerCase()} />
+                        </Can>
+                      ) : null}
                     </li>
                   ) : "booking" in it && it.booking ? (
-                    <li key={it.key} className={cn("rounded-lg border p-1.5 text-xs", it.booking.isTentative ? "border-amber-300 bg-[repeating-linear-gradient(135deg,#fffbeb_0_6px,#fef3c7_6px_12px)] text-amber-950" : it.booking.jobStatus === "RUNNING" ? "border-emerald-300 bg-emerald-50 text-emerald-950" : "border-blue-200 bg-blue-50 text-blue-950")}>
+                    <li
+                      key={it.key}
+                      className={cn(
+                        "rounded-lg border p-1.5 text-xs",
+                        it.booking.isTentative
+                          ? "border-amber-300 bg-[repeating-linear-gradient(135deg,#fffbeb_0_6px,#fef3c7_6px_12px)] text-amber-950"
+                          : it.booking.jobStatus === "RUNNING"
+                            ? "border-emerald-300 bg-emerald-50 text-emerald-950"
+                            : "border-blue-200 bg-blue-50 text-blue-950",
+                      )}
+                    >
                       <span className="block font-medium tabular-nums">{it.booking.ticketNo}</span>
                       <span className="block truncate">{it.booking.company}</span>
                       {it.text}

@@ -38,6 +38,7 @@ export function formatQty(v: Decimal.Value | null | undefined, unit?: string | n
 
 /** ₹4.5 -> "₹4.50"; ₹0.0525 -> "₹0.0525" (keeps small rates readable). */
 export function formatRate(v: Decimal.Value | null | undefined): string {
+  if (v == null) return "Hidden"; // stock costs hidden from this person
   const d = D(v);
   const places = d.decimalPlaces() > 2 ? Math.min(4, d.decimalPlaces()) : 2;
   return `₹${new Intl.NumberFormat("en-IN", { minimumFractionDigits: places, maximumFractionDigits: places }).format(d.toNumber())}`;

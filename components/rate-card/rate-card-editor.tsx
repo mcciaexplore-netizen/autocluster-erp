@@ -17,6 +17,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
+import { useCan } from "@/components/auth/permissions-provider";
 import { MaterialsButton, type PickItem } from "@/components/inventory/materials-dialog";
 import { TimeButton } from "@/components/planning/time-dialog";
 import { noTimeSet } from "@/lib/planning/time-needed";
@@ -30,6 +31,9 @@ import { cn } from "@/lib/utils";
 
 type Edit = { msme: string; oem: string };
 
+/** A service as shown: rates are null for people who may not see prices. */
+type ShownService = Omit<Service, "rateMsme" | "rateOem"> & { rateMsme: string | null; rateOem: string | null };
+
 export function RateCardEditor({
   departments,
   services,
@@ -37,12 +41,16 @@ export function RateCardEditor({
   items = [],
 }: {
   departments: Department[];
-  services: Service[];
+  /** Rates are null for people who may not see prices. */
+  services: ShownService[];
   /** Materials list per service (Inventory). */
   materials?: Record<number, { itemId: string; qtyPerUnit: string }[]>;
   items?: PickItem[];
 }) {
   const router = useRouter();
+  const can = useCan();
+  const canRates = can("ratecard.rates");
+  const canTime = can("ratecard.time_materials");
   const [editing, setEditing] = useState(false);
   const [edits, setEdits] = useState<Record<number, Edit>>({});
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -58,7 +66,7 @@ export function RateCardEditor({
   const [pending, startTransition] = useTransition();
 
   const startEditing = () => {
-    setEdits(Object.fromEntries(services.map((s) => [s.id, { msme: String(Number(s.rateMsme)), oem: String(Number(s.rateOem)) }])));
+    setEdits(Object.fromEntries(services.map((s) => [s.id, { msme: String(Number(s.rateMsme ?? 0)), oem: String(Number(s.rateOem ?? 0)) }])));
     setEditing(true);
   };
 
@@ -67,7 +75,7 @@ export function RateCardEditor({
       services
         .filter((s) => {
           const e = edits[s.id];
-          return e && (toPaise(e.msme || 0) !== toPaise(s.rateMsme) || toPaise(e.oem || 0) !== toPaise(s.rateOem));
+          return e && (toPaise(e.msme || 0) !== toPaise(s.rateMsme ?? 0) || toPaise(e.oem || 0) !== toPaise(s.rateOem ?? 0));
         })
         .map((s) => ({ service: s, msme: Number(edits[s.id].msme), oem: Number(edits[s.id].oem) })),
     [edits, services],
@@ -86,7 +94,7 @@ export function RateCardEditor({
       router.refresh();
     });
 
-  const toggleNoneNeeded = (s: Service, on: boolean) =>
+  const toggleNoneNeeded = (s: ShownService, on: boolean) =>
     startTransition(async () => {
       const r = await setNoMaterialsNeeded(s.id, on);
       if (!r.ok) return void toast.error(r.message);
@@ -94,7 +102,7 @@ export function RateCardEditor({
       router.refresh();
     });
 
-  const toggleActive = (s: Service, on: boolean) =>
+  const toggleActive = (s: ShownService, on: boolean) =>
     startTransition(async () => {
       await setServiceActive(s.id, on);
       toast.success(on ? `${s.name} is offered again` : `${s.name} is hidden from new quotations`);
@@ -119,11 +127,11 @@ export function RateCardEditor({
               <Check aria-hidden /> Save rates{changes.length ? ` (${changes.length})` : ""}
             </Button>
           </div>
-        ) : (
+        ) : canRates ? (
           <Button size="lg" onClick={startEditing} className="shrink-0">
             <Pencil aria-hidden /> Edit rates
           </Button>
-        )}
+        ) : null}
       </div>
 
       <div className="mb-4 flex flex-wrap items-center gap-2">
@@ -195,9 +203,9 @@ export function RateCardEditor({
                           {noneNeeded(s.id) ? (
                             <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-800">Kept after materials: 100% (no materials)</span>
                           ) : (
-                            <MaterialsButton service={{ id: s.id, name: s.name, unitLabel: s.unitLabel }} current={materials[s.id] ?? []} items={items} />
+                            <MaterialsButton service={{ id: s.id, name: s.name, unitLabel: s.unitLabel }} current={materials[s.id] ?? []} items={items} readOnly={!canTime} />
                           )}
-                          {!(materials[s.id]?.length) ? (
+                          {!(materials[s.id]?.length) && canTime ? (
                             <label className="inline-flex min-h-8 items-center gap-1.5 text-xs font-medium text-muted-foreground">
                               <Switch checked={noneNeeded(s.id)} onCheckedChange={(on) => toggleNoneNeeded(s, on)} disabled={pending} className="scale-75" />
                               No materials needed
@@ -206,7 +214,7 @@ export function RateCardEditor({
                         </span>
                         <span className="flex flex-wrap items-center gap-x-2">
                           {noTimeSet(s) ? <span className="rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-900">No time set</span> : null}
-                          <TimeButton service={s} defaultOpen={openTimeFor === s.id} />
+                          <TimeButton service={s} defaultOpen={openTimeFor === s.id && canTime} readOnly={!canTime} />
                         </span>
                       </span>
                       <span className="col-span-2 text-sm text-muted-foreground md:col-span-1">{UNIT_LABELS[s.unitType]}</span>
@@ -229,7 +237,7 @@ export function RateCardEditor({
                               />
                             </div>
                           ) : (
-                            <span className="font-semibold tabular-nums">{formatINRShort(toPaise(k === "msme" ? s.rateMsme : s.rateOem))}</span>
+                            <span className="font-semibold tabular-nums">{(k === "msme" ? s.rateMsme : s.rateOem) == null ? <span className="font-normal text-muted-foreground">Hidden</span> : formatINRShort(toPaise((k === "msme" ? s.rateMsme : s.rateOem) ?? 0))}</span>
                           )}
                         </div>
                       ))}
@@ -238,7 +246,7 @@ export function RateCardEditor({
                         {formatDate(s.effectiveFrom)}
                       </span>
                       <label className="flex items-center gap-2 text-sm">
-                        <Switch checked={s.isActive} onCheckedChange={(on) => toggleActive(s, on)} disabled={pending} aria-label={`Offer ${s.name}`} />
+                        <Switch checked={s.isActive} onCheckedChange={(on) => toggleActive(s, on)} disabled={pending || !canRates} aria-label={`Offer ${s.name}`} />
                         <span className="md:sr-only">{s.isActive ? "Offered" : "Hidden"}</span>
                       </label>
                     </li>
@@ -260,8 +268,8 @@ export function RateCardEditor({
                 <ul className="max-h-60 space-y-1.5 overflow-y-auto text-sm text-foreground">
                   {changes.map(({ service: s, msme, oem }) => (
                     <li key={s.id}>
-                      <strong>{s.name}</strong>: MSME {formatINRShort(toPaise(s.rateMsme))} → {formatINRShort(toPaise(msme))}, OEM{" "}
-                      {formatINRShort(toPaise(s.rateOem))} → {formatINRShort(toPaise(oem))}
+                      <strong>{s.name}</strong>: MSME {formatINRShort(toPaise(s.rateMsme ?? 0))} → {formatINRShort(toPaise(msme))}, OEM{" "}
+                      {formatINRShort(toPaise(s.rateOem ?? 0))} → {formatINRShort(toPaise(oem))}
                     </li>
                   ))}
                 </ul>

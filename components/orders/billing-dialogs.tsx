@@ -37,8 +37,8 @@ function useBillingSelection(ticket: BoardTicket, tickets: BoardTicket[]) {
     selected,
     toggle,
     chosen,
-    beforeGst: chosen.reduce((s, t) => s + t.taxablePaise, 0),
-    withGst: chosen.reduce((s, t) => s + t.totalPaise, 0),
+    beforeGst: chosen.reduce((s, t) => s + (t.taxablePaise ?? 0), 0),
+    withGst: chosen.reduce((s, t) => s + (t.totalPaise ?? 0), 0),
   };
 }
 

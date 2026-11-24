@@ -9,15 +9,25 @@ import { describe, expect, it } from "vitest";
  */
 const FILES = ["lib/data.ts", "lib/crm-data.ts", "lib/inventory-data.ts", "lib/inventory-insights.ts", "lib/orders-data.ts", "lib/planning-data.ts", "lib/planning-insights.ts", "lib/profile-data.ts"];
 
+/** Each exported async loader with the first two statements of its body. */
+function loaders(file: string) {
+  const src = fs.readFileSync(path.resolve(__dirname, "..", file), "utf8");
+  return [...src.matchAll(/export async function (\w+)\(/g)].map((m) => {
+    // The body starts at the first "{" that ends a line after the signature.
+    const open = src.indexOf("{\n", src.indexOf(")", m.index!));
+    const lines = src.slice(open + 2).split("\n").map((l) => l.trim()).filter(Boolean);
+    return { name: m[1], first: lines[0] ?? "", second: lines[1] ?? "" };
+  });
+}
+
 describe("page data loaders", () => {
   it("every exported async loader starts with `await connection()`", () => {
-    const missing: string[] = [];
-    for (const f of FILES) {
-      const src = fs.readFileSync(path.resolve(__dirname, "..", f), "utf8");
-      for (const m of src.matchAll(/export async function (\w+)\([^)]*\)[^{]*\{\n\s*([^\n]*)/g)) {
-        if (!m[2].startsWith("await connection()")) missing.push(`${f}: ${m[1]}`);
-      }
-    }
+    const missing = FILES.flatMap((f) => loaders(f).filter((l) => l.first !== "await connection();").map((l) => `${f}: ${l.name}`));
+    expect(missing).toEqual([]);
+  });
+
+  it("every exported async loader checks who is asking (need(...)) right after that", () => {
+    const missing = FILES.flatMap((f) => loaders(f).filter((l) => !/^(const \w+ = )?await need\(/.test(l.second)).map((l) => `${f}: ${l.name}`));
     expect(missing).toEqual([]);
   });
 });

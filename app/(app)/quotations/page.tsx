@@ -1,3 +1,4 @@
+import { Can } from "@/components/auth/permissions-provider";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Suspense } from "react";
@@ -22,11 +23,13 @@ export default function QuotationsPage({ searchParams }: PageProps<"/quotations"
         title="Quotations"
         description="Every quotation you have made."
         actions={
-          <Button asChild size="lg">
-            <Link href="/quotations/new">
-              <Plus aria-hidden /> Create quotation
-            </Link>
-          </Button>
+          <Can perm="quotes.edit">
+            <Button asChild size="lg">
+              <Link href="/quotations/new">
+                <Plus aria-hidden /> Create quotation
+              </Link>
+            </Button>
+          </Can>
         }
       />
       <div className="mb-6 flex flex-col gap-4">
@@ -60,20 +63,24 @@ async function Results({ searchParams }: { searchParams: PageProps<"/quotations"
         title="No quotations yet"
         description="Choose a customer, add services, and the prices are worked out for you."
         action={
-          <Button asChild size="lg">
-            <Link href="/quotations/new">
-              <Plus aria-hidden /> Create your first quotation
-            </Link>
-          </Button>
+          <Can perm="quotes.edit">
+            <Button asChild size="lg">
+              <Link href="/quotations/new">
+                <Plus aria-hidden /> Create your first quotation
+              </Link>
+            </Button>
+          </Can>
         }
       />
     );
   }
-  const totalPaise = rows.reduce((s, r) => s + toPaise(r.grandTotal), 0);
+  // null when prices are hidden from this person.
+  const totalPaise = rows.some((r) => r.grandTotal == null) ? null : rows.reduce((s, r) => s + toPaise(r.grandTotal ?? 0), 0);
   return (
     <>
       <p className="mb-3 text-sm text-muted-foreground" aria-live="polite">
-        Showing {rows.length} {rows.length === 1 ? "quotation" : "quotations"} · total {formatINR(totalPaise)}
+        Showing {rows.length} {rows.length === 1 ? "quotation" : "quotations"}
+        {totalPaise != null ? ` · total ${formatINR(totalPaise)}` : ""}
       </p>
       <QuotationList rows={rows} />
     </>

@@ -3,6 +3,7 @@
 import { Kanban, List, Plus, Search, SlidersHorizontal, X } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { Can } from "@/components/auth/permissions-provider";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -44,9 +45,11 @@ export function CrmToolbar({
   return (
     <div className="mb-5 flex flex-col gap-3">
       <div className="flex flex-wrap items-center gap-2">
-        <Button onClick={onNew}>
-          <Plus aria-hidden /> New enquiry
-        </Button>
+        <Can perm="crm.edit">
+          <Button onClick={onNew}>
+            <Plus aria-hidden /> New enquiry
+          </Button>
+        </Can>
         <div role="group" aria-label="View" className="ml-auto inline-flex rounded-xl border bg-card p-1">
           <Link
             href={`/crm${query}`}

@@ -1,13 +1,14 @@
 /** "Print label": an A4 sheet of labels with a QR code that opens the item page. ?item=&batch=&count=&outline=1 */
 import { renderToBuffer } from "@react-pdf/renderer";
 import QRCode from "qrcode";
-import { isSignedIn } from "@/lib/auth-guard";
+import { routeAllow } from "@/lib/auth/guard";
 import { getInvItem } from "@/lib/inventory-data";
 import { UUID_RE } from "@/lib/inventory/uuid";
 import { LABELS_PER_SHEET, LabelsPdf } from "@/lib/pdf/labels-pdf";
 
 export async function GET(request: Request) {
-  if (!(await isSignedIn())) return new Response("Please sign in first.", { status: 401 });
+  const gate = await routeAllow("inventory.view");
+  if (gate.denied) return gate.denied;
   const url = new URL(request.url);
   const itemId = url.searchParams.get("item") ?? "";
   const batchId = url.searchParams.get("batch");

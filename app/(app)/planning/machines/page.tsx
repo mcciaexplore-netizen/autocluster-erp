@@ -1,3 +1,4 @@
+import { Can } from "@/components/auth/permissions-provider";
 import type { Metadata } from "next";
 import { Cog, Plus } from "lucide-react";
 import Link from "next/link";
@@ -36,12 +37,16 @@ async function List() {
         description="Every machine, what it's doing now, and how busy it is this week."
         actions={
           <div className="flex flex-wrap gap-2">
-            <BlockTimeButton machines={picks} stockRecords={stockRecords} />
-            <Button asChild>
-              <Link href="/planning/machines/new">
-                <Plus aria-hidden /> Add machine
-              </Link>
-            </Button>
+            <Can perm="planning.blocks">
+              <BlockTimeButton machines={picks} stockRecords={stockRecords} />
+            </Can>
+            <Can perm="planning.machines">
+              <Button asChild>
+                <Link href="/planning/machines/new">
+                  <Plus aria-hidden /> Add machine
+                </Link>
+              </Button>
+            </Can>
           </div>
         }
       />
@@ -90,7 +95,10 @@ async function List() {
                           <span className="text-sm text-muted-foreground">{m.next ? `Next: ${formatWhen(m.next.startAt)}, ${m.next.ticketNo}` : "Nothing booked next"}</span>
                           <span className="mt-auto flex items-center gap-3 pt-1">
                             <span className="h-2 flex-1 overflow-hidden rounded-full bg-secondary" aria-hidden>
-                              <span className={cn("block h-full rounded-full", pct != null && pct >= 90 ? "bg-red-500" : pct != null && pct >= 70 ? "bg-amber-500" : "bg-primary")} style={{ width: `${Math.min(100, pct ?? 0)}%` }} />
+                              <span
+                                className={cn("block h-full rounded-full", pct != null && pct >= 90 ? "bg-red-500" : pct != null && pct >= 70 ? "bg-amber-500" : "bg-primary")}
+                                style={{ width: `${Math.min(100, pct ?? 0)}%` }}
+                              />
                             </span>
                             <span className="text-sm whitespace-nowrap text-muted-foreground">Machine use this week: {pctText(pct)}</span>
                           </span>

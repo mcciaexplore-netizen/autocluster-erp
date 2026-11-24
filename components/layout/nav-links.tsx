@@ -20,17 +20,18 @@ const BOTTOM = {
   off: "text-muted-foreground",
 };
 
-export function NavLinks({ variant }: { variant: "side" | "bottom" }) {
+export function NavLinks({ variant, allowed }: { variant: "side" | "bottom"; allowed: string[] }) {
   const pathname = usePathname();
-  return <NavLinkList variant={variant} pathname={pathname} />;
+  return <NavLinkList variant={variant} pathname={pathname} allowed={allowed} />;
 }
 
 /** Also used (with no active item) as the instant fallback while the page loads. */
-export function NavLinkList({ variant, pathname }: { variant: "side" | "bottom"; pathname: string | null }) {
+export function NavLinkList({ variant, pathname, allowed }: { variant: "side" | "bottom"; pathname: string | null; allowed: string[] }) {
+  const items = NAV.filter((n) => allowed.includes(n.href));
   if (variant === "side") {
     return (
       <>
-        {NAV.map(({ href, label, icon: Icon }) => {
+        {items.map(({ href, label, icon: Icon }) => {
           const active = pathname != null && isActive(pathname, href);
           return (
             <Link key={href} href={href} aria-current={active ? "page" : undefined} className={cn(SIDE.base, active ? SIDE.on : SIDE.off)}>
@@ -42,11 +43,14 @@ export function NavLinkList({ variant, pathname }: { variant: "side" | "bottom";
       </>
     );
   }
-  const more = NAV.filter((n) => !n.bar);
+  // Phone bar: up to 5 buttons. With more areas, the preferred four plus "More".
+  const fits = items.length <= 5;
+  const bar = fits ? items : [...items.filter((n) => n.bar), ...items.filter((n) => !n.bar)].slice(0, 4);
+  const more = fits ? [] : items.filter((n) => !bar.includes(n));
   const inMore = pathname != null && more.some((n) => isActive(pathname, n.href));
   return (
     <>
-      {NAV.filter((n) => n.bar).map(({ href, label, short, icon: Icon }) => {
+      {bar.map(({ href, label, short, icon: Icon }) => {
         const active = pathname != null && isActive(pathname, href);
         return (
           <Link key={href} href={href} aria-current={active ? "page" : undefined} className={cn(BOTTOM.base, active ? BOTTOM.on : BOTTOM.off)}>
@@ -57,7 +61,7 @@ export function NavLinkList({ variant, pathname }: { variant: "side" | "bottom";
           </Link>
         );
       })}
-      <MoreMenu pathname={pathname} active={inMore} items={more} />
+      {more.length ? <MoreMenu pathname={pathname} active={inMore} items={more} /> : null}
     </>
   );
 }

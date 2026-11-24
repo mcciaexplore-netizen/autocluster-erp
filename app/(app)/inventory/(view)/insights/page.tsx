@@ -54,7 +54,7 @@ async function Body({ searchParams }: { searchParams: Sp }) {
           why={`What each service keeps after paying for materials (revenue before GST minus material cost), for work done, lowest first. Red: materials take more than ${d.shareAlertPct}% of the revenue, so the rate may be too low.`}
           excel={excel("services")}
         >
-          <ServicesTable d={d} />
+          {d.services.hidden ? <Empty>Revenue is a sale price, so this is hidden for your role.</Empty> : <ServicesTable d={d} />}
         </Section>
 
         <Section title="Biggest-spend items" why="The 10 items that cost the most in this period. The running % shows how much of all material spend the top items make up, so you know where better rates matter most." excel={excel("items")}>

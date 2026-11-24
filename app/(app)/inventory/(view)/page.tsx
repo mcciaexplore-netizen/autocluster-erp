@@ -1,3 +1,4 @@
+import { Can } from "@/components/auth/permissions-provider";
 import type { Metadata } from "next";
 import { AlertTriangle, ArrowRight, CalendarClock, IndianRupee, PackageX, Plus, ShoppingCart, Upload } from "lucide-react";
 import Link from "next/link";
@@ -26,16 +27,20 @@ export default function InventoryOverview() {
         description="Materials and consumables: what's in stock, what each job uses, and what to reorder."
         actions={
           <div className="flex flex-wrap gap-2">
-            <Button asChild variant="outline">
-              <Link href="/inventory/items/import">
-                <Upload aria-hidden /> Import items
-              </Link>
-            </Button>
-            <Button asChild variant="outline">
-              <Link href="/inventory/items/new">
-                <Plus aria-hidden /> Add item
-              </Link>
-            </Button>
+            <Can perm="inventory.items">
+              <Button asChild variant="outline">
+                <Link href="/inventory/items/import">
+                  <Upload aria-hidden /> Import items
+                </Link>
+              </Button>
+            </Can>
+            <Can perm="inventory.items">
+              <Button asChild variant="outline">
+                <Link href="/inventory/items/new">
+                  <Plus aria-hidden /> Add item
+                </Link>
+              </Button>
+            </Can>
           </div>
         }
       />
@@ -53,7 +58,13 @@ async function Overview() {
     { label: "Stock value", value: formatINRShort(o.cards.valuePaise), href: "/inventory/items", icon: IndianRupee, tone: "" },
     { label: "Items to reorder", value: o.cards.toReorder.toLocaleString("en-IN"), href: "/inventory/reorder", icon: ShoppingCart, tone: o.cards.toReorder ? "text-amber-700" : "" },
     { label: "Out of stock", value: o.cards.outOfStock.toLocaleString("en-IN"), href: "/inventory/items?status=out", icon: PackageX, tone: o.cards.outOfStock ? "text-destructive" : "" },
-    { label: `Expired or expiring (${o.warnDays} days)`, value: o.cards.expiring.toLocaleString("en-IN"), href: "/inventory/items?status=expiring", icon: CalendarClock, tone: o.cards.expiring ? "text-purple-700" : "" },
+    {
+      label: `Expired or expiring (${o.warnDays} days)`,
+      value: o.cards.expiring.toLocaleString("en-IN"),
+      href: "/inventory/items?status=expiring",
+      icon: CalendarClock,
+      tone: o.cards.expiring ? "text-purple-700" : "",
+    },
   ];
   return (
     <div className="flex flex-col gap-8">

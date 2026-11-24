@@ -16,6 +16,7 @@ import {
   XCircle,
 } from "lucide-react";
 import { DeptChip } from "@/components/common/badges";
+import { useCan } from "@/components/auth/permissions-provider";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -48,7 +49,9 @@ export function TicketCard({
   draggable?: boolean;
   overlay?: boolean;
 }) {
-  const canDrag = draggable && t.stage !== "PAID" && t.stage !== "CANCELLED";
+  const can = useCan();
+  const may = { po: can("orders.po"), billing: can("orders.billing"), pay: can("orders.payments"), cancel: can("orders.cancel") };
+  const canDrag = draggable && t.stage !== "PAID" && t.stage !== "CANCELLED" && (may.po || may.billing || may.pay);
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({ id: t.id, data: { ticket: t }, disabled: !canDrag });
   const today = todayInIndia();
   const days = daysInStep(t.stageChangedAt);
@@ -91,7 +94,7 @@ export function TicketCard({
             <DropdownMenuItem className="h-10" onSelect={() => onAction("view", t)}>
               <Eye /> View
             </DropdownMenuItem>
-            {moveTargets.length ? (
+            {moveTargets.length && (may.po || may.billing || may.pay) ? (
               <DropdownMenuSub>
                 <DropdownMenuSubTrigger className="h-10">
                   <ArrowLeftRight /> Move to…
@@ -105,12 +108,12 @@ export function TicketCard({
                 </DropdownMenuSubContent>
               </DropdownMenuSub>
             ) : null}
-            {idx > 0 && t.stage !== "PAID" ? (
+            {idx > 0 && t.stage !== "PAID" && may.cancel ? (
               <DropdownMenuItem className="h-10" onSelect={() => onAction("moveBack", t)}>
                 <Undo2 /> Move back
               </DropdownMenuItem>
             ) : null}
-            {t.stage === "WAITING_PO" || t.stage === "BILLING" ? (
+            {(t.stage === "WAITING_PO" || t.stage === "BILLING") && may.cancel ? (
               <>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem className="h-10 text-destructive focus:text-destructive" onSelect={() => onAction("cancel", t)}>
@@ -166,32 +169,38 @@ export function TicketCard({
       {/* One main button for the column */}
       <div className="mt-3 flex flex-wrap gap-2" onPointerDown={(e) => e.stopPropagation()}>
         {t.stage === "WAITING_PO" ? (
-          <Button size="sm" className="w-full" onClick={() => onAction("addPo", t)}>
+          <ActionButton allowed={may.po} why="Only Accounts can add purchase orders" onClick={() => onAction("addPo", t)}>
             <FileUp aria-hidden /> Add PO
-          </Button>
+          </ActionButton>
         ) : null}
         {t.stage === "BILLING" ? (
           <>
-            <Button size="sm" className="w-full" onClick={() => onAction("invoice", t)}>
+            <ActionButton allowed={may.billing} why="Only Accounts can upload tax invoices" onClick={() => onAction("invoice", t)}>
               <Receipt aria-hidden /> Upload tax invoice
-            </Button>
-            <Button size="sm" variant="outline" className="w-full" onClick={() => onAction("exportBilling", t)}>
-              Export to Tally
-              <span className="rounded-full bg-highlight/20 px-1.5 py-0.5 text-[10px] font-semibold text-highlight-foreground">Coming soon</span>
-            </Button>
+            </ActionButton>
+            {may.billing ? (
+              <Button size="sm" variant="outline" className="w-full" onClick={() => onAction("exportBilling", t)}>
+                Export to Tally
+                <span className="rounded-full bg-highlight/20 px-1.5 py-0.5 text-[10px] font-semibold text-highlight-foreground">Coming soon</span>
+              </Button>
+            ) : null}
           </>
         ) : null}
         {t.stage === "PAYMENT" ? (
           <>
-            <Button size="sm" className="w-full" onClick={() => onAction("payment", t)}>
+            <ActionButton allowed={may.pay} why="Only Accounts can record payments" onClick={() => onAction("payment", t)}>
               <IndianRupee aria-hidden /> Record payment
-            </Button>
-            <Button size="sm" variant="outline" className="flex-1" onClick={() => onAction("reminder", t)}>
-              <BellRing aria-hidden /> Reminder
-            </Button>
-            <Button size="sm" variant="outline" className="flex-1" onClick={() => onAction("note", t)}>
-              <NotebookPen aria-hidden /> Note
-            </Button>
+            </ActionButton>
+            {may.pay ? (
+              <>
+                <Button size="sm" variant="outline" className="flex-1" onClick={() => onAction("reminder", t)}>
+                  <BellRing aria-hidden /> Reminder
+                </Button>
+                <Button size="sm" variant="outline" className="flex-1" onClick={() => onAction("note", t)}>
+                  <NotebookPen aria-hidden /> Note
+                </Button>
+              </>
+            ) : null}
           </>
         ) : null}
         {t.stage === "PAID" || t.stage === "CANCELLED" ? (
@@ -201,5 +210,22 @@ export function TicketCard({
         ) : null}
       </div>
     </article>
+  );
+}
+
+/** The card's main button. Someone who can't use it sees it greyed out, with the reason on hover. */
+function ActionButton({ allowed, why, onClick, children }: { allowed: boolean; why: string; onClick: () => void; children: React.ReactNode }) {
+  if (allowed)
+    return (
+      <Button size="sm" className="w-full" onClick={onClick}>
+        {children}
+      </Button>
+    );
+  return (
+    <span className="w-full" title={why}>
+      <Button size="sm" variant="outline" className="w-full" disabled aria-label={why}>
+        {children}
+      </Button>
+    </span>
   );
 }

@@ -1,3 +1,4 @@
+import { Can } from "@/components/auth/permissions-provider";
 import type { Metadata } from "next";
 import { ArrowLeft, Mail, MessageCircle, Package, Pencil, Phone } from "lucide-react";
 import Link from "next/link";
@@ -68,11 +69,13 @@ async function Detail({ params }: { params: Promise<{ id: string }> }) {
               </a>
             </Button>
           ) : null}
-          <Button asChild variant="outline">
-            <Link href={`/inventory/suppliers/${s.id}/edit`}>
-              <Pencil aria-hidden /> Edit
-            </Link>
-          </Button>
+          <Can perm="inventory.suppliers">
+            <Button asChild variant="outline">
+              <Link href={`/inventory/suppliers/${s.id}/edit`}>
+                <Pencil aria-hidden /> Edit
+              </Link>
+            </Button>
+          </Can>
         </div>
       </header>
 

@@ -1,11 +1,12 @@
 /** "Download as Excel" in the CRM list view: the enquiries matching the current filters and sort. */
-import { isSignedIn } from "@/lib/auth-guard";
+import { routeAllow } from "@/lib/auth/guard";
 import { getBoardLeads, getCrmStages } from "@/lib/crm-data";
 import { exportLeadsWorkbook } from "@/lib/crm/excel";
 import { filtersFromParams, matchesFilters, SORTS, sortLeads, todayInIndia, type SortKey } from "@/lib/crm/leads";
 
 export async function GET(request: Request) {
-  if (!(await isSignedIn())) return Response.json({ error: "Please sign in again." }, { status: 401 });
+  const gate = await routeAllow("crm.view");
+  if (gate.denied) return gate.denied;
   const params = new URL(request.url).searchParams;
   const filters = filtersFromParams(params);
   const sortParam = params.get("sort");
