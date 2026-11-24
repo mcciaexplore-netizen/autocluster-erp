@@ -219,7 +219,7 @@ function Body({ data, reload, env, openMove }: { data: JobPanelData; reload: () 
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value={NONE}>Not chosen</SelectItem>
-                {options.team.map((t) => (
+                {options.team.filter((t) => t.id === form.operator || !t.depts || !d.ticket.deptCode || t.depts.includes(d.ticket.deptCode)).map((t) => (
                   <SelectItem key={t.id} value={t.id}>
                     {t.name}
                   </SelectItem>

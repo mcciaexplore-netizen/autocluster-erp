@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { AreaGate } from "@/components/auth/area-gate";
 import { settingsAccess } from "@/lib/admin-data";
 import { Suspense } from "react";
 import { FormSkeleton } from "@/components/common/form-skeleton";
@@ -19,6 +20,7 @@ export const metadata: Metadata = { title: "Settings" };
 
 export default function SettingsPage() {
   return (
+    <AreaGate perm="settings.edit" area="the general settings">
     <div className="mx-auto max-w-4xl">
       <PageHeader title="Settings" description="Organisation details, discounts, tax, quotations, billing, CRM, inventory and planning." />
       <Suspense fallback={<FormSkeleton />}>
@@ -37,6 +39,7 @@ export default function SettingsPage() {
         <TallySection />
       </div>
     </div>
+    </AreaGate>
   );
 }
 

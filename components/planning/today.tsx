@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { useState, useSyncExternalStore, useTransition } from "react";
 import { toast } from "sonner";
 import { useConfirm } from "@/components/common/confirm";
-import { useCan } from "@/components/auth/permissions-provider";
+import { useCan, useMe } from "@/components/auth/permissions-provider";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -63,8 +63,11 @@ type DoneFlow = { card: TodayCard; step: "form" | "materials" | "ready" };
 export function TodayBoard({ data }: { data: TodayData }) {
   const can = useCan();
   const router = useRouter();
-  const who = useSyncExternalStore(subscribe, read, () => "");
-  const me = data.team.find((t) => t.id === who) ? who : "";
+  const self = useMe();
+  const stored = useSyncExternalStore(subscribe, read, () => "");
+  // Everyone works as themselves. Managers and Admins can look at someone else's day (or everyone's).
+  const mineId = self.teamMemberId && data.team.some((t) => t.id === self.teamMemberId) ? self.teamMemberId : "";
+  const me = !self.mayRecordForOthers ? (self.teamMemberId ?? "") : stored === "all" ? "" : data.team.some((t) => t.id === stored) ? stored : mineId;
   const [dialog, confirm] = useConfirm();
   const [pending, start] = useTransition();
   const [pauseFor, setPauseFor] = useState<TodayCard | null>(null);
@@ -175,11 +178,16 @@ export function TodayBoard({ data }: { data: TodayData }) {
 
   return (
     <div className="mx-auto flex max-w-2xl flex-col gap-6">
+      {!self.mayRecordForOthers ? (
+        <p className="flex items-center gap-2 rounded-2xl border bg-card p-4 font-semibold">
+          <UserRound className="size-5 text-primary" aria-hidden /> Your jobs, {self.name ?? "you"}
+        </p>
+      ) : (
       <div className="flex flex-col gap-2 rounded-2xl border bg-card p-4">
         <label htmlFor="who" className="flex items-center gap-2 font-semibold">
           <UserRound className="size-5 text-primary" aria-hidden /> Who&apos;s working?
         </label>
-        <Select value={me || "all"} onValueChange={(v) => write(v === "all" ? "" : v)}>
+        <Select value={me || "all"} onValueChange={(v) => write(v)}>
           <SelectTrigger id="who" className="h-12 w-full text-base">
             <SelectValue />
           </SelectTrigger>
@@ -192,8 +200,9 @@ export function TodayBoard({ data }: { data: TodayData }) {
             ))}
           </SelectContent>
         </Select>
-        <p className="text-xs text-muted-foreground">Remembered on this phone.</p>
+        <p className="text-xs text-muted-foreground">Remembered on this phone. Work you start, pause or finish here is recorded for this person, and the history says you recorded it.</p>
       </div>
+      )}
 
       <Section title="Running" list={running} />
       <Section title="Today" list={todays} empty={running.length ? undefined : "Nothing booked for you today."} />

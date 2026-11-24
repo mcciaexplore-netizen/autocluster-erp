@@ -1,10 +1,11 @@
 "use client";
 
 import { Check, ChevronsUpDown, Plus, Search } from "lucide-react";
-import { useState, useSyncExternalStore } from "react";
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { useMe } from "@/components/auth/permissions-provider";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import type { StockFormItem, TicketForUse } from "@/lib/inventory-data";
 import { formatQty } from "@/lib/inventory/numbers";
@@ -209,48 +210,39 @@ export function SupplierPicker({
   );
 }
 
-const DONE_BY_KEY = "acdri-inv-done-by";
-const subscribe = (cb: () => void) => {
-  window.addEventListener("storage", cb);
-  return () => window.removeEventListener("storage", cb);
-};
-function readDoneBy() {
-  try {
-    return localStorage.getItem(DONE_BY_KEY) ?? "";
-  } catch {
-    return "";
-  }
-}
-
-/** "Done by": the team list; remembers the last choice on this device. */
+/** "Done by": the signed-in person. Managers and Admins can change it to record work for someone else. */
 export function useDoneBy(team: { id: string; name: string }[]) {
-  const remembered = useSyncExternalStore(subscribe, readDoneBy, () => "");
+  const me = useMe();
   const [picked, setPicked] = useState<string | null>(null);
-  const value = picked ?? (team.some((t) => t.id === remembered) ? remembered : "");
-  const set = (v: string) => {
-    setPicked(v);
-    try {
-      localStorage.setItem(DONE_BY_KEY, v);
-    } catch {}
-  };
-  return [value, set] as const;
+  const mine = me.teamMemberId ?? "";
+  const value = me.mayRecordForOthers && picked !== null && (picked === "" || team.some((t) => t.id === picked)) ? picked : mine;
+  return [value, (v: string) => setPicked(v)] as const;
 }
 
 export function DoneBySelect({ team, value, onChange, id }: { team: { id: string; name: string }[]; value: string; onChange: (v: string) => void; id?: string }) {
-  const NONE = "none";
+  const me = useMe();
+  if (!me.mayRecordForOthers) {
+    // Everyone else is always recorded as themselves.
+    return (
+      <p id={id} className="flex h-10 items-center rounded-lg border bg-secondary/50 px-3 text-sm">
+        {me.name ?? "You"}
+      </p>
+    );
+  }
+  const list = me.teamMemberId && !team.some((t) => t.id === me.teamMemberId) ? [{ id: me.teamMemberId, name: me.name ?? "You" }, ...team] : team;
   return (
-    <Select value={value || NONE} onValueChange={(v) => onChange(v === NONE ? "" : v)}>
+    <Select value={value || mine(me)} onValueChange={onChange}>
       <SelectTrigger id={id} className="w-full" aria-label="Done by">
         <SelectValue />
       </SelectTrigger>
       <SelectContent>
-        <SelectItem value={NONE}>Not chosen</SelectItem>
-        {team.map((t) => (
+        {list.map((t) => (
           <SelectItem key={t.id} value={t.id}>
-            {t.name}
+            {t.id === me.teamMemberId ? `${t.name} (me)` : t.name}
           </SelectItem>
         ))}
       </SelectContent>
     </Select>
   );
 }
+const mine = (me: { teamMemberId: string | null }) => me.teamMemberId ?? "";

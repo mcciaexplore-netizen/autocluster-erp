@@ -1,5 +1,7 @@
 "use server";
 
+import { doneByFor, logOnBehalf } from "@/lib/auth/done-by";
+
 import { can } from "@/lib/auth/can";
 import { signedInUser } from "@/lib/auth/guard";
 import { assertInScope, assertItemsInScope, ticketDept } from "@/lib/auth/scope";
@@ -62,7 +64,10 @@ export async function receiveStockAction(input: ReceiveFormInput) {
   return run("inventory.receive", async () => {
     const v = receiveSchema.parse(input);
     await assertItemsInScope("inventory.receive", v.lines.map((l) => l.itemId));
-    return receiveStock(db, v);
+    const who = await doneByFor(v.doneBy);
+    const r = await receiveStock(db, { ...v, doneBy: who.id });
+    await logOnBehalf(who, "Inventory", "received stock");
+    return r;
   });
 }
 
@@ -87,7 +92,10 @@ export async function issueStockAction(input: UseFormInput) {
       await assertInScope("inventory.use_own_jobs", [await ticketDept(v.ticketId)]);
       await assertItemsInScope("inventory.use_own_jobs", v.lines.map((l) => l.itemId));
     }
-    return issueStock(db, v);
+    const who = await doneByFor(v.doneBy);
+    const r = await issueStock(db, { ...v, doneBy: who.id });
+    await logOnBehalf(who, "Inventory", "used stock");
+    return r;
   });
 }
 
@@ -117,10 +125,18 @@ export async function adjustStockAction(input: AdjustFormInput) {
   return run("inventory.adjust", async () => {
     const v = adjustSchema.parse(input);
     await assertItemsInScope("inventory.adjust", v.lines.map((l) => l.itemId));
-    return adjustStock(db, v);
+    const who = await doneByFor(v.doneBy);
+    const r = await adjustStock(db, { ...v, doneBy: who.id });
+    await logOnBehalf(who, "Inventory", "adjusted stock");
+    return r;
   });
 }
 
 export async function reverseDocumentAction(docId: string, reason: string, doneBy: string | null) {
-  return run("inventory.adjust", () => reverseDocument(db, id.parse(docId), z.string().max(500).parse(reason), { doneBy: doneBy ? id.parse(doneBy) : null }));
+  return run("inventory.adjust", async () => {
+    const who = await doneByFor(doneBy ? id.parse(doneBy) : null);
+    const r = await reverseDocument(db, id.parse(docId), z.string().max(500).parse(reason), { doneBy: who.id });
+    await logOnBehalf(who, "Inventory", "reversed a stock record", { type: "inv_document", id: docId });
+    return r;
+  });
 }

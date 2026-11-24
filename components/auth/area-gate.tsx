@@ -5,6 +5,7 @@ import { canAny } from "@/lib/auth/can";
 import { signedInUser } from "@/lib/auth/guard";
 import type { Permission } from "@/lib/auth/permissions";
 import { NoAccess } from "./no-access";
+import { mayRecordForOthers } from "@/lib/auth/done-by-rule";
 import { PermissionsProvider } from "./permissions-provider";
 
 async function Gate({ perms, area, children }: { perms: Permission[]; area: string; children: React.ReactNode }) {
@@ -12,7 +13,7 @@ async function Gate({ perms, area, children }: { perms: Permission[]; area: stri
   if (!me) redirect("/sign-in");
   if (!canAny(me, perms)) return <NoAccess area={area} />;
   return (
-    <PermissionsProvider grants={me.grants} name={me.name}>
+    <PermissionsProvider grants={me.grants} name={me.name} teamMemberId={me.teamMemberId} mayRecordForOthers={mayRecordForOthers(me)}>
       {children}
     </PermissionsProvider>
   );

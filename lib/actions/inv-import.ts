@@ -1,5 +1,7 @@
 "use server";
 
+import { doneByFor, logOnBehalf } from "@/lib/auth/done-by";
+
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { db } from "@/db";
@@ -76,12 +78,14 @@ export async function importItemsAction(rows: { rowNo: number; raw: ItemRawRow }
   return guard("inventory.items", async () => {
     const good = (await check(rows)).filter((c) => !c.problems.length);
     if (!good.length) throw new UserFacingError("None of these rows can be imported. Please fix the problems and upload the file again.");
+    const who = await doneByFor(doneBy ? z.string().uuid().parse(doneBy) : null);
     const r = await importItems(
       db,
       good.map((c) => ({ rowNo: c.rowNo, input: c.input, addsTo: c.addsTo, opening: c.opening })),
       z.string().max(200).parse(fileName).replace(/[^\w .()-]/g, ""),
-      { doneBy: doneBy ? z.string().uuid().parse(doneBy) : null },
+      { doneBy: who.id },
     );
+    await logOnBehalf(who, "Inventory", `imported ${r.items.length} items`);
     revalidatePath("/", "layout");
     return { imported: r.items.length, firstCode: r.items[0]?.code ?? "", lastCode: r.items.at(-1)?.code ?? "", openingDoc: r.openingDoc, openingLines: r.openingLines };
   });

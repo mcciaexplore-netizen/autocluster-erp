@@ -11,6 +11,7 @@ import { db } from "@/db";
 import { bookingsClashingWithBlocks } from "@/db/booking-writer";
 import { nextMachineCode } from "@/db/machine-writer";
 import { runningLogs } from "@/db/work-writer";
+import { peopleWith } from "@/lib/people";
 import { departments, holidays, jobBookings, jobs, jobTimeLogs, machineBlocks, machineServices, machines, services, settings, teamMembers, tickets } from "@/db/schema";
 import { dayPlus, istAt, istDate, patternFromSettings, type Span, type WorkPattern } from "@/lib/planning/hours";
 import { JOB_STATUS_UI, type JobStatusName } from "@/lib/planning/job-status";
@@ -364,7 +365,7 @@ export async function getBookingOptions() {
       .orderBy(asc(machines.sortOrder), asc(machines.name)),
     db.select().from(machineServices),
     db.select({ code: departments.code, name: departments.name }).from(departments).orderBy(asc(departments.sortOrder)),
-    db.select({ id: teamMembers.id, name: teamMembers.name }).from(teamMembers).where(eq(teamMembers.isActive, true)).orderBy(asc(teamMembers.sortOrder), asc(teamMembers.name)),
+    peopleWith("planning.operate"),
     getPlanningSettings(),
   ]);
   const s = plan.settings;
@@ -661,7 +662,7 @@ export async function getToday() {
   const dayEnd = istAt(dayPlus(today, 1), 0);
   const [[set], team, rows] = await Promise.all([
     db.select().from(settings).where(eq(settings.id, 1)),
-    db.select({ id: teamMembers.id, name: teamMembers.name }).from(teamMembers).where(eq(teamMembers.isActive, true)).orderBy(asc(teamMembers.sortOrder), asc(teamMembers.name)),
+    peopleWith("planning.operate"),
     db.execute<{
       job_id: string; status: JobStatusName; ticket_id: string; ticket_no: string; company: string; service: string; instructions: string | null; hold_reason: string | null;
       job_operator: string | null; booking_id: string | null; booking_operator: string | null; machine: string | null; start_at: string | null; end_at: string | null;

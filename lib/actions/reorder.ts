@@ -1,5 +1,7 @@
 "use server";
 
+import { doneByFor, logOnBehalf } from "@/lib/auth/done-by";
+
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { db } from "@/db";
@@ -34,7 +36,13 @@ const sendSchema = z.object({
 
 /** "Send to supplier": notes the send and marks the items "Ordered on" today. */
 export async function markOrderedAction(input: z.input<typeof sendSchema>) {
-  return run("inventory.reorder", () => markOrdered(db, sendSchema.parse(input)));
+  return run("inventory.reorder", async () => {
+    const v = sendSchema.parse(input);
+    const who = await doneByFor(v.doneBy);
+    const r = await markOrdered(db, { ...v, doneBy: who.id });
+    await logOnBehalf(who, "Inventory", "sent an order to a supplier");
+    return r;
+  });
 }
 
 export async function clearOrderedAction(itemId: string) {

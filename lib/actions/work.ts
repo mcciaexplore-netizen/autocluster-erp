@@ -9,6 +9,7 @@ import { db } from "@/db";
 import { UserFacingError } from "@/db/quote-writer";
 import { finishJob, handOverJob, holdJob, logReadyMessage, NeedMachineError, OtherJobRunningError, pauseJob, startJob } from "@/db/work-writer";
 import { allow } from "@/lib/auth/guard";
+import { doneByFor, logOnBehalf } from "@/lib/auth/done-by";
 import type { Permission } from "@/lib/auth/permissions";
 
 export type NeedMachine = { suggestedMachineId: string | null; machines: { id: string; name: string; deptCode: string; suitable: boolean }[]; hours: number; later: { bookingId: string; machine: string; start: string } | null };
@@ -37,18 +38,24 @@ const opt = id.nullable();
 export async function startJobAction(jobId: string, operatorId: string | null, more: { pauseOther?: boolean; machineId?: string | null; removeLaterBookingId?: string | null } = {}) {
   return run("planning.operate", async () => {
     await assertInScope("planning.operate", [await jobDept(id.parse(jobId))]);
-    return startJob(db, id.parse(jobId), {
-      operatorId: opt.parse(operatorId),
+    const who = await doneByFor(opt.parse(operatorId));
+    const r = await startJob(db, id.parse(jobId), {
+      operatorId: who.id,
       pauseOther: !!more.pauseOther,
       machineId: more.machineId ? id.parse(more.machineId) : null,
       removeLaterBookingId: more.removeLaterBookingId ? id.parse(more.removeLaterBookingId) : null,
     });
+    await logOnBehalf(who, "Planning", "started a job", { type: "job", id: jobId });
+    return r;
   });
 }
 export async function pauseJobAction(jobId: string, reason: string, note: string | null, operatorId: string | null) {
   return run("planning.operate", async () => {
     await assertInScope("planning.operate", [await jobDept(id.parse(jobId))]);
-    return pauseJob(db, id.parse(jobId), z.string().max(60).parse(reason), z.string().max(500).nullable().parse(note), { operatorId: opt.parse(operatorId) });
+    const who = await doneByFor(opt.parse(operatorId));
+    const r = await pauseJob(db, id.parse(jobId), z.string().max(60).parse(reason), z.string().max(500).nullable().parse(note), { operatorId: who.id });
+    await logOnBehalf(who, "Planning", `paused a job (${reason})`, { type: "job", id: jobId });
+    return r;
   });
 }
 export async function holdJobAction(jobId: string, reason: string, note: string | null) {
@@ -60,12 +67,15 @@ export async function holdJobAction(jobId: string, reason: string, note: string 
 export async function finishJobAction(jobId: string, input: { note: string; qtyDone?: string | null; problems?: string | null }, operatorId: string | null) {
   return run("planning.operate", async () => {
     await assertInScope("planning.operate", [await jobDept(id.parse(jobId))]);
-    return finishJob(db, id.parse(jobId), {
+    const who = await doneByFor(opt.parse(operatorId));
+    const r = await finishJob(db, id.parse(jobId), {
       note: z.string().max(2000).parse(input.note),
       qtyDone: z.string().max(200).nullish().parse(input.qtyDone),
       problems: z.string().max(2000).nullish().parse(input.problems),
-      operatorId: opt.parse(operatorId),
+      operatorId: who.id,
     });
+    await logOnBehalf(who, "Planning", "finished a job", { type: "job", id: jobId });
+    return r;
   });
 }
 export async function handOverAction(jobId: string, date: string, receivedBy: string) {

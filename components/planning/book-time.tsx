@@ -225,7 +225,7 @@ export function BookTimeDialog({
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value={NONE}>Not chosen</SelectItem>
-                        {options.team.map((t) => (
+                        {options.team.filter((t) => t.id === operator || !t.depts || !machine || t.depts.includes(machine.deptCode)).map((t) => (
                           <SelectItem key={t.id} value={t.id}>
                             {t.name}
                           </SelectItem>

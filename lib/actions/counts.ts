@@ -1,5 +1,7 @@
 "use server";
 
+import { doneByFor, logOnBehalf } from "@/lib/auth/done-by";
+
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { db } from "@/db";
@@ -31,7 +33,12 @@ async function run<T>(perm: Permission | Permission[], fn: () => Promise<T>, ref
 
 export async function startCountAction(input: { categoryId?: string | null; deptCode?: string | null; doneBy?: string | null }) {
   const p = z.object({ categoryId: optId, deptCode: z.string().max(20).nullish(), doneBy: optId }).parse(input);
-  return run("inventory.count", () => startCount(db, p));
+  return run("inventory.count", async () => {
+    const who = await doneByFor(p.doneBy);
+    const r = await startCount(db, { ...p, doneBy: who.id });
+    await logOnBehalf(who, "Inventory", "started a stock count");
+    return r;
+  });
 }
 
 /** Saves one counted quantity as the person types (no page refresh, so the screen stays quick). */
@@ -40,7 +47,12 @@ export async function saveCountLineAction(lineId: number, counted: string | null
 }
 
 export async function completeCountAction(countId: string, doneBy: string | null) {
-  return run("inventory.count", () => completeCount(db, id.parse(countId), { doneBy: doneBy ? id.parse(doneBy) : null }));
+  return run("inventory.count", async () => {
+    const who = await doneByFor(doneBy ? id.parse(doneBy) : null);
+    const r = await completeCount(db, id.parse(countId), { doneBy: who.id });
+    await logOnBehalf(who, "Inventory", "completed a stock count", { type: "inv_count", id: countId });
+    return r;
+  });
 }
 
 export async function discardCountAction(countId: string) {

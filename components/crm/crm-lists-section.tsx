@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { ArrowDown, ArrowUp, Check, ListChecks, Loader2, Pencil, Plus, Trash2, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
@@ -21,7 +22,6 @@ const LISTS: ListConfig[] = [
   { key: "sources", tab: "Sources", one: "source", help: "Where enquiries come from. Every enquiry needs one.", example: "e.g. LinkedIn" },
   { key: "lostReasons", tab: "Lost reasons", one: "lost reason", help: "Asked for when an enquiry is marked as lost.", example: "e.g. Delivery time too long" },
   { key: "tags", tab: "Tags", one: "tag", help: "Optional labels to group enquiries.", example: "e.g. Export" },
-  { key: "team", tab: "Team members", one: "team member", help: "People enquiries and activities can be assigned to. Names only, these are not sign-in accounts.", example: "e.g. Sneha Joshi" },
 ];
 
 const INV_LISTS: ListConfig[] = [
@@ -39,6 +39,15 @@ export function CrmListsSection({ lists }: { lists: CrmLists }) {
       description="Each change is saved straight away. Items already used on an enquiry are hidden instead of deleted."
       configs={LISTS}
       lists={lists as unknown as Record<Key, CrmListItem[]>}
+      footer={
+        <p className="mt-4 rounded-xl border bg-secondary/50 p-3 text-sm">
+          Team members are now managed in{" "}
+          <Link href="/settings/users" className="font-medium text-primary underline-offset-4 hover:underline">
+            Users
+          </Link>
+          . &quot;Assigned to&quot; lists everyone whose role lets them add and change enquiries.
+        </p>
+      }
     />
   );
 }
@@ -55,7 +64,7 @@ export function InventoryListsSection({ lists }: { lists: Record<"invCategories"
   );
 }
 
-function ListsSection({ title, description, configs, lists }: { title: string; description: string; configs: ListConfig[]; lists: Record<Key, CrmListItem[]> }) {
+function ListsSection({ title, description, configs, lists, footer }: { title: string; description: string; configs: ListConfig[]; lists: Record<Key, CrmListItem[]>; footer?: React.ReactNode }) {
   return (
     <FormSection title={title} description={description} icon={<ListChecks className="size-5" />}>
       <Tabs defaultValue={configs[0].key}>
@@ -73,6 +82,7 @@ function ListsSection({ title, description, configs, lists }: { title: string; d
           </TabsContent>
         ))}
       </Tabs>
+      {footer}
     </FormSection>
   );
 }

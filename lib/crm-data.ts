@@ -30,6 +30,7 @@ import {
 } from "@/db/schema";
 import { leadContactLinks, type LeadContactLinks } from "@/lib/crm/contact-links";
 import { toPaise } from "@/lib/pricing";
+import { peopleWith } from "@/lib/people";
 import type { ActivityType, FilterableLead } from "@/lib/crm/leads";
 
 /** Stages in board order. Adds the default stages the first time, if there are none. */
@@ -169,13 +170,22 @@ export async function getBoardLeads(): Promise<BoardLead[]> {
 export async function getCrmPickers() {
   await connection();
   await need(["crm.view"]);
-  const lists = await getCrmLists();
+  const [lists, assignable, current] = await Promise.all([
+    getCrmLists(),
+    peopleWith("crm.edit"),
+    // People who still have open enquiries, so filters and existing enquiries keep showing them.
+    db.execute<{ id: string; name: string }>(sql`
+      select distinct tm.id, tm.name from leads l join team_members tm on tm.id = l.assigned_to where l.deleted_at is null and tm.is_active`),
+  ]);
   const active = <T extends { isActive: boolean }>(l: T[]) => l.filter((x) => x.isActive);
+  // "Assigned to" lists people with "Add and change enquiries" (section 4).
+  const team = assignable.map(({ id, name }) => ({ id, name }));
+  for (const c of current.rows) if (!team.some((t) => t.id === c.id)) team.push({ id: c.id, name: c.name });
   return {
     sources: active(lists.sources).map(({ id, name }) => ({ id, name })),
     lostReasons: active(lists.lostReasons).map(({ id, name }) => ({ id, name })),
     tags: active(lists.tags).map(({ id, name }) => ({ id, name })),
-    team: active(lists.team).map(({ id, name }) => ({ id, name })),
+    team,
   };
 }
 export type CrmPickers = Awaited<ReturnType<typeof getCrmPickers>>;
