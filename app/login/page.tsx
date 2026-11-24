@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { Suspense } from "react";
 import { LoginForm } from "@/components/auth/login-form";
-import { safeNextPath } from "@/lib/auth";
+import { safeNextPath } from "@/lib/auth/demo-gate";
 
 export const metadata: Metadata = { title: "Sign in" };
 

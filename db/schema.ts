@@ -1109,3 +1109,194 @@ export type Lead = typeof leads.$inferSelect;
 export type CrmActivity = typeof crmActivities.$inferSelect;
 export type LeadEvent = typeof leadEvents.$inferSelect;
 export type TeamMember = typeof teamMembers.$inferSelect;
+
+// ---- Module 7: users, roles and sign-in ----------------------------------------------------------
+// Better Auth's own tables (its models user / session / account / verification), named auth_* so
+// they never clash with ours. Ids are text because Better Auth makes them.
+
+export const authUsers = pgTable("auth_users", {
+  id: text("id").primaryKey(),
+  name: text("name").notNull(),
+  email: text("email").notNull().unique(),
+  emailVerified: boolean("email_verified").notNull().default(false),
+  image: text("image"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  // Added by Better Auth's admin plugin.
+  role: text("role"),
+  banned: boolean("banned").default(false),
+  banReason: text("ban_reason"),
+  banExpires: timestamp("ban_expires", { withTimezone: true }),
+});
+
+export const authSessions = pgTable(
+  "auth_sessions",
+  {
+    id: text("id").primaryKey(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    token: text("token").notNull().unique(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+    ipAddress: text("ip_address"),
+    userAgent: text("user_agent"),
+    userId: text("user_id")
+      .notNull()
+      .references(() => authUsers.id, { onDelete: "cascade" }),
+    impersonatedBy: text("impersonated_by"),
+  },
+  (t) => [index("auth_sessions_user_idx").on(t.userId)],
+);
+
+export const authAccounts = pgTable(
+  "auth_accounts",
+  {
+    id: text("id").primaryKey(),
+    accountId: text("account_id").notNull(),
+    providerId: text("provider_id").notNull(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => authUsers.id, { onDelete: "cascade" }),
+    accessToken: text("access_token"),
+    refreshToken: text("refresh_token"),
+    idToken: text("id_token"),
+    accessTokenExpiresAt: timestamp("access_token_expires_at", { withTimezone: true }),
+    refreshTokenExpiresAt: timestamp("refresh_token_expires_at", { withTimezone: true }),
+    scope: text("scope"),
+    password: text("password"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("auth_accounts_user_idx").on(t.userId)],
+);
+
+export const authVerifications = pgTable("auth_verifications", {
+  id: text("id").primaryKey(),
+  identifier: text("identifier").notNull(),
+  value: text("value").notNull(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+/**
+ * People who use the app (or are assigned work). Linked 1:1 to team_members, so every existing
+ * assigned_to / done_by / operator_id keeps working. Name-only people have no auth_user_id.
+ */
+export const appUsers = pgTable("app_users", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  authUserId: text("auth_user_id")
+    .unique()
+    .references(() => authUsers.id),
+  teamMemberId: uuid("team_member_id")
+    .notNull()
+    .unique()
+    .references(() => teamMembers.id),
+  fullName: text("full_name").notNull(),
+  email: text("email").unique(),
+  mobile: text("mobile"),
+  canSignIn: boolean("can_sign_in").notNull().default(false),
+  allDepartments: boolean("all_departments").notNull().default(true),
+  pinHash: text("pin_hash"),
+  mustChangePassword: boolean("must_change_password").notNull().default(false),
+  /** Demo accounts ("Try it as..."): only exist when DEMO_MODE is true. */
+  isDemo: boolean("is_demo").notNull().default(false),
+  deactivatedAt: timestamp("deactivated_at", { withTimezone: true }),
+  lastSignInAt: timestamp("last_sign_in_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const userDepartments = pgTable(
+  "user_departments",
+  {
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => appUsers.id, { onDelete: "cascade" }),
+    deptCode: text("dept_code")
+      .notNull()
+      .references(() => departments.code),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.deptCode] })],
+);
+
+export const roles = pgTable("roles", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull().unique(),
+  description: text("description").notNull().default(""),
+  /** The built-in roles (Admin, Manager, ...). Admin can't lose Users or Settings. */
+  isSystem: boolean("is_system").notNull().default(false),
+  /** "Can only act on their own departments". */
+  scopeOwnDepartments: boolean("scope_own_departments").notNull().default(false),
+  sortOrder: integer("sort_order").notNull().default(0),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const rolePermissions = pgTable(
+  "role_permissions",
+  {
+    roleId: integer("role_id")
+      .notNull()
+      .references(() => roles.id, { onDelete: "cascade" }),
+    permission: text("permission").notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.roleId, t.permission] })],
+);
+
+export const userRoles = pgTable(
+  "user_roles",
+  {
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => appUsers.id, { onDelete: "cascade" }),
+    roleId: integer("role_id")
+      .notNull()
+      .references(() => roles.id),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.roleId] })],
+);
+
+export const sharedDevices = pgTable("shared_devices", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  name: text("name").notNull(),
+  deptCodes: text("dept_codes").array().notNull().default(sql`'{}'::text[]`),
+  tokenHash: text("token_hash").notNull().unique(),
+  createdBy: uuid("created_by").references(() => appUsers.id),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  revokedAt: timestamp("revoked_at", { withTimezone: true }),
+});
+
+export const activityLog = pgTable(
+  "activity_log",
+  {
+    id: serial("id").primaryKey(),
+    userId: uuid("user_id").references(() => appUsers.id),
+    onBehalfOfUserId: uuid("on_behalf_of_user_id").references(() => appUsers.id),
+    area: text("area").notNull(),
+    action: text("action").notNull(),
+    entityType: text("entity_type"),
+    entityId: text("entity_id"),
+    summary: text("summary").notNull(),
+    data: jsonb("data").$type<Record<string, unknown>>(),
+    ip: text("ip"),
+    userAgent: text("user_agent"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("activity_log_created_idx").on(t.createdAt), index("activity_log_user_idx").on(t.userId, t.createdAt)],
+);
+
+export const signInAttempts = pgTable(
+  "sign_in_attempts",
+  {
+    id: serial("id").primaryKey(),
+    email: text("email"),
+    ip: text("ip"),
+    success: boolean("success").notNull(),
+    reason: text("reason"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("sign_in_attempts_email_idx").on(t.email, t.createdAt), index("sign_in_attempts_ip_idx").on(t.ip, t.createdAt)],
+);
+
+export type AppUser = typeof appUsers.$inferSelect;
+export type Role = typeof roles.$inferSelect;

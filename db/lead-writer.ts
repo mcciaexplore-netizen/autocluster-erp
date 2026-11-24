@@ -8,6 +8,7 @@
  *   Moving a Won or Lost enquiry back to an open stage reopens it.
  * - Every change is written to the enquiry's history (lead_events).
  */
+import { actorName } from "../lib/auth/actor";
 import { and, asc, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { EMAIL_PROBLEM, EMAIL_RE, MOBILE_PROBLEM, normalizeMobile } from "@/lib/crm/contact";
 import { MOBILE_REGEX } from "@/lib/india";
@@ -34,6 +35,7 @@ import {
   type CrmStage,
 } from "./schema";
 
+/** Old constant kept for scripts; records use actorName() (the signed-in person). */
 export const ACTOR = "Demo User";
 const ids = (list: string[]) => sql`any(${sql.param(list)}::uuid[])`;
 
@@ -73,7 +75,7 @@ const clean = (v: string | null | undefined) => {
 };
 
 export async function logLeadEvent(db: DB | Tx, leadId: string, type: string, message: string, data?: Record<string, unknown>) {
-  await db.insert(leadEvents).values({ leadId, type, message, data: data ?? null, createdBy: ACTOR });
+  await db.insert(leadEvents).values({ leadId, type, message, data: data ?? null, createdBy: await actorName() });
 }
 
 /** Atomically takes the next enquiry number for a financial year. */
@@ -207,7 +209,7 @@ export async function createLead(db: DB | Tx, input: LeadInput, opts: { createdA
     if (deptCodes.length) await tx.insert(leadDepartments).values(deptCodes.map((deptCode) => ({ leadId: lead.id, deptCode })));
     if (serviceIds.length) await tx.insert(leadServices).values(serviceIds.map((serviceId) => ({ leadId: lead.id, serviceId })));
     if (tagIds.length) await tx.insert(leadTags).values(tagIds.map((tagId) => ({ leadId: lead.id, tagId })));
-    await tx.insert(leadEvents).values({ leadId: lead.id, type: "CREATED", message: opts.createdMessage ?? `Enquiry created in ${stage.name}`, createdBy: ACTOR, createdAt });
+    await tx.insert(leadEvents).values({ leadId: lead.id, type: "CREATED", message: opts.createdMessage ?? `Enquiry created in ${stage.name}`, createdBy: await actorName(), createdAt });
     return lead;
   });
 }
@@ -466,7 +468,7 @@ export async function logLeadContact(db: DB, leadId: string, kind: ContactKind) 
   return db.transaction(async (tx) => {
     const lead = await lockLead(tx, leadId);
     const to = kind === "EMAIL" ? lead.email : lead.phone ? `+91 ${lead.phone}` : null;
-    await logLeadEvent(tx, leadId, `CONTACT_${kind}`, `${CONTACT_KINDS[kind]} opened by ${ACTOR}${to ? ` (${to})` : ""}`, { kind });
+    await logLeadEvent(tx, leadId, `CONTACT_${kind}`, `${CONTACT_KINDS[kind]} opened by ${await actorName()}${to ? ` (${to})` : ""}`, { kind });
   });
 }
 

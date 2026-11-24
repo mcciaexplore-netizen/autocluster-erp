@@ -2,6 +2,7 @@
  * Machines, blocked time ("machine not available"), breakdowns and holidays (brief sections 3-4).
  * Kept free of Next.js imports so scripts and tests can use it.
  */
+import { actorName } from "../lib/auth/actor";
 import { and, asc, eq, gt, isNull, lt, ne, sql } from "drizzle-orm";
 import { formatWhen } from "@/lib/planning/hours";
 import { BLOCK_TYPES, type BlockTypeName, type MachineFormValues } from "@/lib/validation/planning";
@@ -124,7 +125,7 @@ export async function blockMachine(db: DB | Tx, input: BlockInput) {
     if (!m) throw new UserFacingError("That machine could not be found.");
     const [b] = await tx
       .insert(machineBlocks)
-      .values({ machineId: m.id, type: input.type, startAt: input.start, endAt: input.end, note: clean(input.note), createdBy: clean(input.createdBy), invDocumentId: input.invDocumentId ?? null })
+      .values({ machineId: m.id, type: input.type, startAt: input.start, endAt: input.end, note: clean(input.note), createdBy: clean(input.createdBy) ?? (await actorName()), invDocumentId: input.invDocumentId ?? null })
       .returning();
     return { block: b, machine: m, clashes: await clashingBookings(tx, m.id, input.start, input.end) };
   });

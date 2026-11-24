@@ -10,6 +10,7 @@
  * Tickets still waiting for a PO are booked as tentative, held until a date.
  * Kept free of Next.js imports (scripts and tests use it).
  */
+import { actorName } from "../lib/auth/actor";
 import { and, asc, eq, gt, inArray, isNull, lt, ne, sql } from "drizzle-orm";
 import { addWorkingHours, dayPlus, formatHours, formatWhen, istDate, maxAtOnce, nextWorkingMoment, overlaps, patternFromSettings, snapTo30, type Span, type WorkPattern } from "@/lib/planning/hours";
 import { daysBetween, todayInIndia } from "@/lib/tickets";
@@ -165,7 +166,7 @@ export async function bookTime(db: Conn, input: BookInput, opts: { now?: Date } 
     const holdUntil = tentative ? dayPlus(today, holdDays) : null;
     const [b] = await tx
       .insert(jobBookings)
-      .values({ jobId: input.jobId, machineId: m.id, startAt: start, endAt: end, hours: String(hours), operatorId, isTentative: tentative, holdUntil, note: input.note?.trim() || null, createdBy: input.createdBy ?? "Demo User" })
+      .values({ jobId: input.jobId, machineId: m.id, startAt: start, endAt: end, hours: String(hours), operatorId, isTentative: tentative, holdUntil, note: input.note?.trim() || null, createdBy: input.createdBy ?? (await actorName()) })
       .returning();
     await addJobEvent(
       tx,

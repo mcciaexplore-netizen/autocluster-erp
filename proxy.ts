@@ -1,23 +1,40 @@
 /**
- * Front door for the demo password. Runs on the Node.js runtime (the Next.js 16 default).
- * When DEMO_PASSWORD is not set (local development), everything is open.
- * Server actions and the PDF route also check the session themselves.
+ * Front door. Runs on the Node.js runtime (the Next.js 16 default).
+ *
+ * 1. Demo gate: when DEMO_PASSWORD is set (the demo site), the shared demo password comes first.
+ * 2. Individual sign-in: without a sign-in cookie, pages go to /sign-in. This is only a quick
+ *    check of the cookie; every page, server action, route and download checks the real
+ *    session on the server (lib/auth/current-user.ts).
  */
+import { getSessionCookie } from "better-auth/cookies";
 import { NextResponse, type NextRequest } from "next/server";
-import { authEnabled, SESSION_COOKIE, verifySessionToken } from "@/lib/auth";
+import { authEnabled, SESSION_COOKIE, verifySessionToken } from "@/lib/auth/demo-gate";
+
+/** Pages and endpoints that work before signing in. */
+const OPEN = ["/sign-in", "/api/auth"];
 
 export function proxy(request: NextRequest) {
-  if (!authEnabled()) return NextResponse.next();
   const { pathname, search } = request.nextUrl;
-  const signedIn = verifySessionToken(request.cookies.get(SESSION_COOKIE)?.value);
+  const back = pathname !== "/" ? `${pathname}${search}` : null;
 
-  if (pathname === "/login") {
-    return signedIn ? NextResponse.redirect(new URL("/", request.url)) : NextResponse.next();
+  if (authEnabled()) {
+    const passedGate = verifySessionToken(request.cookies.get(SESSION_COOKIE)?.value);
+    if (pathname === "/login") return passedGate ? NextResponse.redirect(new URL("/", request.url)) : NextResponse.next();
+    if (!passedGate) {
+      const url = new URL("/login", request.url);
+      if (back) url.searchParams.set("next", back);
+      return NextResponse.redirect(url);
+    }
+  } else if (pathname === "/login") {
+    return NextResponse.redirect(new URL("/sign-in", request.url));
   }
-  if (signedIn) return NextResponse.next();
 
-  const url = new URL("/login", request.url);
-  if (pathname !== "/") url.searchParams.set("next", `${pathname}${search}`);
+  if (OPEN.some((p) => pathname === p || pathname.startsWith(`${p}/`))) return NextResponse.next();
+  if (getSessionCookie(request, { cookiePrefix: "acdri" })) return NextResponse.next();
+
+  if (pathname.startsWith("/api/")) return NextResponse.json({ error: "Please sign in again." }, { status: 401 });
+  const url = new URL("/sign-in", request.url);
+  if (back) url.searchParams.set("next", back);
   return NextResponse.redirect(url);
 }
 

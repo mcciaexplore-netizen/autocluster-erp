@@ -1,11 +1,13 @@
 import "server-only";
-import { cookies } from "next/headers";
-import { authEnabled, SESSION_COOKIE, verifySessionToken } from "./auth";
+import { getCurrentUser } from "./auth/current-user";
 
-/** Checks the session inside server actions and route handlers (not just at the front door). */
+/**
+ * Checks the signed-in person inside server actions and route handlers (not just at the front
+ * door). Someone who still has to choose a new password can't do anything else yet.
+ */
 export async function isSignedIn(): Promise<boolean> {
-  if (!authEnabled()) return true;
-  return verifySessionToken((await cookies()).get(SESSION_COOKIE)?.value);
+  const u = await getCurrentUser();
+  return !!u && !u.mustChangePassword;
 }
 
 export class NotSignedInError extends Error {

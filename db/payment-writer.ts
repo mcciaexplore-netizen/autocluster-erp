@@ -9,6 +9,7 @@
  * - A payment (amount + TDS) can't be more than the amount left.
  * - When the amount left reaches ₹0, every ticket on the invoice moves to Paid.
  */
+import { actorName } from "../lib/auth/actor";
 import { and, eq } from "drizzle-orm";
 import { formatDate } from "../lib/format";
 import { formatINR, paiseToRupeeString, toPaise } from "../lib/pricing";
@@ -16,7 +17,7 @@ import { amountLeft, paymentProblem } from "../lib/tickets";
 import type { DB, Tx } from "./client";
 import { UserFacingError } from "./quote-writer";
 import { followUps, invoices, payments, tickets } from "./schema";
-import { addEvents, STAFF_NAME } from "./ticket-writer";
+import { addEvents } from "./ticket-writer";
 
 type Conn = DB | Tx;
 
@@ -128,7 +129,7 @@ export async function addFollowUp(db: DB, input: FollowUpInput) {
   });
 }
 
-/** "WhatsApp reminder opened by Demo User" on every ticket of the invoice. */
+/** "WhatsApp reminder opened by Meera Iyer" on every ticket of the invoice. */
 export async function logReminder(db: DB, invoiceId: string, channel: "WHATSAPP" | "EMAIL") {
   return db.transaction(async (tx) => {
     const { inv, ticketIds } = await lockInvoice(tx, invoiceId);
@@ -136,7 +137,7 @@ export async function logReminder(db: DB, invoiceId: string, channel: "WHATSAPP"
       tx,
       ticketIds,
       channel === "WHATSAPP" ? "REMINDER_WHATSAPP" : "REMINDER_EMAIL",
-      `${channel === "WHATSAPP" ? "WhatsApp" : "Email"} reminder opened by ${STAFF_NAME} (invoice ${inv.invoiceNumber})`,
+      `${channel === "WHATSAPP" ? "WhatsApp" : "Email"} reminder opened by ${await actorName()} (invoice ${inv.invoiceNumber})`,
       { invoiceId: inv.id },
     );
     return { ok: true };

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { createSessionToken, passwordMatches, safeNextPath, verifySessionToken } from "./auth";
+import { createSessionToken, passwordMatches, safeNextPath, verifySessionToken } from "./demo-gate";
 
 describe("demo password sessions", () => {
   const env = { ...process.env };

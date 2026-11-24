@@ -4,6 +4,7 @@
  * and tentative bookings become firm when the PO is saved. Every change is logged.
  * Kept free of Next.js imports (scripts and tests use it). Must not import ticket-writer.
  */
+import { actorName } from "../lib/auth/actor";
 import { and, eq, gt, inArray, isNull, sql } from "drizzle-orm";
 import { formatWhen } from "@/lib/planning/hours";
 import { suggestHours, type UnitTypeName } from "@/lib/planning/time-needed";
@@ -14,7 +15,7 @@ import { jobBookings, jobEvents, jobs, jobTimeLogs, machines, quotationItems, se
 type Conn = DB | Tx;
 
 export async function addJobEvent(conn: Conn, jobId: string, type: string, message: string, data?: Record<string, unknown>, createdBy?: string | null) {
-  await conn.insert(jobEvents).values({ jobId, type, message, data: data ?? null, createdBy: createdBy ?? "Demo User" });
+  await conn.insert(jobEvents).values({ jobId, type, message, data: data ?? null, createdBy: createdBy ?? (await actorName()) });
 }
 
 /** The suggested "time needed" for a ticket: billable hours, or the service's time settings. */

@@ -14,6 +14,8 @@ import { loadCrmDemo } from "./demo-crm";
 import { DEFAULT_TERMS } from "../lib/settings-shared";
 import { loadDemoOrders, type DemoOrdersOptions } from "./demo-orders";
 import { loadPlanningDemo } from "./demo-planning";
+import { ensureDefaultRoles } from "../db/role-writer";
+import { ensureAppUsersForTeam } from "../db/user-writer";
 
 config({ path: ".env.local", quiet: true });
 
@@ -42,7 +44,7 @@ export async function isEmpty(db: DB | Tx) {
 
 export async function wipe(db: DB | Tx) {
   await db.execute(
-    sql`TRUNCATE job_time_logs, job_events, job_files, job_bookings, jobs, machine_blocks, machine_services, machines, holidays, inv_reorder_sends, inv_count_lines, inv_counts, inv_service_materials, inv_movements, inv_documents, inv_batches, inv_supplier_items, inv_item_departments, inv_items, inv_suppliers, inv_counters, inv_categories, inv_units, inv_purposes, inv_adjust_reasons, lead_events, crm_activities, lead_tags, lead_services, lead_departments, leads, lead_counters, crm_stage_changes, crm_stages, crm_sources, crm_lost_reasons, crm_tags, team_members, ticket_events, follow_ups, payments, tickets, invoices, purchase_orders, billing_exports, files, ticket_counters, quotation_items, quotations, quote_counters, customer_services, customer_departments, customers, services, departments, settings RESTART IDENTITY CASCADE`,
+    sql`TRUNCATE activity_log, sign_in_attempts, shared_devices, user_roles, user_departments, role_permissions, roles, app_users, auth_sessions, auth_accounts, auth_verifications, auth_users, job_time_logs, job_events, job_files, job_bookings, jobs, machine_blocks, machine_services, machines, holidays, inv_reorder_sends, inv_count_lines, inv_counts, inv_service_materials, inv_movements, inv_documents, inv_batches, inv_supplier_items, inv_item_departments, inv_items, inv_suppliers, inv_counters, inv_categories, inv_units, inv_purposes, inv_adjust_reasons, lead_events, crm_activities, lead_tags, lead_services, lead_departments, leads, lead_counters, crm_stage_changes, crm_stages, crm_sources, crm_lost_reasons, crm_tags, team_members, ticket_events, follow_ups, payments, tickets, invoices, purchase_orders, billing_exports, files, ticket_counters, quotation_items, quotations, quote_counters, customer_services, customer_departments, customers, services, departments, settings RESTART IDENTITY CASCADE`,
   );
 }
 
@@ -313,6 +315,10 @@ export async function loadDemoData(db: DB | Tx, opts: { quiet?: boolean; orders?
     await loadCrmDemo(db, { links: true, log: (m) => console.log(m) });
   }
   if (opts.inventory && opts.crm) await assignInventoryDoneBy(db);
+
+  // Module 7: every team member is also a user (name only until an admin lets them sign in), and the default roles exist.
+  await ensureAppUsersForTeam(db);
+  await ensureDefaultRoles(db);
 
   if (opts.planning) {
     console.log("Adding the Planning demo (33 machines, holidays, 8 weeks of jobs and the next 2 weeks)...");

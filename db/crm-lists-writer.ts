@@ -3,6 +3,7 @@
  * and Inventory (categories, units, internal use purposes, adjustment reasons).
  * Items in use are hidden instead of deleted, so old enquiries keep their values.
  */
+import { ensureAppUsersForTeam } from "./user-writer";
 import { and, asc, eq, ne, sql } from "drizzle-orm";
 import type { DB, Tx } from "./client";
 import { UserFacingError } from "./quote-writer";
@@ -20,6 +21,7 @@ import {
   invUnits,
   leads,
   leadTags,
+  appUsers,
   teamMembers,
 } from "./schema";
 
@@ -69,6 +71,8 @@ export async function addListItem(db: DB, key: CrmListKey, input: ListItemInput)
     .insert(table)
     .values({ name, sortOrder: Number(max) + 1, ...teamExtras(key, input) })
     .returning({ id: table.id });
+  // A new team member is also a (name only) user.
+  if (key === "team") await ensureAppUsersForTeam(db);
   return row.id;
 }
 
@@ -78,6 +82,7 @@ export async function updateListItem(db: DB, key: CrmListKey, id: string, input:
   if (await nameTaken(db, key, name, id)) throw new UserFacingError(`"${name}" is already in the list.`);
   const r = await db.update(table).set({ name, ...teamExtras(key, input) }).where(eq(table.id, id)).returning({ id: table.id });
   if (!r.length) throw new UserFacingError("This item could not be found. Please refresh the page.");
+  if (key === "team") await db.update(appUsers).set({ fullName: name, updatedAt: new Date() }).where(eq(appUsers.teamMemberId, id));
 }
 
 export async function setListItemActive(db: DB, key: CrmListKey, id: string, isActive: boolean) {

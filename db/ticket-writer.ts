@@ -10,6 +10,7 @@
  * - The quotation row is locked (FOR UPDATE) while its tickets change, so two
  *   people clicking at once can't both open tickets.
  */
+import { actorName } from "../lib/auth/actor";
 import { and, eq, inArray, ne, sql } from "drizzle-orm";
 import { financialYear, formatQuoteNo, paiseToRupeeString, quantityInWords, toPaise } from "../lib/pricing";
 import { splitQuotation } from "../lib/tickets";
@@ -20,6 +21,7 @@ import { markLeadWonForQuotation, noteQuotationRejected } from "./lead-links";
 import { quotationItems, quotations, settings, ticketCounters, ticketEvents, tickets, type TicketSnapshot } from "./schema";
 
 type Conn = DB | Tx;
+/** Old constant kept for scripts; records use actorName() (the signed-in person). */
 export const STAFF_NAME = "Demo User";
 export const AUTO_CANCEL_REASON = "Quotation is no longer marked Accepted";
 
@@ -40,7 +42,8 @@ export async function addEvents(
   data?: Record<string, unknown>,
 ) {
   if (!ticketIds.length) return;
-  await tx.insert(ticketEvents).values(ticketIds.map((ticketId) => ({ ticketId, type, message, data: data ?? null, createdBy: STAFF_NAME })));
+  const by = await actorName();
+  await tx.insert(ticketEvents).values(ticketIds.map((ticketId) => ({ ticketId, type, message, data: data ?? null, createdBy: by })));
 }
 
 async function lockQuotation(tx: Conn, id: string) {

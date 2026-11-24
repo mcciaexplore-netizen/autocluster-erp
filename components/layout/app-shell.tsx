@@ -1,8 +1,8 @@
 import Link from "next/link";
 import { Suspense } from "react";
 import { NavLinkList, NavLinks } from "./nav-links";
-import { connection } from "next/server";
-import { authEnabled } from "@/lib/auth";
+import { redirect } from "next/navigation";
+import { getCurrentUser } from "@/lib/auth/current-user";
 import { UserMenu } from "./user-menu";
 
 function Logo() {
@@ -19,10 +19,15 @@ function Logo() {
   );
 }
 
-/** Reads the password setting at request time, so the menu always matches the live configuration. */
+/**
+ * The signed-in person's menu. Also the safety net for every page: a session that has ended
+ * (signed out elsewhere, deactivated) goes to sign-in, and a temporary password must be changed first.
+ */
 async function LiveUserMenu() {
-  await connection();
-  return <UserMenu showSignOut={authEnabled()} />;
+  const me = await getCurrentUser();
+  if (!me) redirect("/sign-in");
+  if (me.mustChangePassword) redirect("/change-password");
+  return <UserMenu name={me.name} roles={me.roles.map((r) => r.name)} />;
 }
 
 export function AppShell({ children }: { children: React.ReactNode }) {
@@ -37,7 +42,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
       <header className="sticky top-0 z-30 flex h-16 items-center justify-between border-b bg-card/95 px-4 backdrop-blur md:px-6 print:hidden">
         <Logo />
-        <Suspense fallback={<UserMenu showSignOut={false} />}>
+        <Suspense fallback={<UserMenu name={null} roles={[]} />}>
           <LiveUserMenu />
         </Suspense>
       </header>

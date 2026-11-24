@@ -2,13 +2,14 @@
  * CRM activities (Odoo-style scheduled activities): plan, mark done, cancel.
  * Every step is written to the enquiry's history. Kept free of Next.js imports.
  */
+import { actorName } from "../lib/auth/actor";
 import { and, eq, isNull } from "drizzle-orm";
 import { ACTIVITY_TYPES, type ActivityType } from "@/lib/crm/leads";
 import { timeLabel } from "@/lib/crm/time";
 import { formatDate } from "@/lib/format";
 import { todayInIndia } from "@/lib/tickets";
 import type { DB, Tx } from "./client";
-import { ACTOR, logLeadEvent } from "./lead-writer";
+import { logLeadEvent } from "./lead-writer";
 import { UserFacingError } from "./quote-writer";
 import { crmActivities, leads, teamMembers } from "./schema";
 
@@ -77,7 +78,7 @@ export async function markActivityDone(db: DB | Tx, activityId: string, outcome:
   return db.transaction(async (tx) => {
     const a = await openActivity(tx, activityId);
     await tx.update(crmActivities).set({ doneAt: new Date(), outcome: text }).where(eq(crmActivities.id, a.id));
-    await logLeadEvent(tx, a.leadId, "ACTIVITY_DONE", `${ACTIVITY_TYPES[a.type]} done by ${ACTOR}: ${text}`, { activityId: a.id, planned: a.dueDate });
+    await logLeadEvent(tx, a.leadId, "ACTIVITY_DONE", `${ACTIVITY_TYPES[a.type]} done by ${await actorName()}: ${text}`, { activityId: a.id, planned: a.dueDate });
     return { leadId: a.leadId, assignedTo: a.assignedTo, type: a.type };
   });
 }

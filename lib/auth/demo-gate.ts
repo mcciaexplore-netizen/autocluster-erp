@@ -1,5 +1,5 @@
 /**
- * Simple demo password protection.
+ * The demo site's outer gate: one shared demo password, before individual sign-in.
  *
  * - Off when DEMO_PASSWORD is not set (local development).
  * - On sign-in we store a signed token in a cookie, never the password.
@@ -8,13 +8,15 @@
  *   one signs everybody out.
  */
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
+import { isDemoMode } from "./demo-mode";
 
 export const SESSION_COOKIE = "acdri_session";
 export const SESSION_DAYS = 7;
 const SESSION_SECONDS = SESSION_DAYS * 24 * 60 * 60;
 
+/** The shared demo password gate: only on the demo site (demo mode with DEMO_PASSWORD set). */
 export function authEnabled(): boolean {
-  return !!process.env.DEMO_PASSWORD;
+  return isDemoMode() && !!process.env.DEMO_PASSWORD;
 }
 
 /** Problem with the server's own setup, in plain words, or null when it is fine. */

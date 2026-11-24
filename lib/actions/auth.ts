@@ -2,7 +2,7 @@
 
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
-import { authEnabled, authSetupProblem, createSessionToken, passwordMatches, safeNextPath, SESSION_COOKIE, sessionCookieOptions } from "@/lib/auth";
+import { authEnabled, authSetupProblem, createSessionToken, passwordMatches, safeNextPath, SESSION_COOKIE, sessionCookieOptions } from "@/lib/auth/demo-gate";
 
 export type SignInState = { error: string | null };
 
@@ -20,9 +20,4 @@ export async function signIn(_prev: SignInState, formData: FormData): Promise<Si
   }
   (await cookies()).set(SESSION_COOKIE, createSessionToken(), sessionCookieOptions);
   redirect(safeNextPath(formData.get("next")));
-}
-
-export async function signOut() {
-  (await cookies()).delete(SESSION_COOKIE);
-  redirect("/login");
 }
