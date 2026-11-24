@@ -1,5 +1,7 @@
 "use server";
 
+import { eq } from "drizzle-orm";
+import { leads } from "@/db/schema";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { db } from "@/db";
@@ -25,7 +27,7 @@ import {
   type MoveResult,
 } from "@/db/lead-writer";
 import { UserFacingError } from "@/db/quote-writer";
-import { allow } from "@/lib/auth/guard";
+import { allow, moneyView, signedInUser } from "@/lib/auth/guard";
 import type { Permission } from "@/lib/auth/permissions";
 import { parseRupees } from "@/lib/money-input";
 import { parseMobileOrEmail } from "@/lib/crm/contact";
@@ -64,6 +66,11 @@ const quickAdd = z.object({
 export type QuickAddInput = z.input<typeof quickAdd>;
 
 /** Quick add from the top of a column. */
+/** May the signed-in person see (and so set) sale prices such as expected values? */
+async function mayPrices() {
+  return moneyView(await signedInUser()).sale;
+}
+
 export async function quickAddLeadAction(input: QuickAddInput) {
   return run("crm.edit", async () => {
     const v = quickAdd.parse(input);
@@ -83,7 +90,8 @@ export async function quickAddLeadAction(input: QuickAddInput) {
       contactName: v.contactName,
       phone: contact.phone,
       email: contact.email,
-      expectedValuePaise: value,
+      // Expected values are sale prices: only people who may see them can set them.
+      expectedValuePaise: (await mayPrices()) ? value : null,
     });
     return { id: lead.id, leadNo: lead.leadNo };
   });
@@ -131,7 +139,9 @@ export async function loadLeadDetail(leadId: string): Promise<Result<LeadDetail>
 export async function createLeadAction(values: LeadFormValues) {
   return run("crm.edit", async () => {
     const v = leadFormSchema.parse(values);
-    const lead = await createLead(db, leadInputFromForm(v));
+    const input = leadInputFromForm(v);
+    if (!(await mayPrices())) input.expectedValuePaise = null;
+    const lead = await createLead(db, input);
     return { id: lead.id, leadNo: lead.leadNo };
   });
 }
@@ -139,7 +149,13 @@ export async function createLeadAction(values: LeadFormValues) {
 export async function updateLeadAction(leadId: string, values: LeadFormValues) {
   return run("crm.edit", async () => {
     const v = leadFormSchema.parse(values);
-    const r = await updateLead(db, id.parse(leadId), leadInputFromForm(v));
+    const input = leadInputFromForm(v);
+    // People who may not see prices never saw the value, so it stays as it was.
+    if (!(await mayPrices())) {
+      const [l] = await db.select({ v: leads.expectedValue }).from(leads).where(eq(leads.id, id.parse(leadId)));
+      input.expectedValuePaise = l?.v ?? null;
+    }
+    const r = await updateLead(db, id.parse(leadId), input);
     return { changed: r.changed, moved: r.moved };
   });
 }

@@ -5,7 +5,7 @@ import { z } from "zod";
 import { db } from "@/db";
 import { importLeads } from "@/db/lead-writer";
 import { UserFacingError } from "@/db/quote-writer";
-import { allow } from "@/lib/auth/guard";
+import { allow, moneyView, signedInUser } from "@/lib/auth/guard";
 import type { Permission } from "@/lib/auth/permissions";
 import { getImportLists } from "@/lib/crm-data";
 import { problemRowsWorkbook, readImportFile } from "@/lib/crm/excel";
@@ -65,14 +65,19 @@ export async function previewImportAction(form: FormData): Promise<Result<{ file
     const { rows, skippedExample } = await readImportFile(new Uint8Array(await file.arrayBuffer()));
     const lists = await getImportLists();
     const stages = new Map(lists.stages.map((s) => [s.id, s.name]));
-    return { fileName: file.name, rows: rows.map((r) => preview(checkImportRow(r.raw, r.rowNo, lists), stages)), skippedExample };
+    // Expected values are sale prices: left out for people who may not see them (and so not imported).
+    const sale = moneyView(await signedInUser()).sale;
+    const shown = sale ? rows : rows.map((r) => ({ ...r, raw: { ...r.raw, expectedValue: undefined } }));
+    return { fileName: file.name, rows: shown.map((r) => preview(checkImportRow(r.raw, r.rowNo, lists), stages)), skippedExample };
   });
 }
 
 /** Step 4: imports the good rows. Every row is checked again here, so only good rows are ever saved. */
 export async function importLeadsAction(rows: { rowNo: number; raw: RawRow }[], fileName: string): Promise<Result<{ imported: number; leadNos: string[]; nowFailing: number }>> {
   return guard("crm.import", async () => {
-    const checked = await check(rowsSchema.parse(rows) as { rowNo: number; raw: RawRow }[]);
+    const sale = moneyView(await signedInUser()).sale;
+    const parsed = rowsSchema.parse(rows) as { rowNo: number; raw: RawRow }[];
+    const checked = await check(sale ? parsed : parsed.map((r) => ({ ...r, raw: { ...r.raw, expectedValue: undefined } })));
     const good = checked.filter((c) => c.input);
     if (!good.length) throw new UserFacingError("None of these rows can be imported. Please fix the problems and upload the file again.");
     const made = await importLeads(

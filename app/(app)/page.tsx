@@ -225,9 +225,11 @@ async function CrmStats() {
       alert: false,
     },
   ];
+  // The two value cards are sale prices: only for people who may see them.
+  const shown = s.openValuePaise == null ? items.filter((i) => !i.label.includes("(before GST)")) : items;
   return (
     <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-      {items.map(({ label, value, icon: Icon, href, hint, sub, alert }) => (
+      {shown.map(({ label, value, icon: Icon, href, hint, sub, alert }) => (
         <Link key={label} href={href} className="rounded-2xl" title={hint}>
           <Card className="h-full transition hover:border-primary/30">
             <CardContent className="flex flex-col gap-3">

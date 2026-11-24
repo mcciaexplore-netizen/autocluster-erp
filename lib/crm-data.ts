@@ -4,7 +4,8 @@
  */
 import "server-only";
 import { and, asc, desc, eq, inArray, isNull, sql } from "drizzle-orm";
-import { need } from "@/lib/auth/guard";
+import { moneyView, need } from "@/lib/auth/guard";
+import { hideRupees } from "@/lib/money-text";
 import { connection } from "next/server";
 import { db } from "@/db";
 import { ensureCrmDefaults } from "@/db/crm-defaults";
@@ -81,7 +82,9 @@ export interface BoardLead extends FilterableLead {
 /** Every enquiry that isn't deleted, with what the cards and the list need. */
 export async function getBoardLeads(): Promise<BoardLead[]> {
   await connection();
-  await need(["crm.view"]);
+  const me = await need(["crm.view"]);
+  // Expected values are sale prices: blank (null) for people who may not see them.
+  const sale = moneyView(me).sale;
   const rows = await db
     .select({
       l: leads,
@@ -141,7 +144,7 @@ export async function getBoardLeads(): Promise<BoardLead[]> {
       customerId: l.customerId,
       stageId: l.stageId,
       priority: l.priority,
-      expectedValuePaise: l.expectedValue,
+      expectedValuePaise: sale ? l.expectedValue : null,
       expectedCloseDate: l.expectedCloseDate,
       sourceId: l.sourceId,
       sourceName,
@@ -181,7 +184,8 @@ export type BoardStage = { id: string; name: string; color: string; type: "OPEN"
 /** Everything the enquiry panel and full page show. */
 export async function getLeadDetail(id: string) {
   await connection();
-  await need(["crm.view"]);
+  const me = await need(["crm.view"]);
+  const sale = moneyView(me).sale;
   const [row] = await db
     .select({ l: leads, sourceName: crmSources.name, assignedToName: teamMembers.name, lostReason: crmLostReasons.name })
     .from(leads)
@@ -244,7 +248,7 @@ export async function getLeadDetail(id: string) {
       sourceName: row.sourceName,
       stageId: l.stageId,
       priority: l.priority,
-      expectedValuePaise: l.expectedValue,
+      expectedValuePaise: sale ? l.expectedValue : null,
       expectedCloseDate: l.expectedCloseDate,
       assignedTo: l.assignedTo,
       assignedToName: row.assignedToName,
@@ -270,13 +274,13 @@ export async function getLeadDetail(id: string) {
       doneAt: a.doneAt?.toISOString() ?? null,
       outcome: a.outcome,
     })),
-    events: events.map((e) => ({ id: e.id, type: e.type, message: e.message, createdBy: e.createdBy, createdAt: e.createdAt.toISOString() })),
+    events: events.map((e) => ({ id: e.id, type: e.type, message: sale ? e.message : hideRupees(e.message), createdBy: e.createdBy, createdAt: e.createdAt.toISOString() })),
     customer: c && !c.deletedAt ? { id: c.id, companyName: c.companyName } : null,
     quotations: quotes.map((q) => ({
       id: q.id,
       quoteNo: q.quoteNo,
       status: q.status,
-      totalPaise: toPaise(q.grandTotal),
+      totalPaise: sale ? toPaise(q.grandTotal) : null,
       quoteDate: q.quoteDate,
       tickets: tix.filter((t) => t.quotationId === q.id).map((t) => ({ ticketNo: t.ticketNo, stage: t.stage, description: t.description })),
     })),
@@ -334,8 +338,9 @@ export async function getLeadRef(id: string | null) {
 /** A customer's enquiries, newest first (customer page, Enquiries tab). */
 export async function getCustomerLeads(customerId: string) {
   await connection();
-  await need(["crm.view"]);
-  return db
+  const me = await need(["crm.view"]);
+  const sale = moneyView(me).sale;
+  const rows = await db
     .select({
       id: leads.id,
       leadNo: leads.leadNo,
@@ -352,12 +357,14 @@ export async function getCustomerLeads(customerId: string) {
     .leftJoin(crmLostReasons, eq(crmLostReasons.id, leads.lostReasonId))
     .where(and(eq(leads.customerId, customerId), isNull(leads.deletedAt)))
     .orderBy(desc(leads.createdAt));
+  return rows.map((r) => ({ ...r, expectedValue: sale ? r.expectedValue : null }));
 }
 
 /** The 4 CRM cards on the home page. Months and days are in India time. */
 export async function getCrmHomeStats() {
   await connection();
-  await need(["crm.view"]);
+  const me = await need(["crm.view"]);
+  const sale = moneyView(me).sale;
   const r = await db.execute<{ new_month: string; open_count: string; open_value: string; due_today: string; overdue: string; won_count: string; won_value: string }>(sql`
     with t as (select (now() at time zone 'Asia/Kolkata')::date as today)
     select
@@ -379,11 +386,12 @@ export async function getCrmHomeStats() {
   return {
     newThisMonth: Number(x.new_month),
     openCount: Number(x.open_count),
-    openValuePaise: Number(x.open_value),
+    // Sale prices: null for people who may not see them.
+    openValuePaise: sale ? Number(x.open_value) : null,
     dueToday: Number(x.due_today),
     overdue: Number(x.overdue),
     wonCount: Number(x.won_count),
-    wonValuePaise: Number(x.won_value),
+    wonValuePaise: sale ? Number(x.won_value) : null,
   };
 }
 

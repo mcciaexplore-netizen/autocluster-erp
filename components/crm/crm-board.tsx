@@ -8,7 +8,7 @@ import { usePatches } from "./use-patches";
 import { toast } from "sonner";
 import { useConfirm } from "@/components/common/confirm";
 import { EmptyState } from "@/components/common/empty-state";
-import { Can } from "@/components/auth/permissions-provider";
+import { Can, useCan } from "@/components/auth/permissions-provider";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -190,7 +190,9 @@ export function CrmBoard({ stages, leads, options: pickers, canManage }: { stage
   const cards = (s: BoardStage, draggable: boolean) =>
     inStage(s.id).map((l) => <LeadCard key={l.id} lead={l} stage={stageById(l.stageId)} stages={stages} today={today} handlers={handlers} draggable={draggable} />);
 
-  const total = (id: string) => inStage(id).reduce((a, l) => a + (l.expectedValuePaise ?? 0), 0);
+  // Column totals are sale prices: "Hidden" for people who may not see them.
+  const sale = useCan()("money.sale_prices");
+  const total = (id: string) => (sale ? inStage(id).reduce((a, l) => a + (l.expectedValuePaise ?? 0), 0) : null);
   const nothingAtAll = leads.length === 0;
   const nothingMatches = !nothingAtAll && visible.length === 0;
 
@@ -314,7 +316,7 @@ type ColumnMenu = {
   remove?: () => void;
 };
 
-function ColumnHeader({ stage, count, totalPaise, onQuickAdd, menu }: { stage: BoardStage; count: number; totalPaise: number; onQuickAdd: () => void; menu?: ColumnMenu }) {
+function ColumnHeader({ stage, count, totalPaise, onQuickAdd, menu }: { stage: BoardStage; count: number; totalPaise: number | null; onQuickAdd: () => void; menu?: ColumnMenu }) {
   return (
     <header className="mb-3">
       <div className={cn("mb-2 h-1.5 rounded-full", stageColor(stage.color).bar)} aria-hidden />

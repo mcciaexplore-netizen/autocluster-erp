@@ -10,6 +10,7 @@ import { Controller, useForm, useWatch } from "react-hook-form";
 import { toast } from "sonner";
 import { Field } from "@/components/forms/field";
 import { CustomerPicker } from "@/components/quotations/builder/customer-picker";
+import { Can } from "@/components/auth/permissions-provider";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -340,14 +341,17 @@ export function LeadForm({
             )}
           </div>
 
-          <Field label="Expected value (₹)" optional error={e.expectedValue?.message} helper="e.g. 50000">
-            {(p) => (
-              <div className="flex min-w-0 items-center rounded-xl border bg-card focus-within:ring-2 focus-within:ring-ring">
-                <span className="pl-3 text-muted-foreground">₹</span>
-                <Input {...p} inputMode="decimal" className="border-0 shadow-none focus-visible:ring-0" {...register("expectedValue")} />
-              </div>
-            )}
-          </Field>
+          {/* A sale price: only for people who may see prices (the server keeps the stored value for others). */}
+          <Can perm="money.sale_prices">
+            <Field label="Expected value (₹)" optional error={e.expectedValue?.message} helper="e.g. 50000">
+              {(p) => (
+                <div className="flex min-w-0 items-center rounded-xl border bg-card focus-within:ring-2 focus-within:ring-ring">
+                  <span className="pl-3 text-muted-foreground">₹</span>
+                  <Input {...p} inputMode="decimal" className="border-0 shadow-none focus-visible:ring-0" {...register("expectedValue")} />
+                </div>
+              )}
+            </Field>
+          </Can>
           <Field label="Expected close date" optional error={e.expectedCloseDate?.message}>
             {(p) => <Input {...p} type="date" {...register("expectedCloseDate")} />}
           </Field>

@@ -3,6 +3,7 @@ import "server-only";
 import { asc, desc, eq, inArray, sql } from "drizzle-orm";
 import { moneyView, need } from "@/lib/auth/guard";
 import { blankKeys } from "@/lib/auth/redact";
+import { hideRupees } from "@/lib/money-text";
 import { connection } from "next/server";
 import { db } from "@/db";
 import {
@@ -201,11 +202,6 @@ export async function getBoardTickets(customerId?: string): Promise<BoardTicket[
       return j ? { id: j.id, status: j.status, bookedOn: j.start_at, machine: j.machine, checkWorkDone: j.check_work_done } : null;
     })(),
   }));
-}
-
-/** "Payment of ₹4,248 received" -> "Payment of (amount hidden) received". */
-export function hideRupees(text: string): string {
-  return text.replace(/(?:₹|Rs\.?\s?)\s?[\d,]+(?:\.\d+)?/g, "(amount hidden)");
 }
 
 /** An invoice without amounts, for people who may not see sale prices. */

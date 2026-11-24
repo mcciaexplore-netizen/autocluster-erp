@@ -26,6 +26,8 @@ export function denyMessage(perm: Permission, dept?: string | null | string[]): 
   return `You don't have permission to ${lower(PERMISSIONS[perm].label)}. Ask your admin if you need it.`;
 }
 
+export const CHANGE_PASSWORD_FIRST = "Please choose your new password first. Reload the page to do it.";
+
 export type Allowed = { ok: true; me: CurrentUser } | { ok: false; message: string };
 
 /** The signed-in person (not still on a temporary password), or null. */
@@ -39,7 +41,9 @@ export async function signedInUser(): Promise<CurrentUser | null> {
  * Pass several permissions to allow any one of them. `dept` limits a scoped permission.
  */
 export async function allow(perm: Permission | Permission[], opts: { dept?: string | null | string[] } = {}): Promise<Allowed> {
-  const me = await signedInUser();
+  const raw = await getCurrentUser();
+  if (raw?.mustChangePassword) return { ok: false, message: CHANGE_PASSWORD_FIRST };
+  const me = raw;
   if (!me) return { ok: false, message: SIGNED_OUT_MESSAGE };
   const perms = Array.isArray(perm) ? perm : [perm];
   if (perms.some((p) => can(me, p, opts))) return { ok: true, me };
@@ -52,7 +56,10 @@ export async function allow(perm: Permission | Permission[], opts: { dept?: stri
  * Not allowed: NoAccessError (pages check the area first, so this is the safety net).
  */
 export async function need(perm: Permission | Permission[] = []): Promise<CurrentUser> {
-  const me = await signedInUser();
+  const raw = await getCurrentUser();
+  // Still on a temporary password: nothing else until they choose their own.
+  if (raw?.mustChangePassword) redirect("/change-password");
+  const me = raw;
   if (!me) redirect("/sign-in");
   const perms = Array.isArray(perm) ? perm : [perm];
   if (perms.length && !canAny(me, perms)) throw new NoAccessError();

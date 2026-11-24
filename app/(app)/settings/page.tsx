@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { settingsAccess } from "@/lib/admin-data";
 import { Suspense } from "react";
 import { FormSkeleton } from "@/components/common/form-skeleton";
 import { PageHeader } from "@/components/common/page-header";
@@ -40,20 +41,24 @@ export default function SettingsPage() {
 }
 
 async function Holidays() {
+  await settingsAccess();
   const hs = await listHolidays();
   return <HolidaysSection holidays={hs} today={todayInIndia()} />;
 }
 
 async function InvLists() {
+  await settingsAccess();
   const l = await getInvLists();
   return <InventoryListsSection lists={{ invCategories: l.categories, invUnits: l.units, invPurposes: l.purposes, invReasons: l.reasons }} />;
 }
 
 async function CrmLists() {
+  await settingsAccess();
   return <CrmListsSection lists={await getCrmLists()} />;
 }
 
 async function Form() {
+  await settingsAccess();
   const [s, stages] = await Promise.all([getSettings(), getCrmStages()]);
   return (
     <SettingsForm

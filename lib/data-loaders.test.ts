@@ -7,7 +7,7 @@ import { describe, expect, it } from "vitest";
  * `await connection()` breaks the production build ("unstable value Date.now()").
  * The local build doesn't always catch it, so this checks every loader.
  */
-const FILES = ["lib/data.ts", "lib/crm-data.ts", "lib/inventory-data.ts", "lib/inventory-insights.ts", "lib/orders-data.ts", "lib/planning-data.ts", "lib/planning-insights.ts", "lib/profile-data.ts"];
+const FILES = ["lib/data.ts", "lib/crm-data.ts", "lib/inventory-data.ts", "lib/inventory-insights.ts", "lib/orders-data.ts", "lib/planning-data.ts", "lib/planning-insights.ts", "lib/profile-data.ts", "lib/admin-data.ts"];
 
 /** Each exported async loader with the first two statements of its body. */
 function loaders(file: string) {
