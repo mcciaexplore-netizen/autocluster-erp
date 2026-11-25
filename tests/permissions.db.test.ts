@@ -177,7 +177,8 @@ describe.skipIf(skip)("permissions on the server (database)", () => {
       .readdirSync(path.resolve(__dirname, "../lib/actions"))
       .filter((f) => f.endsWith(".ts") && !f.endsWith(".test.ts"))
       // Signing in, choosing the new password and signing out are what they are allowed to do.
-      .filter((f) => !["session.ts", "auth.ts"].includes(f));
+      // Sign-in and PIN sign-in work before anyone is signed in; they check credentials themselves.
+      .filter((f) => !["session.ts", "auth.ts", "floor.ts"].includes(f));
 
     it("every page loader sends them to 'Choose your new password'", async () => {
       current = newAdmin;

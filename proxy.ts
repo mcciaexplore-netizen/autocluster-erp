@@ -9,9 +9,10 @@
 import { getSessionCookie } from "better-auth/cookies";
 import { NextResponse, type NextRequest } from "next/server";
 import { authEnabled, SESSION_COOKIE, verifySessionToken } from "@/lib/auth/demo-gate";
+import { DEVICE_COOKIE, FLOOR_COOKIE } from "@/lib/auth/floor-cookies";
 
 /** Pages and endpoints that work before signing in. */
-const OPEN = ["/sign-in", "/api/auth"];
+const OPEN = ["/sign-in", "/api/auth", "/floor"];
 
 export function proxy(request: NextRequest) {
   const { pathname, search } = request.nextUrl;
@@ -34,6 +35,13 @@ export function proxy(request: NextRequest) {
 
   if (OPEN.some((p) => pathname === p || pathname.startsWith(`${p}/`))) return NextResponse.next();
   if (getSessionCookie(request, { cookiePrefix: "acdri" })) return NextResponse.next();
+
+  // Shared shop-floor device: an operator's PIN session may use the app (the server limits it to
+  // Today's work); with nobody signed in, the device shows the names on /floor.
+  if (request.cookies.get(DEVICE_COOKIE)?.value) {
+    if (request.cookies.get(FLOOR_COOKIE)?.value) return NextResponse.next();
+    if (!pathname.startsWith("/api/")) return NextResponse.redirect(new URL("/floor", request.url));
+  }
 
   if (pathname.startsWith("/api/")) return NextResponse.json({ error: "Please sign in again." }, { status: 401 });
   const url = new URL("/sign-in", request.url);

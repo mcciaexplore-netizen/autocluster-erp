@@ -18,6 +18,20 @@ export interface Access {
 export async function readAccess(conn: DB | Tx, authUserId: string): Promise<Access | null> {
   const [u] = await conn.select().from(appUsers).where(eq(appUsers.authUserId, authUserId));
   if (!u || u.deactivatedAt || !u.canSignIn) return null;
+  return accessFor(conn, u);
+}
+
+/**
+ * A shop-floor PIN session (section 7): the person by their app_users id. Name-only people may
+ * use a PIN on a shared device; deactivated people and people without a PIN may not.
+ */
+export async function readFloorAccess(conn: DB | Tx, appUserId: string): Promise<Access | null> {
+  const [u] = await conn.select().from(appUsers).where(eq(appUsers.id, appUserId));
+  if (!u || u.deactivatedAt || !u.pinHash) return null;
+  return accessFor(conn, u);
+}
+
+async function accessFor(conn: DB | Tx, u: typeof appUsers.$inferSelect): Promise<Access> {
   const [depts, rs, perms] = await Promise.all([
     conn.select({ code: userDepartments.deptCode }).from(userDepartments).where(eq(userDepartments.userId, u.id)),
     conn.select({ id: roles.id, name: roles.name, scope: roles.scopeOwnDepartments }).from(userRoles).innerJoin(roles, eq(roles.id, userRoles.roleId)).where(eq(userRoles.userId, u.id)).orderBy(roles.sortOrder),

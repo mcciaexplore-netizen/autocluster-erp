@@ -7,6 +7,7 @@ import { useState, useSyncExternalStore, useTransition } from "react";
 import { toast } from "sonner";
 import { useConfirm } from "@/components/common/confirm";
 import { useCan, useMe } from "@/components/auth/permissions-provider";
+import { useFloor } from "@/components/floor/floor-context";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -64,6 +65,7 @@ export function TodayBoard({ data }: { data: TodayData }) {
   const can = useCan();
   const router = useRouter();
   const self = useMe();
+  const floor = useFloor();
   const stored = useSyncExternalStore(subscribe, read, () => "");
   // Everyone works as themselves. Managers and Admins can look at someone else's day (or everyone's).
   const mineId = self.teamMemberId && data.team.some((t) => t.id === self.teamMemberId) ? self.teamMemberId : "";
@@ -93,6 +95,7 @@ export function TodayBoard({ data }: { data: TodayData }) {
       }
       toast.success(`${c.ticketNo} ${c.status === "ON_HOLD" ? "resumed" : "started"}${r.data.machine ? ` on ${r.data.machine}` : ""}`);
       router.refresh();
+      floor?.finished();
     });
 
   const Section = ({ title, list, empty }: { title: string; list: TodayCard[]; empty?: string }) =>
@@ -284,6 +287,7 @@ function MachineDialog({ ask, onClose, onStart }: { ask: { card: TodayCard; info
 }
 
 function PauseDialog({ card, onClose, operatorId }: { card: TodayCard | null; onClose: () => void; operatorId: string | null }) {
+  const floor = useFloor();
   const router = useRouter();
   const [reason, setReason] = useState<string>("");
   const [note, setNote] = useState("");
@@ -314,6 +318,7 @@ function PauseDialog({ card, onClose, operatorId }: { card: TodayCard | null; on
                 const r = await pauseJobAction(card!.jobId, reason, note || null, operatorId);
                 if (!r.ok) return void toast.error(r.message);
                 toast.success(`${card!.ticketNo} paused`);
+                floor?.finished();
                 onClose();
                 setReason("");
                 setNote("");
@@ -337,7 +342,12 @@ function DoneDialog({ flow, setFlow, operatorId, template, orgName }: { flow: Do
   const [qty, setQty] = useState("");
   const [problems, setProblems] = useState("");
   const [pending, start] = useTransition();
-  const close = () => setFlow(null);
+  const floor = useFloor();
+  // On a shared device the operator is signed out once the job is marked done and the dialog closes.
+  const close = () => {
+    if (flow.step !== "form") floor?.finished();
+    setFlow(null);
+  };
   const wa = c.phone ? whatsappNumber(c.phone) : null;
   const message = fillReadyTemplate(template, { contact_name: c.contact ?? "Sir / Madam", company: c.company, job_no: c.ticketNo, service: c.service, org_name: orgName });
   return (
@@ -439,6 +449,7 @@ function DoneDialog({ flow, setFlow, operatorId, template, orgName }: { flow: Do
 }
 
 function HandOverDialog({ card, onClose, today }: { card: TodayCard | null; onClose: () => void; today: string }) {
+  const floor = useFloor();
   const router = useRouter();
   const [date, setDate] = useState(today);
   const [to, setTo] = useState("");
@@ -469,6 +480,7 @@ function HandOverDialog({ card, onClose, today }: { card: TodayCard | null; onCl
                 const r = await handOverAction(card!.jobId, date, to);
                 if (!r.ok) return void toast.error(r.message);
                 toast.success(`${card!.ticketNo} handed over`);
+                floor?.finished();
                 setTo("");
                 onClose();
                 router.refresh();

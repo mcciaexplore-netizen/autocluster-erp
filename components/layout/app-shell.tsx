@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth/current-user";
 import { navFor } from "./nav";
 import { UserMenu } from "./user-menu";
+import { FloorBar } from "@/components/floor/floor-context";
 
 function Logo() {
   return (
@@ -28,6 +29,8 @@ async function LiveUserMenu() {
   const me = await getCurrentUser();
   if (!me) redirect("/sign-in");
   if (me.mustChangePassword) redirect("/change-password");
+  // A PIN session on a shared shop-floor device: no account menu, just "Done".
+  if (me.floor) return <FloorBar name={me.name} />;
   return <UserMenu name={me.name} roles={me.roles.map((r) => r.name)} />;
 }
 

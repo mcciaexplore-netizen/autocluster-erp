@@ -11,6 +11,7 @@ import { passwordProblem } from "@/lib/auth/password-rules";
 import { auth } from "@/lib/auth/server";
 import { logActivity } from "@/lib/activity";
 import { checkSignIn } from "@/lib/auth/sign-in-flow";
+import { pinProblem } from "@/lib/auth/floor-core";
 
 export type FormState = { error: string | null; ok?: string | null };
 
@@ -70,7 +71,7 @@ async function setOwnPassword(userId: string, authUserId: string, sessionId: str
 /** First sign-in with a temporary password: "Choose your new password". */
 export async function chooseNewPassword(_prev: FormState, fd: FormData): Promise<FormState> {
   const me = await getCurrentUser();
-  if (!me) redirect("/sign-in");
+  if (!me || me.floor) redirect("/sign-in");
   const password = String(fd.get("password") ?? "");
   const again = String(fd.get("again") ?? "");
   const problem = passwordProblem(password, { name: me.name, email: me.email });
@@ -82,8 +83,9 @@ export async function chooseNewPassword(_prev: FormState, fd: FormData): Promise
 
 /** Profile: change password (asks for the current one). */
 export async function changePassword(_prev: FormState, fd: FormData): Promise<FormState> {
+  // A shop-floor PIN session can't change account details.
   const me = await getCurrentUser();
-  if (!me) return { error: "You have been signed out. Please sign in again." };
+  if (!me || me.floor) return { error: "You have been signed out. Please sign in again." };
   const current = String(fd.get("current") ?? "");
   const password = String(fd.get("password") ?? "");
   const again = String(fd.get("again") ?? "");
@@ -100,8 +102,9 @@ export async function changePassword(_prev: FormState, fd: FormData): Promise<Fo
 
 /** Profile: name and mobile. Kept in step with the team list, so pickers show the same name. */
 export async function updateProfile(_prev: FormState, fd: FormData): Promise<FormState> {
+  // A shop-floor PIN session can't change account details.
   const me = await getCurrentUser();
-  if (!me) return { error: "You have been signed out. Please sign in again." };
+  if (!me || me.floor) return { error: "You have been signed out. Please sign in again." };
   const name = String(fd.get("name") ?? "").trim().replace(/\s+/g, " ");
   const mobile = String(fd.get("mobile") ?? "").replace(/\D/g, "").replace(/^91(?=\d{10}$)/, "");
   if (name.length < 2) return { error: "Please enter your full name." };
@@ -117,8 +120,9 @@ export async function updateProfile(_prev: FormState, fd: FormData): Promise<For
 
 /** Profile: "Sign out of this device" for one of the listed sessions. */
 export async function signOutSession(sessionId: string): Promise<FormState> {
+  // A shop-floor PIN session can't change account details.
   const me = await getCurrentUser();
-  if (!me) return { error: "You have been signed out. Please sign in again." };
+  if (!me || me.floor) return { error: "You have been signed out. Please sign in again." };
   await db.delete(authSessions).where(and(eq(authSessions.id, sessionId), eq(authSessions.userId, me.authUserId)));
   if (sessionId === me.sessionId) redirect("/sign-in");
   return { error: null, ok: "Signed out of that device." };
@@ -127,9 +131,25 @@ export async function signOutSession(sessionId: string): Promise<FormState> {
 /** Profile: "Sign out of all devices", including this one. */
 export async function signOutEverywhere() {
   const me = await getCurrentUser();
-  if (me) {
+  if (me && !me.floor) {
     await db.delete(authSessions).where(eq(authSessions.userId, me.authUserId));
     await logActivity({ area: "Sign-in", action: "signed out", summary: "Signed out of all devices", entityType: "user", entityId: me.id });
   }
   redirect("/sign-in");
+}
+
+/** Profile: "Shop-floor PIN" (4-6 digits) for shared devices on the shop floor. Stored only as a hash. */
+export async function setOwnPin(_prev: FormState, fd: FormData): Promise<FormState> {
+  const me = await getCurrentUser();
+  if (!me || me.floor) return { error: "You have been signed out. Please sign in again." };
+  if (me.mustChangePassword) return { error: "Please choose your new password first." };
+  const pin = String(fd.get("pin") ?? "");
+  const again = String(fd.get("again") ?? "");
+  const problem = pinProblem(pin);
+  if (problem) return { error: problem };
+  if (pin !== again) return { error: "The two PINs don't match." };
+  const ctx = await auth.$context;
+  await db.update(appUsers).set({ pinHash: await ctx.password.hash(pin), updatedAt: new Date() }).where(eq(appUsers.id, me.id));
+  await logActivity({ area: "Sign-in", action: "pin", summary: "Set their own shop-floor PIN", entityType: "user", entityId: me.id });
+  return { error: null, ok: "PIN saved. Use it on the shop-floor tablet." };
 }

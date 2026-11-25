@@ -7,6 +7,7 @@ import { PageHeader } from "@/components/common/page-header";
 import { Skeleton } from "@/components/ui/skeleton";
 import { changePassword } from "@/lib/actions/session";
 import { getProfile } from "@/lib/profile-data";
+import { OwnPinForm, ThisDeviceForm } from "@/components/floor/device-forms";
 
 export const metadata: Metadata = { title: "Profile" };
 
@@ -48,6 +49,16 @@ async function Body() {
       <Card title="Recent sign-ins">
         <SignInHistory items={p.signIns} />
       </Card>
+      {p.pin.canOperate || p.pin.hasPin ? (
+        <Card title="Shop-floor PIN">
+          <OwnPinForm hasPin={p.pin.hasPin} />
+        </Card>
+      ) : null}
+      {p.device ? (
+        <Card title="This device">
+          <ThisDeviceForm current={p.device.current} departments={p.allDepartments} />
+        </Card>
+      ) : null}
       <Card title="Your roles and departments">
         <dl className="grid grid-cols-[8rem_1fr] gap-y-3 text-sm">
           <dt className="text-muted-foreground">Roles</dt>

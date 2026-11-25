@@ -1,9 +1,9 @@
 /** Admin pages: Users and Roles (section 5). Everything here needs "users.manage". */
 import "server-only";
-import { asc, eq, sql } from "drizzle-orm";
+import { asc, eq, isNull, sql } from "drizzle-orm";
 import { connection } from "next/server";
 import { db } from "@/db";
-import { appUsers, departments, rolePermissions, roles, userDepartments, userRoles } from "@/db/schema";
+import { appUsers, departments, rolePermissions, roles, sharedDevices, userDepartments, userRoles } from "@/db/schema";
 import { need } from "@/lib/auth/guard";
 import { lockedEmails } from "@/lib/auth/sign-in-limits";
 
@@ -108,6 +108,7 @@ export async function getUser(id: string) {
     deactivatedAt: u.deactivatedAt?.toISOString() ?? null,
     lastSignInAt: u.lastSignInAt?.toISOString() ?? null,
     isDemo: u.isDemo,
+    hasPin: !!u.pinHash,
     locked,
     history: history.rows,
   };
@@ -138,3 +139,11 @@ export async function getRole(id: number) {
   return { id: r.id, name: r.name, description: r.description, isSystem: r.isSystem, scopeOwnDepartments: r.scopeOwnDepartments, permissions: perms.map((x) => x.p), people: people.rows };
 }
 export type RoleDetail = NonNullable<Awaited<ReturnType<typeof getRole>>>;
+
+/** Shared shop-floor devices still in use (Users page). */
+export async function listSharedDevices() {
+  await connection();
+  await need(["users.manage"]);
+  const rows = await db.select().from(sharedDevices).where(isNull(sharedDevices.revokedAt)).orderBy(asc(sharedDevices.name));
+  return rows.map((d) => ({ id: d.id, name: d.name, deptCodes: d.deptCodes, createdAt: d.createdAt.toISOString() }));
+}

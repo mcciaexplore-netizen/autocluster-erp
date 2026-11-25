@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
-import { ArrowLeft, History } from "lucide-react";
+import { ArrowLeft, History, KeyRound } from "lucide-react";
+import { UserPinForm } from "@/components/floor/device-forms";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Suspense } from "react";
@@ -54,6 +55,12 @@ async function Detail({ params }: { params: Promise<{ id: string }> }) {
         initial={{ name: u.name, canSignIn: u.canSignIn, email: u.email, mobile: u.mobile, roleIds: u.roleIds, allDepartments: u.allDepartments, deptCodes: u.deptCodes }}
         status={{ deactivated: !!u.deactivatedAt, hasAccount: u.hasAccount, isSelf: me?.id === u.id }}
       />
+      <section className="mt-6 rounded-2xl border bg-card p-4 sm:p-6">
+        <h2 className="mb-4 flex items-center gap-2 text-lg font-semibold">
+          <KeyRound className="size-5 text-primary" aria-hidden /> Shop-floor PIN
+        </h2>
+        <UserPinForm id={u.id} name={u.name} hasPin={u.hasPin} />
+      </section>
       <section className="mt-6 rounded-2xl border bg-card p-4 sm:p-6">
         <h2 className="mb-4 flex items-center gap-2 text-lg font-semibold">
           <History className="size-5 text-primary" aria-hidden /> History

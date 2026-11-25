@@ -23,6 +23,6 @@ async function Form({ searchParams }: { searchParams: PageProps<"/sign-in">["sea
   const next = safeNextPath(Array.isArray(sp.next) ? sp.next[0] : sp.next);
   // Already signed in: go straight on.
   const me = await getCurrentUser();
-  if (me) redirect(me.mustChangePassword ? `/change-password?next=${encodeURIComponent(next)}` : next);
+  if (me && !me.floor) redirect(me.mustChangePassword ? `/change-password?next=${encodeURIComponent(next)}` : next);
   return <SignInForm next={next} />;
 }

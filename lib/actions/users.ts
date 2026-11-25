@@ -12,6 +12,11 @@ import { allow } from "@/lib/auth/guard";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { temporaryPassword } from "@/lib/auth/password-rules";
 import { auth } from "@/lib/auth/server";
+import { cookies } from "next/headers";
+import { and, eq, isNull } from "drizzle-orm";
+import { appUsers, sharedDevices } from "@/db/schema";
+import { DEVICE_COOKIE, findDevice, hashToken, newDeviceToken, pinProblem } from "@/lib/auth/floor-core";
+import { clearDeviceCookie, setDeviceCookie } from "@/lib/auth/floor-session";
 
 type Result<T> = { ok: true; data: T } | { ok: false; message: string };
 
@@ -126,5 +131,67 @@ export async function deleteRoleAction(id: number) {
     const name = await deleteRole(db, z.number().int().positive().parse(id));
     await logActivity({ area: "Roles", action: "deleted", entityType: "role", entityId: String(id), summary: `Deleted role ${name}` });
     return { name };
+  });
+}
+
+// ---- shared shop-floor devices and PINs (section 7) -----------------------------------------------
+
+const deviceSchema = z.object({ name: z.string().trim().min(2, { message: "Please name this device, e.g. RPT shop floor tablet." }).max(60), deptCodes: z.array(z.string().max(10)).max(20) });
+
+/** "Mark this device as a shared shop-floor device": from the Admin's profile, on that device. */
+export async function markThisDeviceSharedAction(input: z.input<typeof deviceSchema>) {
+  return run(async () => {
+    const v = deviceSchema.parse(input);
+    const g = await allow("users.manage");
+    const token = newDeviceToken();
+    const [d] = await db.insert(sharedDevices).values({ name: v.name, deptCodes: [...new Set(v.deptCodes)], tokenHash: hashToken(token), createdBy: g.ok ? g.me.id : null }).returning();
+    await setDeviceCookie(token);
+    await logActivity({ area: "Users", action: "shared device", summary: `Marked a device as shared: ${v.name}${v.deptCodes.length ? ` (${v.deptCodes.join(", ")})` : " (all departments)"}`, entityType: "shared_device", entityId: d.id });
+    return { id: d.id };
+  });
+}
+
+/** "Stop sharing this device": the token is revoked and the cookie removed. */
+export async function stopSharingThisDeviceAction() {
+  return run(async () => {
+    const d = await findDevice(db, (await cookies()).get(DEVICE_COOKIE)?.value);
+    if (d) {
+      await db.update(sharedDevices).set({ revokedAt: new Date() }).where(eq(sharedDevices.id, d.id));
+      await logActivity({ area: "Users", action: "shared device", summary: `Stopped sharing device ${d.name}`, entityType: "shared_device", entityId: d.id });
+    }
+    await clearDeviceCookie();
+    return { ok: true };
+  });
+}
+
+/** From the Users page: stop a shared device anywhere (e.g. a lost tablet). Its PIN sessions end at once. */
+export async function revokeDeviceAction(id: string) {
+  return run(async () => {
+    const [d] = await db.update(sharedDevices).set({ revokedAt: new Date() }).where(and(eq(sharedDevices.id, uuid.parse(id)), isNull(sharedDevices.revokedAt))).returning();
+    if (!d) throw new UserFacingError("This device was already stopped.");
+    await logActivity({ area: "Users", action: "shared device", summary: `Stopped shared device ${d.name}`, entityType: "shared_device", entityId: d.id });
+    return { name: d.name };
+  });
+}
+
+/** Admin sets someone's shop-floor PIN (also for name-only people, e.g. contract operators). */
+export async function setUserPinAction(id: string, pin: string) {
+  return run(async () => {
+    const problem = pinProblem(String(pin));
+    if (problem) throw new UserFacingError(problem);
+    const ctx = await auth.$context;
+    const [u] = await db.update(appUsers).set({ pinHash: await ctx.password.hash(String(pin)), updatedAt: new Date() }).where(eq(appUsers.id, uuid.parse(id))).returning({ name: appUsers.fullName });
+    if (!u) throw new UserFacingError("This person could not be found. Please refresh the page.");
+    await logActivity({ area: "Users", action: "pin", summary: `Set the shop-floor PIN of ${u.name}`, entityType: "user", entityId: id });
+    return { name: u.name };
+  });
+}
+
+export async function clearUserPinAction(id: string) {
+  return run(async () => {
+    const [u] = await db.update(appUsers).set({ pinHash: null, updatedAt: new Date() }).where(eq(appUsers.id, uuid.parse(id))).returning({ name: appUsers.fullName });
+    if (!u) throw new UserFacingError("This person could not be found. Please refresh the page.");
+    await logActivity({ area: "Users", action: "pin", summary: `Removed the shop-floor PIN of ${u.name}`, entityType: "user", entityId: id });
+    return { name: u.name };
   });
 }

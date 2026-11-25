@@ -7,6 +7,7 @@ import { redirect } from "next/navigation";
 import { SIGNED_OUT_MESSAGE } from "@/lib/auth-messages";
 import { can, canAny } from "./can";
 import { getCurrentUser, type CurrentUser } from "./current-user";
+import { touchFloor } from "./floor-session";
 import { PERMISSIONS, type Permission } from "./permissions";
 
 export class NoAccessError extends Error {
@@ -46,7 +47,10 @@ export async function allow(perm: Permission | Permission[], opts: { dept?: stri
   const me = raw;
   if (!me) return { ok: false, message: SIGNED_OUT_MESSAGE };
   const perms = Array.isArray(perm) ? perm : [perm];
-  if (perms.some((p) => can(me, p, opts))) return { ok: true, me };
+  if (perms.some((p) => can(me, p, opts))) {
+    await touchFloor(me); // a shop-floor PIN session stays open 10 minutes from its last action
+    return { ok: true, me };
+  }
   const hasAnywhere = "dept" in opts && perms.some((p) => can(me, p));
   return { ok: false, message: denyMessage(perms[0], hasAnywhere ? opts.dept : undefined) };
 }

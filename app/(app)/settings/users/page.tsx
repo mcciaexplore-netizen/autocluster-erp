@@ -6,7 +6,8 @@ import { PageHeader } from "@/components/common/page-header";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { UsersList } from "@/components/users/users-list";
-import { getUserFormOptions, listUsers, userFiltersFromParams } from "@/lib/users-data";
+import { getUserFormOptions, listSharedDevices, listUsers, userFiltersFromParams } from "@/lib/users-data";
+import { SharedDevicesList } from "@/components/floor/device-forms";
 
 export const metadata: Metadata = { title: "Users" };
 
@@ -34,6 +35,11 @@ export default function UsersPage({ searchParams }: { searchParams: Sp }) {
 }
 
 async function Body({ searchParams }: { searchParams: Sp }) {
-  const [users, options] = await Promise.all([listUsers(userFiltersFromParams(await searchParams)), getUserFormOptions()]);
-  return <UsersList users={users} roles={options.roles} departments={options.departments} />;
+  const [users, options, devices] = await Promise.all([listUsers(userFiltersFromParams(await searchParams)), getUserFormOptions(), listSharedDevices()]);
+  return (
+    <>
+      <UsersList users={users} roles={options.roles} departments={options.departments} />
+      <SharedDevicesList devices={devices} />
+    </>
+  );
 }
