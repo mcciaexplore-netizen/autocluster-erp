@@ -44,7 +44,7 @@ export function createPool(connectionString: string, max: number): Pool {
 export function isConnectionDrop(e: unknown): boolean {
   const err = e as { code?: string; message?: string; cause?: unknown };
   const text = `${err?.code ?? ""} ${err?.message ?? ""}`;
-  if (/ECONNRESET|ETIMEDOUT|EPIPE|ECONNREFUSED|EAI_AGAIN|Connection terminated|terminating connection|connection timeout|Client has encountered a connection error|08006|08003|08001|57P01/i.test(text)) return true;
+  if (/ECONNRESET|ETIMEDOUT|EPIPE|ECONNREFUSED|EAI_AGAIN|ENOTFOUND|Connection terminated|terminating connection|connection timeout|Client has encountered a connection error|08006|08003|08001|57P01/i.test(text)) return true;
   return err?.cause ? isConnectionDrop(err.cause) : false;
 }
 
