@@ -34,8 +34,8 @@ async function LiveUserMenu() {
   if (me.mustChangePassword) redirect("/change-password");
   // A PIN session on a shared shop-floor device: no account menu, just "Done".
   if (me.floor) return <FloorBar name={me.name} />;
-  const menu = <UserMenu name={me.name} roles={me.roles.map((r) => r.name)} />;
-  if (!isDemoMode()) return menu;
+  if (!isDemoMode()) return <UserMenu name={me.name} roles={me.roles.map((r) => r.name)} />;
+  const menu = <UserMenu name={me.name} roles={me.roles.map((r) => r.name)} compact />;
   // Demo site: which role this is, and "Switch role".
   const role = TRY_AS_ROLES.find((r) => r.name === me.name)?.role ?? (me.roles.map((r) => r.name).join(" + ") || "No role");
   return (
@@ -72,7 +72,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <div className="flex flex-1">
         <nav
           aria-label="Main"
-          className="sticky top-16 hidden h-[calc(100dvh-4rem)] w-60 shrink-0 flex-col gap-1 border-r bg-card p-3 md:flex print:hidden"
+          className="sticky top-16 hidden h-[calc(100dvh-4rem)] w-60 shrink-0 flex-col gap-1 overflow-y-auto border-r bg-card p-3 md:flex print:hidden"
         >
           <Suspense fallback={<NavLinkList variant="side" pathname={null} allowed={["/"]} />}>
             <LiveNav variant="side" />

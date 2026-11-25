@@ -51,7 +51,7 @@ export function DemoChip({ label, roles }: { label: string; roles: Role[] }) {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <button type="button" className="flex max-w-[55vw] items-center gap-1.5 rounded-full border border-amber-300 bg-amber-50 px-3 py-1.5 text-xs font-medium text-amber-900 hover:bg-amber-100" aria-label={`Demo: signed in as ${label}. Switch role`}>
+        <button type="button" className="flex max-w-[34vw] items-center sm:max-w-[55vw] gap-1.5 rounded-full border border-amber-300 bg-amber-50 px-3 py-1.5 text-xs font-medium text-amber-900 hover:bg-amber-100" aria-label={`Demo: signed in as ${label}. Switch role`}>
           {pending ? <Loader2 className="size-3.5 animate-spin" aria-hidden /> : <Repeat2 className="size-3.5 shrink-0" aria-hidden />}
           <span className="truncate">
             <span className="hidden sm:inline">Demo: signed in as </span>

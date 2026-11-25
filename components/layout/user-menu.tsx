@@ -11,12 +11,14 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { signOutAction } from "@/lib/actions/session";
+import { cn } from "@/lib/utils";
 
-export function UserMenu({ name, roles }: { name: string | null; roles: string[] }) {
+/** `compact`: on phones only the icon shows (the name is inside the menu), e.g. next to the demo chip. */
+export function UserMenu({ name, roles, compact = false }: { name: string | null; roles: string[]; compact?: boolean }) {
   const label = (
     <>
       <CircleUserRound className="size-6 text-primary" aria-hidden />
-      <span className="max-w-[9rem] truncate font-medium text-foreground sm:max-w-[14rem]">{name ?? ""}</span>
+      <span className={cn("max-w-[9rem] truncate font-medium text-foreground sm:max-w-[14rem]", compact && "hidden md:inline")}>{name ?? ""}</span>
     </>
   );
   if (!name) return <div className="flex h-11 items-center gap-2 text-sm">{label}</div>;

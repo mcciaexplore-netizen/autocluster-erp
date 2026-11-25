@@ -18,6 +18,7 @@ import path from "node:path";
 import { randomBytes } from "node:crypto";
 import { eq, sql } from "drizzle-orm";
 import { TRY_AS_ROLES } from "../db/demo-users";
+import { COMING_SOON } from "../lib/coming-soon";
 import { appUsers, sharedDevices } from "../db/schema";
 import { createAuth } from "../lib/auth/better-auth";
 import { createSessionToken, SESSION_COOKIE } from "../lib/auth/demo-gate";
@@ -62,6 +63,7 @@ async function main() {
     "/inventory/counts/[id]": await one(sql`select id from inv_counts limit 1`),
     "/settings/users/[id]": await one(sql`select id from app_users limit 1`),
     "/settings/roles/[id]": await one(sql`select id::text as id from roles limit 1`),
+    "/soon/[slug]": COMING_SOON[0]?.slug,
   };
   const urls: string[] = [];
   const problems: string[] = [];
@@ -73,7 +75,9 @@ async function main() {
     const key = Object.keys(ids).find((k) => p.startsWith(k));
     const id = key ? ids[key] : undefined;
     if (!key || !id) problems.push(`No record to open ${p} with: add it to the ids list in scripts/check-pages.ts`);
-    else urls.push(p.replace("[id]", id));
+    else urls.push(p.replace(/\[[^\]]+\]/, id));
+    // Every coming-soon page, not just the first.
+    if (key === "/soon/[slug]") for (const m of COMING_SOON.slice(1)) urls.push(`/soon/${m.slug}`);
   }
 
   // ---- the states ----
