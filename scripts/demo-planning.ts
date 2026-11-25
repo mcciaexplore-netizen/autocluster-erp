@@ -90,6 +90,38 @@ function seeded(seed: number) {
   };
 }
 
+/** Demo operators' daily work (3 weeks ahead): their departments, machines (never the 5-Axis VMC) and kinds of work. */
+const OP_DEPTS: Record<string, string[]> = { "Amit Patil": ["PPF", "MET"], "Rohan Deshpande": ["RPT"], "Priya Shah": ["ENV", "RPL"] };
+const OP_MACHINES: Record<string, string[]> = {
+  PPF: ["3-Axis VMC", "Turn Mill Centre", "Deep Hole Drilling", "3+1 Axis VMC (Rotary Attachment)", "W-EDM", "Die Sinking EDM"],
+  MET: ["Co-ordinate Measuring Machine (CMM)"],
+  RPT: ["FDM - Stratasys 450 MC", "Figure 4 Standalone Pro", "Origin 1 SLA", "SLS - EOS P385", "Vacuum Casting - KLM"],
+  ENV: ["Salt Spray Test Chamber", "Water Spray Test Chamber", "Thermal Shock Test Chamber", "Xenon Test Chamber"],
+  RPL: ["Universal Testing Machine (UTM)", "Impact Tester", "Thermogravimetric Analyser (TGA)", "Melt Flow Indexer", "Multi Head Micro Hardness Tester"],
+};
+const OP_WORK: Record<string, { what: string; hours: number; rate: number }[]> = {
+  PPF: [
+    { what: "3-axis milling of fixture blocks (customer tooling)", hours: 3, rate: 2700_00 },
+    { what: "Turn-mill machining of EN8 pins (customer bar stock)", hours: 2.5, rate: 3000_00 },
+    { what: "Deep hole drilling of cooling lines (customer insert)", hours: 2, rate: 2000_00 },
+  ],
+  MET: [{ what: "CMM first article inspection", hours: 2, rate: 2600_00 }],
+  RPT: [
+    { what: "FDM assembly jigs in customer-supplied ABS", hours: 3, rate: 2400_00 },
+    { what: "Resin prints in customer-supplied resin", hours: 2.5, rate: 2200_00 },
+    { what: "SLS parts in customer-supplied PA12 powder", hours: 3, rate: 3600_00 },
+  ],
+  ENV: [
+    { what: "Salt spray check (customer profile, 6 h)", hours: 6, rate: 1800_00 },
+    { what: "Water spray IPX4 check", hours: 4, rate: 1600_00 },
+  ],
+  RPL: [
+    { what: "Tensile test batch (customer specimens)", hours: 2, rate: 3000_00 },
+    { what: "Izod impact batch (customer specimens)", hours: 2, rate: 2400_00 },
+    { what: "Micro hardness survey (customer samples)", hours: 2, rate: 2000_00 },
+  ],
+};
+
 const OPERATOR_FOR: Record<string, string> = { PPF: "Amit Patil", MET: "Amit Patil", RPT: "Rohan Deshpande", ENV: "Priya Shah", RPL: "Priya Shah" };
 const HOUR = 3_600_000;
 const daysBetweenDates = (a: string, b: string) => Math.round((Date.parse(`${b}T00:00:00Z`) - Date.parse(`${a}T00:00:00Z`)) / 86_400_000);
@@ -236,8 +268,30 @@ export async function loadPlanningDemo(conn: DB | Tx, opts: { log?: (m: string) 
   const [urgent] = await order(DECCAN, -3, "Quotation for tensile testing", [{ name: "UTM", q: { samples: 6 }, notes: "Tensile test, ASTM D638, rush" }], -1);
   const [pastPromise] = await order(NASHIK, -10, "Quotation for SLA prototypes", [{ name: "SLA - local resin", q: { ccPerPart: 80, parts: 3 }, notes: "Visual prototypes, revision C" }], -8);
   const [onHold] = await order(INDUS, -8, "Quotation for 3+1 axis machining", [{ name: "3+1 axis machining", q: { hours: 14 }, notes: "Fixture plate, new design" }], -5);
-  // Rohan's job for today ("Try it as Operator" and the shop-floor tablet): FDM jigs in customer-supplied ABS.
-  const [rohanToday] = await order(NASHIK, -4, "Quotation for FDM jigs", [{ custom: { dept: "RPT", description: "FDM assembly jigs in customer-supplied ABS", unitLabel: "per set", ratePaise: 2400_00 }, q: { quantity: 2 }, notes: "As per STEP files rev B" }], -2);
+  // Operators' daily work ("Try it as Operator" and the shop-floor tablet): one job for each demo operator on
+  // every working day of the next 3 weeks, in their departments. Custom items (customer-supplied material),
+  // so the Inventory demo's stock numbers don't change. One order per operator per week.
+  const opDays: { op: string; dept: string; day: number; work: (typeof OP_WORK)[string][number] }[] = [];
+  for (let d = 0; d < 21; d++) {
+    const date = day(d);
+    const iso = ((new Date(`${date}T00:00:00Z`).getUTCDay() + 6) % 7) + 1;
+    if (!pattern.days.includes(iso) || pattern.holidays.has(date)) continue;
+    for (const [op, depts] of Object.entries(OP_DEPTS)) {
+      const dept = depts[d % depts.length];
+      const list = OP_WORK[dept];
+      opDays.push({ op, dept, day: d, work: list[d % list.length] });
+    }
+  }
+  const opOrders: { ticketIds: string[]; plan: typeof opDays }[] = [];
+  const OP_CUSTOMERS = [NASHIK, BHARAT, TALEGAON, SAHYADRI, INDUS, DECCAN];
+  for (const [i, op] of Object.keys(OP_DEPTS).entries()) {
+    for (let w = 0; w < 3; w++) {
+      const plan = opDays.filter((x) => x.op === op && Math.floor(x.day / 7) === w);
+      if (!plan.length) continue;
+      const ts = await order(OP_CUSTOMERS[(i * 3 + w) % OP_CUSTOMERS.length], -3, `Quotation for ${plan[0].work.what.toLowerCase()} and more`, plan.map((x) => ({ custom: { dept: x.dept, description: x.work.what, unitLabel: "per job", ratePaise: x.work.rate }, q: { quantity: 1 }, notes: "Customer-supplied material" })), -1);
+      opOrders.push({ ticketIds: ts.map((t) => t.id), plan });
+    }
+  }
   const [late] = await order(TALEGAON, -6, "Quotation for dust testing", [{ name: "Dust spray chamber", q: { hours: 72 }, notes: "IP6X dust test, gearbox housing" }], -3);
 
   // ---- Past work, invoiced and paid (chamber tests without a materials list, and custom items) ----
@@ -357,7 +411,7 @@ export async function loadPlanningDemo(conn: DB | Tx, opts: { log?: (m: string) 
   }
 
   const windowStart = istAt(day(-56), 0);
-  const storyIds = new Set([laser, ozone, cmm, ...fiveAxis, urgent, pastPromise, onHold, late, rohanToday].map((t) => t.id));
+  const storyIds = new Set([...[laser, ozone, cmm, ...fiveAxis, urgent, pastPromise, onHold, late].map((t) => t.id), ...opOrders.flatMap((o) => o.ticketIds)]);
 
   let older = 0;
   for (const j of jobRows) {
@@ -546,19 +600,31 @@ export async function loadPlanningDemo(conn: DB | Tx, opts: { log?: (m: string) 
   await db.update(s.jobs).set({ operatorId: operatorFor("ENV"), promisedDate: istDate(new Date(lateStart.getTime() + 24 * HOUR)) }).where(eq(s.jobs.id, lateJob.id));
   await book(lateJob.id, "Dust Spray Test Chamber", lateStart, 72);
 
-  // Today for Rohan (RPT): booked from now, ready for him to start.
-  const rohanJob = job(rohanToday.id);
-  await db.update(s.jobs).set({ hoursNeeded: "3", operatorId: operatorFor("RPT"), promisedDate: day(2) }).where(eq(s.jobs.id, rohanJob.id));
+  // Operators' daily work: today's job from now (ready to start), later ones at 10:00 or 14:00.
   const fromNow = new Date(Math.floor(now.getTime() / (30 * 60_000)) * 30 * 60_000);
-  for (const name of ["FDM - Stratasys 450 MC", "Figure 4 Standalone Pro", "Origin 1 SLA"]) {
-    try {
-      const r = await book(rohanJob.id, name, fromNow, 3, { exactStart: true });
-      await db.update(s.jobBookings).set({ operatorId: operatorFor("RPT") }).where(eq(s.jobBookings.id, r.booking.id));
-      break;
-    } catch {
-      /* that machine is busy now: try the next RPT machine */
+  let opBooked = 0;
+  for (const o of opOrders) {
+    for (const [k, ticketId] of o.ticketIds.entries()) {
+      const x = o.plan[k];
+      const j = job(ticketId);
+      const opId = team.find((t) => t.name === x.op)?.id ?? null;
+      await db.update(s.jobs).set({ hoursNeeded: String(x.work.hours), operatorId: opId, promisedDate: day(x.day + 2) }).where(eq(s.jobs.id, j.id));
+      const starts = x.day === 0 ? [fromNow] : [istAt(day(x.day), 10 * 60), istAt(day(x.day), 14 * 60)];
+      done: for (const start of starts) {
+        for (const name of OP_MACHINES[x.dept]) {
+          try {
+            const r = await book(j.id, name, start, x.work.hours, { exactStart: true });
+            await db.update(s.jobBookings).set({ operatorId: opId }).where(eq(s.jobBookings.id, r.booking.id));
+            opBooked++;
+            break done;
+          } catch {
+            /* that machine is busy then: try the next one */
+          }
+        }
+      }
     }
   }
+  log(`  Operators' daily work: ${opBooked} jobs for Amit, Rohan and Priya over the next 3 weeks`);
 
   // Waiting for PO (Deccan): tentative holds. The Xenon one expires tomorrow; the melt flow one has expired.
   const deccanXenon = jobRows.find((j) => j.stage === "WAITING_PO" && j.service_id === svcId("Xenon test chamber"));

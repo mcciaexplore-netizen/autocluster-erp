@@ -12,7 +12,7 @@ import { auth } from "@/lib/auth/server";
 import { logActivity } from "@/lib/activity";
 import { checkSignIn } from "@/lib/auth/sign-in-flow";
 import { pinProblem } from "@/lib/auth/floor-core";
-import { randomBytes } from "node:crypto";
+import { demoSignIn } from "@/lib/auth/demo-sign-in";
 import { isDemoMode } from "@/lib/auth/demo-mode";
 import { TRY_AS_ROLES } from "@/db/demo-users";
 
@@ -178,10 +178,8 @@ export async function tryAsAction(role: string): Promise<FormState> {
   } catch {
     /* nobody was signed in */
   }
-  const password = randomBytes(24).toString("base64url");
-  const ctx = await auth.$context;
-  await ctx.internalAdapter.updatePassword(u.authUserId, await ctx.password.hash(password));
-  await auth.api.signInEmail({ body: { email: u.email, password, rememberMe: false }, headers: h });
+  // Only this browser's own session was ended above; other people using this demo account stay signed in.
+  await demoSignIn(db, auth, { id: u.id, authUserId: u.authUserId, email: u.email }, h);
   await db.update(appUsers).set({ lastSignInAt: new Date(), mustChangePassword: false }).where(eq(appUsers.id, u.id));
   await logActivity({ area: "Sign-in", action: "signed in", summary: `Signed in with "Try it as ${pick.role}" (demo)`, entityType: "user", entityId: u.id, userId: u.id });
   redirect("/");

@@ -78,6 +78,33 @@ describe.skipIf(skip)("demo mode (database)", () => {
     expect(Number(jobsAfter)).toBeGreaterThan(0);
   });
 
+  it("each demo operator has a job on every working day of the next 3 weeks, in their departments", async () => {
+    const [set] = await db.select().from(s.settings);
+    const hols = new Set((await db.select().from(s.holidays)).map((h) => h.date));
+    const today = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kolkata" }).format(new Date());
+    const workingDays: string[] = [];
+    for (let d = 0; d < 21; d++) {
+      const date = new Date(Date.parse(`${today}T00:00:00Z`) + d * 86_400_000).toISOString().slice(0, 10);
+      const iso = ((new Date(`${date}T00:00:00Z`).getUTCDay() + 6) % 7) + 1;
+      if (set.workingDays.includes(iso) && !hols.has(date)) workingDays.push(date);
+    }
+    expect(workingDays.length).toBeGreaterThanOrEqual(12);
+    const DEPTS: Record<string, string[]> = { "Amit Patil": ["PPF", "MET"], "Rohan Deshpande": ["RPT"], "Priya Shah": ["ENV", "RPL"] };
+    for (const [name, depts] of Object.entries(DEPTS)) {
+      const r = await db.execute<{ day: string; dept: string; status: string }>(sql`
+        select distinct to_char(b.start_at at time zone 'Asia/Kolkata', 'YYYY-MM-DD') as day, m.dept_code as dept, j.status
+        from job_bookings b join jobs j on j.id = b.job_id join machines m on m.id = b.machine_id join team_members tm on tm.id = b.operator_id
+        where tm.name = ${name} and b.cancelled_at is null and j.status = 'PLANNED'`);
+      const days = new Set(r.rows.map((x) => x.day));
+      for (const d of workingDays) expect(days.has(d), `${name} on ${d}`).toBe(true);
+      expect(r.rows.filter((x) => workingDays.includes(x.day)).every((x) => depts.includes(x.dept)), name).toBe(true);
+    }
+    // The planning stories are still there: the 5-Axis VMC is over 90% booked.
+    const [vmc] = await db.select().from(s.machines).where(eq(s.machines.name, "5-Axis VMC (Non-Continuous)"));
+    const vmcJobs = await db.execute<{ op: string | null }>(sql`select distinct tm.name as op from job_bookings b left join team_members tm on tm.id = b.operator_id where b.machine_id = ${vmc.id} and b.end_at > now() and b.cancelled_at is null`);
+    expect(vmcJobs.rows.length).toBeGreaterThan(0);
+  });
+
   it("the operators' enquiries move to Neha Kulkarni, with a history line", async () => {
     expect(operatorLeads.length).toBeGreaterThan(0);
     const [neha] = await db.select().from(s.appUsers).where(eq(s.appUsers.fullName, "Neha Kulkarni"));
@@ -104,6 +131,21 @@ describe.skipIf(skip)("demo mode (database)", () => {
     expect(await readAccess(db, rohan.authUserId!)).toBeNull();
     const r = await checkSignIn(db, { email: rohan.email!, ip: null }, async () => true, async () => {});
     expect(r).toEqual({ ok: false, message: "Email or password is not right." });
+  });
+
+  it("demo sign-ins never sign out other sessions: two people using “Try it as Operator” at once both stay signed in", async () => {
+    demoOn();
+    const { demoSignIn } = await import("@/lib/auth/demo-sign-in");
+    const [rohan] = await db.select().from(s.appUsers).where(eq(s.appUsers.fullName, "Rohan Deshpande"));
+    const who = { id: rohan.id, authUserId: rohan.authUserId!, email: rohan.email! };
+    const first = await demoSignIn(db, auth, who, new Headers());
+    // Two more at the same moment (each changes the password once, under a lock).
+    const [a, b] = await Promise.all([demoSignIn(db, auth, who, new Headers()), demoSignIn(db, auth, who, new Headers())]);
+    const tokens = [first.token, a.token, b.token];
+    expect(new Set(tokens).size).toBe(3);
+    const sessions = await db.select().from(s.authSessions).where(eq(s.authSessions.userId, rohan.authUserId!));
+    for (const t of tokens) expect(sessions.some((x) => x.token === t)).toBe(true);
+    expect(sessions.every((x) => x.expiresAt > new Date())).toBe(true);
   });
 
   it("“Try it as...” refuses unless DEMO_MODE is true", async () => {
