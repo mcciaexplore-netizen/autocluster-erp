@@ -33,6 +33,11 @@ export function proxy(request: NextRequest) {
     return NextResponse.redirect(new URL("/sign-in", request.url));
   }
 
+  // Opened from the home screen on a shared shop-floor device: straight to the names.
+  if (request.nextUrl.searchParams.get("source") === "home-screen" && request.cookies.get(DEVICE_COOKIE)?.value) {
+    return NextResponse.redirect(new URL("/floor", request.url));
+  }
+
   if (OPEN.some((p) => pathname === p || pathname.startsWith(`${p}/`))) return NextResponse.next();
   if (getSessionCookie(request, { cookiePrefix: "acdri" })) return NextResponse.next();
 
@@ -51,5 +56,6 @@ export function proxy(request: NextRequest) {
 
 export const config = {
   // Everything except Next.js build files and the browser icon.
-  matcher: ["/((?!_next/static|_next/image|favicon.ico).*)"],
+  // The install files (manifest, icons) load before anyone signs in.
+  matcher: ["/((?!_next/static|_next/image|favicon.ico|manifest.webmanifest|icons/).*)"],
 };
