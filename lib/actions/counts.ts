@@ -33,8 +33,9 @@ async function run<T>(perm: Permission | Permission[], fn: () => Promise<T>, ref
 }
 
 export async function startCountAction(input: { categoryId?: string | null; deptCode?: string | null; doneBy?: string | null }) {
-  const p = z.object({ categoryId: optId, deptCode: z.string().max(20).nullish(), doneBy: optId }).parse(input);
+  // Permission first, then the details.
   return run("inventory.count", async () => {
+    const p = z.object({ categoryId: optId, deptCode: z.string().max(20).nullish(), doneBy: optId }).parse(input ?? {});
     const who = await doneByFor(p.doneBy);
     const r = await startCount(db, { ...p, doneBy: who.id });
     await logActivity({ area: "Inventory", action: "count", summary: `Started stock count ${r.countNo}`, entityType: "inv_count", entityId: r.id });
