@@ -6,7 +6,7 @@ import { ClearFilters, useUrlFilters } from "@/components/common/filter-bar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import type { ActivityRow } from "@/lib/activity-data";
+import type { ActivityRow, ActivityStats } from "@/lib/activity-data";
 
 const ALL = "all";
 const when = new Intl.DateTimeFormat("en-IN", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "Asia/Kolkata" });
@@ -80,10 +80,26 @@ function Record({ r }: { r: ActivityRow }) {
   );
 }
 
-export function ActivityLog({ rows, more, limit, users, areas }: { rows: ActivityRow[]; more: boolean; limit: number; users: { id: string; name: string }[]; areas: string[] }) {
+const size = (b: number) => (b >= 1024 ** 3 ? `${(b / 1024 ** 3).toFixed(1)} GB` : b >= 1024 ** 2 ? `${(b / 1024 ** 2).toFixed(1)} MB` : `${Math.max(1, Math.round(b / 1024))} KB`);
+const day = new Intl.DateTimeFormat("en-IN", { day: "numeric", month: "short", year: "numeric", timeZone: "Asia/Kolkata" });
+
+function Stats({ s }: { s: ActivityStats }) {
+  return (
+    <p className="mb-4 rounded-xl border bg-secondary/50 px-4 py-3 text-sm text-muted-foreground">
+      {s.entries.toLocaleString("en-IN")} {s.entries === 1 ? "entry" : "entries"} ({size(s.bytes)})
+      {s.oldest ? `, oldest from ${day.format(new Date(s.oldest))}` : ""}. Kept for {s.months} months; sign-in attempts for {s.days} days.{" "}
+      <Link href="/settings" className="font-medium text-primary underline-offset-4 hover:underline">
+        Change
+      </Link>
+    </p>
+  );
+}
+
+export function ActivityLog({ rows, more, limit, users, areas, stats }: { rows: ActivityRow[]; more: boolean; limit: number; users: { id: string; name: string }[]; areas: string[]; stats: ActivityStats }) {
   const { set } = useUrlFilters();
   return (
     <>
+      <Stats s={stats} />
       <Filters users={users} areas={areas} />
       {!rows.length ? (
         <p className="rounded-2xl border bg-card p-6 text-center text-muted-foreground">Nothing recorded for these filters.</p>

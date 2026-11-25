@@ -75,6 +75,8 @@ export const settingsSchema = z.object({
   breakStart: z.union([z.literal(""), time("e.g. 13:00")]),
   breakEnd: z.union([z.literal(""), time("e.g. 13:30")]),
   tentativeHoldDays: days("e.g. 7", 1, 90),
+  activityKeepMonths: z.number({ message: "Enter a number of months, e.g. 24." }).int({ message: "Use a whole number." }).min(3, { message: "Keep at least 3 months." }).max(120, { message: "Use 120 months or fewer." }),
+  signInKeepDays: z.number({ message: "Enter a number of days, e.g. 90." }).int({ message: "Use a whole number." }).min(7, { message: "Keep at least 7 days." }).max(730, { message: "Use 730 days or fewer." }),
   overrunWarningPct: z.number({ message: "Enter a percentage, e.g. 50." }).int({ message: "Use a whole number." }).min(1, { message: "Use 1 or more." }).max(500, { message: "Use 500 or less." }),
   actualVsQuotedAlertPct: pct("e.g. 10"),
   readyWhatsappTemplate: z.string().trim().min(10, { message: "Please write the WhatsApp message." }).max(1500, { message: "Please keep the message under 1,500 characters." }),

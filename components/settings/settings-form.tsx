@@ -1,7 +1,7 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import { BellRing, Building2, CalendarClock, Handshake, Package, FileText, ImageIcon, Loader2, Percent, Save, SquareKanban } from "lucide-react";
+import { BellRing, Building2, CalendarClock, Handshake, History, Package, FileText, ImageIcon, Loader2, Percent, Save, SquareKanban } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useTransition } from "react";
 import { Controller, useForm, useWatch } from "react-hook-form";
@@ -537,6 +537,17 @@ export function SettingsForm({ initial, stages }: { initial: SettingsInput; stag
             }
           >
             {(p) => <Textarea {...p} rows={5} {...register("readyWhatsappTemplate")} />}
+          </Field>
+        </div>
+      </FormSection>
+
+      <FormSection title="Records kept" description="Older entries are removed each night, a few at a time. The records themselves (enquiries, tickets, stock) are never removed." icon={<History className="size-5" />}>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Field label="Keep activity log for (months)" required error={e.activityKeepMonths?.message} helper="Settings > Activity log, e.g. 24">
+            {(p) => <Input {...p} type="number" min={3} max={120} step={1} inputMode="numeric" {...register("activityKeepMonths", num)} />}
+          </Field>
+          <Field label="Keep sign-in attempts for (days)" required error={e.signInKeepDays?.message} helper="Used to lock accounts after wrong passwords, e.g. 90">
+            {(p) => <Input {...p} type="number" min={7} max={730} step={1} inputMode="numeric" {...register("signInKeepDays", num)} />}
           </Field>
         </div>
       </FormSection>

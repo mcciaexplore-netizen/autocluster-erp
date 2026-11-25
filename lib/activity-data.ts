@@ -90,7 +90,7 @@ export async function listActivity(f: ActivityFilters = {}) {
   const rows = r.rows.slice(0, limit).map((x) => ({
     id: x.id,
     at: new Date(x.at).toISOString(),
-    who: x.who ?? (x.area === "Sign-in" ? "Not signed in" : "Demo User"),
+    who: x.who ?? (x.area === "Sign-in" ? "Not signed in" : "System"),
     forName: x.for_name,
     area: x.area,
     action: x.action,
@@ -114,3 +114,18 @@ export async function getActivityOptions() {
     order by u.full_name`);
   return { users: r.rows, areas: [...ACTIVITY_AREAS] };
 }
+
+/** How big the log is, its oldest entry, and how long entries are kept (shown above the list). */
+export async function getActivityStats() {
+  await connection();
+  await need(["users.manage"]);
+  const r = await db.execute<{ n: string; bytes: string; oldest: string | null; months: number; attempts: string; days: number }>(sql`
+    select (select count(*) from activity_log) as n, pg_total_relation_size('activity_log') as bytes,
+      (select min(created_at)::text from activity_log) as oldest,
+      (select activity_keep_months from settings where id = 1) as months,
+      (select count(*) from sign_in_attempts) as attempts,
+      (select sign_in_keep_days from settings where id = 1) as days`);
+  const x = r.rows[0];
+  return { entries: Number(x.n), bytes: Number(x.bytes), oldest: x.oldest ? new Date(x.oldest).toISOString() : null, months: x.months ?? 24, attempts: Number(x.attempts), days: x.days ?? 90 };
+}
+export type ActivityStats = Awaited<ReturnType<typeof getActivityStats>>;

@@ -4,7 +4,7 @@ import { AreaGate } from "@/components/auth/area-gate";
 import { PageHeader } from "@/components/common/page-header";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ActivityLog } from "@/components/users/activity-log";
-import { activityFiltersFromParams, getActivityOptions, listActivity } from "@/lib/activity-data";
+import { activityFiltersFromParams, getActivityOptions, getActivityStats, listActivity } from "@/lib/activity-data";
 
 export const metadata: Metadata = { title: "Activity log" };
 
@@ -22,6 +22,6 @@ export default function ActivityPage({ searchParams }: { searchParams: Sp }) {
 }
 
 async function Body({ searchParams }: { searchParams: Sp }) {
-  const [log, options] = await Promise.all([listActivity(activityFiltersFromParams(await searchParams)), getActivityOptions()]);
-  return <ActivityLog rows={log.rows} more={log.more} limit={log.limit} users={options.users} areas={options.areas} />;
+  const [log, options, stats] = await Promise.all([listActivity(activityFiltersFromParams(await searchParams)), getActivityOptions(), getActivityStats()]);
+  return <ActivityLog rows={log.rows} more={log.more} limit={log.limit} users={options.users} areas={options.areas} stats={stats} />;
 }

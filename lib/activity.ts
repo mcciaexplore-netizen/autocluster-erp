@@ -25,6 +25,15 @@ export interface ActivityEntry {
   userId?: string | null;
 }
 
+/** Entries stay small: a short summary of what changed, never a full copy of a record. */
+export const MAX_SUMMARY = 600;
+export const MAX_DATA_BYTES = 2000;
+export function smallEntry(summary: string, data: Record<string, unknown> | null | undefined) {
+  const s = summary.length > MAX_SUMMARY ? `${summary.slice(0, MAX_SUMMARY - 1)}…` : summary;
+  const d = data && JSON.stringify(data).length <= MAX_DATA_BYTES ? data : null;
+  return { summary: s, data: d };
+}
+
 async function requestInfo(): Promise<{ ip: string | null; userAgent: string | null }> {
   try {
     const h = await headers();
@@ -47,8 +56,7 @@ export async function logActivity(e: ActivityEntry, conn: DB | Tx = db) {
       action: e.action,
       entityType: e.entityType ?? null,
       entityId: e.entityId ?? null,
-      summary: e.summary,
-      data: e.data ?? null,
+      ...smallEntry(e.summary, e.data),
       ip,
       userAgent,
     }));

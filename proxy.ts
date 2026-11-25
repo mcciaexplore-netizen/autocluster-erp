@@ -17,6 +17,9 @@ export function proxy(request: NextRequest) {
   const { pathname, search } = request.nextUrl;
   const back = pathname !== "/" ? `${pathname}${search}` : null;
 
+  // Vercel Cron: no cookies; the route itself refuses anyone without the cron secret.
+  if (pathname.startsWith("/api/cron/")) return NextResponse.next();
+
   if (authEnabled()) {
     const passedGate = verifySessionToken(request.cookies.get(SESSION_COOKIE)?.value);
     if (pathname === "/login") return passedGate ? NextResponse.redirect(new URL("/", request.url)) : NextResponse.next();

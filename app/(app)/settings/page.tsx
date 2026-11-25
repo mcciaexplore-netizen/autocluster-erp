@@ -109,6 +109,8 @@ async function Form() {
         breakEnd: s.breakEnd ?? "",
         tentativeHoldDays: s.tentativeHoldDays,
         overrunWarningPct: s.overrunWarningPct,
+        activityKeepMonths: s.activityKeepMonths,
+        signInKeepDays: s.signInKeepDays,
         actualVsQuotedAlertPct: s.actualVsQuotedAlertPct,
         readyWhatsappTemplate: s.readyWhatsappTemplate,
       }}

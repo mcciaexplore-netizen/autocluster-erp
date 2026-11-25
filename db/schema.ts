@@ -302,6 +302,9 @@ export const settings = pgTable("settings", {
   breakEnd: text("break_end").default("13:30"),
   tentativeHoldDays: integer("tentative_hold_days").notNull().default(7),
   overrunWarningPct: integer("overrun_warning_pct").notNull().default(50),
+  /** Records kept (Module 7): Activity log entries and sign-in attempts older than these are cleaned up each night. */
+  activityKeepMonths: integer("activity_keep_months").notNull().default(24),
+  signInKeepDays: integer("sign_in_keep_days").notNull().default(90),
   actualVsQuotedAlertPct: integer("actual_vs_quoted_alert_pct").notNull().default(10),
   readyWhatsappTemplate: text("ready_whatsapp_template").notNull().default(DEFAULT_READY_WHATSAPP_TEMPLATE),
   updatedAt: timestamp("updated_at", { withTimezone: true })
