@@ -30,17 +30,17 @@ Built with Next.js 16 (App Router), TypeScript, Tailwind CSS, shadcn/ui, React H
 
 ---
 
-## Setup on Windows (PowerShell, VS Code terminal)
+## Setup on a Mac (zsh, Terminal or the VS Code terminal)
 
-You need **Node.js 22** (`node -v`). The project includes `.nvmrc` and `"engines": { "node": "22.x" }`.
+You need **Node.js 22** (`node -v`). The project includes `.nvmrc` and `"engines": { "node": "22.x" }`; with [nvm](https://github.com/nvm-sh/nvm), run `nvm use` in the project folder.
 
-```powershell
+```zsh
 # 1. Install packages
 npm install
 
 # 2. Create your local settings file, then fill in the values (see the table below)
-Copy-Item .env.example .env.local
-code .env.local
+cp .env.example .env.local
+code .env.local      # or: open -e .env.local
 
 # 3. Create the tables
 npm run db:push
@@ -60,18 +60,20 @@ npm run dev
 | `DATABASE_URL_UNPOOLED` | Neon's **direct** string (pooling OFF). Used by `db:push`, `db:seed` and `db:reset`. If empty, they use `DATABASE_URL`. |
 | `DEMO_PASSWORD` | Password for the sign-in screen. Leave it empty to turn the sign-in screen off (handy locally). |
 | `AUTH_SECRET` | Long random text that signs the sign-in cookie. At least 32 characters. Make one with the command below. |
+| `DEMO_MODE` | `true` on the demo site (and locally): demo users, "Try it as..." and `db:reset` / `db:seed`. Anything else is real use: individual sign-in only, and resets refuse to run. |
+| `CRON_SECRET` | Vercel only: long random text that lets Vercel's nightly clean-up (`/api/cron/clean-up`) run. Make one with the command below. |
 | `BLOB_READ_WRITE_TOKEN` | Vercel Blob store's read-write token (Vercel > Storage > your Blob store). Needed to upload and view PO copies and tax invoices, and for the sample PDFs in the demo data. |
 
-```powershell
-# Make a new AUTH_SECRET (copy the output into .env.local)
-node -e "console.log(require('crypto').randomBytes(48).toString('base64url'))"
+```zsh
+# Make a new AUTH_SECRET or CRON_SECRET (copy the output; never share it)
+openssl rand -base64 48
 ```
 
 `.env.local` is never committed to Git. Only `.env.example` (names, no values) is.
 
 ### Demo data
 
-```powershell
+```zsh
 npm run db:seed    # loads demo data into an EMPTY database; stops if customers already exist
 npm run db:reset   # WIPES everything and reloads clean demo data; asks you to type RESET
 npm run crm:seed   # adds ONLY the CRM demo (team + 12 enquiries) if there are no enquiries yet; never changes customers, quotations or orders
@@ -104,14 +106,15 @@ The Inventory demo adds 6 months of history before the story quotations (that's 
 **Files are kept apart per environment:**
 - Blob folders: `local/` (your computer), `preview/` (test versions), `live/` (the website).
 - `db:reset` deletes only the files listed in the database it resets, never anything else in the store.
-- When resetting a non-local database, the sample PDFs go to `live/`. Set `$env:BLOB_FOLDER="preview"` first for the preview copy.
+- When resetting a non-local database, the sample PDFs go to `live/`. For the preview copy, put `BLOB_FOLDER=preview` in front of the command: `BLOB_FOLDER=preview npm run db:reset`.
 
 ### Other commands
 
-```powershell
+```zsh
 npm test            # pricing, validation, sign-in, Orders & Billing, CRM and Inventory tests (Vitest; DB tests use a local "acdri_test" database)
 npm run typecheck   # TypeScript check
 npm run lint        # ESLint
+npm run test:pages  # opens every page in every sign-in state on the dev server; fails on any Next.js or server console error
 npm run build       # production build
 npm run start       # run the production build locally
 npm run db:studio   # browse the database in a web page
@@ -126,14 +129,14 @@ node scripts/embed-fonts.mjs   # only if you change the PDF fonts in assets/font
 ## Deployment (Vercel + Neon)
 
 ### 1. Neon database
-1. Keep a copy of your local settings: `Copy-Item .env.local .env.local.localdb`
+1. Keep a copy of your local settings: `cp .env.local .env.local.localdb`
 2. Sign in at https://console.neon.tech and click **New Project**. Name: `autocluster-erp`. Region: **AWS Asia Pacific (Mumbai)** if listed, otherwise **Singapore**.
 3. Click **Connect**. With **Connection pooling ON**, copy the string into `.env.local` as `DATABASE_URL=`.
 4. Turn **Connection pooling OFF**, copy the string into `.env.local` as `DATABASE_URL_UNPOOLED=`.
 5. Add `DEMO_PASSWORD=` with a password of your choice. Make sure `AUTH_SECRET=` is filled in.
 6. In `vercel.json`, set `"regions"` to `["bom1"]` for Mumbai or `["sin1"]` for Singapore.
 
-```powershell
+```zsh
 npm run db:push
 npm run db:seed
 npm run build
@@ -158,9 +161,9 @@ Every push to the `main` branch updates the live site automatically. Changing an
 - Preview versions are also behind Vercel's own login.
 
 ### Switching back to the local database
-```powershell
-Copy-Item .env.local .env.local.neon      # keep the Neon settings
-Copy-Item .env.local.localdb .env.local   # use the local database again
+```zsh
+cp .env.local .env.local.neon      # keep the Neon settings
+cp .env.local.localdb .env.local   # use the local database again
 ```
 
 ### Notes
@@ -193,7 +196,7 @@ Each change is then reviewed before it reaches the live database, can be repeate
 
 Better Auth lists optional support packages for other frameworks (e.g. SvelteKit), and one of them needs a newer `vite` than our test tools use. We don't use them, and normal installs are fine because `package-lock.json` already pins the right versions. Only when you **install or upgrade Better Auth itself** does npm stop with an `ERESOLVE` conflict. For that one command, add the flag:
 
-```powershell
+```zsh
 npm install better-auth@<version> --save-exact --legacy-peer-deps
 ```
 
