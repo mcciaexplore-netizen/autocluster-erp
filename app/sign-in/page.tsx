@@ -5,6 +5,9 @@ import { AuthCard } from "@/components/auth/auth-card";
 import { SignInForm } from "@/components/auth/sign-in-form";
 import { getCurrentUser } from "@/lib/auth/current-user";
 import { safeNextPath } from "@/lib/auth/demo-gate";
+import { isDemoMode } from "@/lib/auth/demo-mode";
+import { TRY_AS_ROLES } from "@/db/demo-users";
+import { TryAsButtons } from "@/components/demo/try-as";
 
 export const metadata: Metadata = { title: "Sign in" };
 
@@ -24,5 +27,10 @@ async function Form({ searchParams }: { searchParams: PageProps<"/sign-in">["sea
   // Already signed in: go straight on.
   const me = await getCurrentUser();
   if (me && !me.floor) redirect(me.mustChangePassword ? `/change-password?next=${encodeURIComponent(next)}` : next);
-  return <SignInForm next={next} />;
+  return (
+    <>
+      <SignInForm next={next} />
+      {isDemoMode() ? <TryAsButtons roles={TRY_AS_ROLES} /> : null}
+    </>
+  );
 }

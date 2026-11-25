@@ -8,6 +8,7 @@
 import { eq } from "drizzle-orm";
 import type { DB } from "../../db/client";
 import { appUsers, signInAttempts } from "../../db/schema";
+import { isDemoMode } from "./demo-mode";
 import { accountLockedUntil, ipBlocked, LOCK_AFTER, LOCK_MINUTES } from "./sign-in-limits";
 
 export const WRONG = "Email or password is not right.";
@@ -37,7 +38,8 @@ export async function checkSignIn(
     return { ok: false, message: tooManyTries(null, now) };
   }
   const [u] = await db.select().from(appUsers).where(eq(appUsers.email, email));
-  const known = u && u.canSignIn && !u.deactivatedAt && u.authUserId ? u : null;
+  // Demo accounts work only on the demo site (DEMO_MODE=true).
+  const known = u && u.canSignIn && !u.deactivatedAt && u.authUserId && (!u.isDemo || isDemoMode()) ? u : null;
 
   const lockedUntil = await accountLockedUntil(db, email, now);
   if (lockedUntil) {

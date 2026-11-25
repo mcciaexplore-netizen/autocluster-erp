@@ -3,6 +3,8 @@
  * Loads demo data (incl. Orders & Billing with sample PDFs) into an EMPTY database only. It never deletes anything.
  * To wipe and reload, use: npm run db:reset
  */
+import { setUpDemoUsers } from "../db/demo-users";
+import { createAuth } from "../lib/auth/better-auth";
 import { isDemoMode, NOT_DEMO_MESSAGE } from "../lib/auth/demo-mode";
 import { isConnectionDrop } from "../db/client";
 import { isEmpty, loadDemoData, scriptDb } from "./demo-data";
@@ -41,6 +43,8 @@ async function main() {
         throw e;
       }
     }
+    console.log("Adding the demo users...");
+    await setUpDemoUsers(db, createAuth(db), { log: (m) => console.log(m) });
     const up = await uploadStagedFiles((m) => console.log(m));
     if (!up.skipped) console.log(`Uploaded ${up.uploaded} sample PDF(s).${up.failed.length ? ` ${up.failed.length} could not be uploaded.` : ""}`);
     console.log("Done.");

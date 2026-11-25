@@ -6,6 +6,7 @@ import { eq } from "drizzle-orm";
 import type { DB, Tx } from "@/db/client";
 import { appUsers, rolePermissions, roles, userDepartments, userRoles } from "@/db/schema";
 import { buildGrants, type Grants } from "./can";
+import { isDemoMode } from "./demo-mode";
 
 export interface Access {
   user: typeof appUsers.$inferSelect;
@@ -18,6 +19,7 @@ export interface Access {
 export async function readAccess(conn: DB | Tx, authUserId: string): Promise<Access | null> {
   const [u] = await conn.select().from(appUsers).where(eq(appUsers.authUserId, authUserId));
   if (!u || u.deactivatedAt || !u.canSignIn) return null;
+  if (u.isDemo && !isDemoMode()) return null; // demo accounts work only on the demo site
   return accessFor(conn, u);
 }
 
@@ -28,6 +30,7 @@ export async function readAccess(conn: DB | Tx, authUserId: string): Promise<Acc
 export async function readFloorAccess(conn: DB | Tx, appUserId: string): Promise<Access | null> {
   const [u] = await conn.select().from(appUsers).where(eq(appUsers.id, appUserId));
   if (!u || u.deactivatedAt || !u.pinHash) return null;
+  if (u.isDemo && !isDemoMode()) return null;
   return accessFor(conn, u);
 }
 

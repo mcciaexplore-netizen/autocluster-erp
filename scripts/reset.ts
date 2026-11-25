@@ -9,6 +9,8 @@
  * 2. Sample PDFs are uploaded only after the new data has saved, so a failed run leaves no files.
  * 3. Only then are the old files (listed in THIS database) deleted.
  */
+import { setUpDemoUsers } from "../db/demo-users";
+import { createAuth } from "../lib/auth/better-auth";
 import { createInterface } from "node:readline/promises";
 import { isConnectionDrop } from "../db/client";
 import { isDemoMode, NOT_DEMO_MESSAGE } from "../lib/auth/demo-mode";
@@ -60,6 +62,8 @@ async function main() {
         throw e;
       }
     }
+    console.log("Adding the demo users...");
+    await setUpDemoUsers(db, createAuth(db), { log: (m) => console.log(m) });
     console.log("Demo data saved. Uploading the sample PDFs...");
     const up = await uploadStagedFiles((m) => console.log(m));
     if (up.skipped) console.log("BLOB_READ_WRITE_TOKEN is not set, so the sample PDFs were recorded but not uploaded.");

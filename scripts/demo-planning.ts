@@ -236,6 +236,8 @@ export async function loadPlanningDemo(conn: DB | Tx, opts: { log?: (m: string) 
   const [urgent] = await order(DECCAN, -3, "Quotation for tensile testing", [{ name: "UTM", q: { samples: 6 }, notes: "Tensile test, ASTM D638, rush" }], -1);
   const [pastPromise] = await order(NASHIK, -10, "Quotation for SLA prototypes", [{ name: "SLA - local resin", q: { ccPerPart: 80, parts: 3 }, notes: "Visual prototypes, revision C" }], -8);
   const [onHold] = await order(INDUS, -8, "Quotation for 3+1 axis machining", [{ name: "3+1 axis machining", q: { hours: 14 }, notes: "Fixture plate, new design" }], -5);
+  // Rohan's job for today ("Try it as Operator" and the shop-floor tablet): FDM jigs in customer-supplied ABS.
+  const [rohanToday] = await order(NASHIK, -4, "Quotation for FDM jigs", [{ custom: { dept: "RPT", description: "FDM assembly jigs in customer-supplied ABS", unitLabel: "per set", ratePaise: 2400_00 }, q: { quantity: 2 }, notes: "As per STEP files rev B" }], -2);
   const [late] = await order(TALEGAON, -6, "Quotation for dust testing", [{ name: "Dust spray chamber", q: { hours: 72 }, notes: "IP6X dust test, gearbox housing" }], -3);
 
   // ---- Past work, invoiced and paid (chamber tests without a materials list, and custom items) ----
@@ -355,7 +357,7 @@ export async function loadPlanningDemo(conn: DB | Tx, opts: { log?: (m: string) 
   }
 
   const windowStart = istAt(day(-56), 0);
-  const storyIds = new Set([laser, ozone, cmm, ...fiveAxis, urgent, pastPromise, onHold, late].map((t) => t.id));
+  const storyIds = new Set([laser, ozone, cmm, ...fiveAxis, urgent, pastPromise, onHold, late, rohanToday].map((t) => t.id));
 
   let older = 0;
   for (const j of jobRows) {
@@ -543,6 +545,20 @@ export async function loadPlanningDemo(conn: DB | Tx, opts: { log?: (m: string) 
   const lateStart = istAt(day(1), 10 * 60);
   await db.update(s.jobs).set({ operatorId: operatorFor("ENV"), promisedDate: istDate(new Date(lateStart.getTime() + 24 * HOUR)) }).where(eq(s.jobs.id, lateJob.id));
   await book(lateJob.id, "Dust Spray Test Chamber", lateStart, 72);
+
+  // Today for Rohan (RPT): booked from now, ready for him to start.
+  const rohanJob = job(rohanToday.id);
+  await db.update(s.jobs).set({ hoursNeeded: "3", operatorId: operatorFor("RPT"), promisedDate: day(2) }).where(eq(s.jobs.id, rohanJob.id));
+  const fromNow = new Date(Math.floor(now.getTime() / (30 * 60_000)) * 30 * 60_000);
+  for (const name of ["FDM - Stratasys 450 MC", "Figure 4 Standalone Pro", "Origin 1 SLA"]) {
+    try {
+      const r = await book(rohanJob.id, name, fromNow, 3, { exactStart: true });
+      await db.update(s.jobBookings).set({ operatorId: operatorFor("RPT") }).where(eq(s.jobBookings.id, r.booking.id));
+      break;
+    } catch {
+      /* that machine is busy now: try the next RPT machine */
+    }
+  }
 
   // Waiting for PO (Deccan): tentative holds. The Xenon one expires tomorrow; the melt flow one has expired.
   const deccanXenon = jobRows.find((j) => j.stage === "WAITING_PO" && j.service_id === svcId("Xenon test chamber"));

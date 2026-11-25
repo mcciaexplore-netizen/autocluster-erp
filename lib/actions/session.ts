@@ -1,6 +1,6 @@
 "use server";
 
-import { and, eq, ne } from "drizzle-orm";
+import { and, eq, isNull, ne } from "drizzle-orm";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { db } from "@/db";
@@ -12,6 +12,9 @@ import { auth } from "@/lib/auth/server";
 import { logActivity } from "@/lib/activity";
 import { checkSignIn } from "@/lib/auth/sign-in-flow";
 import { pinProblem } from "@/lib/auth/floor-core";
+import { randomBytes } from "node:crypto";
+import { isDemoMode } from "@/lib/auth/demo-mode";
+import { TRY_AS_ROLES } from "@/db/demo-users";
 
 export type FormState = { error: string | null; ok?: string | null };
 
@@ -152,4 +155,34 @@ export async function setOwnPin(_prev: FormState, fd: FormData): Promise<FormSta
   await db.update(appUsers).set({ pinHash: await ctx.password.hash(pin), updatedAt: new Date() }).where(eq(appUsers.id, me.id));
   await logActivity({ area: "Sign-in", action: "pin", summary: "Set their own shop-floor PIN", entityType: "user", entityId: me.id });
   return { error: null, ok: "PIN saved. Use it on the shop-floor tablet." };
+}
+
+/**
+ * Demo site only: "Try it as..." on the sign-in page and "Switch role" in the top bar. Signs into
+ * that role's demo account without typing a password: it gets a fresh random password (never shown,
+ * stored only as a hash), which is used once, here, to sign in.
+ */
+export async function tryAsAction(role: string): Promise<FormState> {
+  if (!isDemoMode()) return { error: "Demo accounts are switched off on this site." };
+  const pick = TRY_AS_ROLES.find((r) => r.role === role);
+  if (!pick) return { error: "Please choose a role." };
+  const [u] = await db
+    .select()
+    .from(appUsers)
+    .where(and(eq(appUsers.fullName, pick.name), eq(appUsers.isDemo, true), eq(appUsers.canSignIn, true), isNull(appUsers.deactivatedAt)));
+  if (!u?.authUserId || !u.email) return { error: "That demo account isn't set up. Reset the demo data (db:reset) and try again." };
+  const h = await headers();
+  // Switching role: leave the current account first.
+  try {
+    await auth.api.signOut({ headers: h });
+  } catch {
+    /* nobody was signed in */
+  }
+  const password = randomBytes(24).toString("base64url");
+  const ctx = await auth.$context;
+  await ctx.internalAdapter.updatePassword(u.authUserId, await ctx.password.hash(password));
+  await auth.api.signInEmail({ body: { email: u.email, password, rememberMe: false }, headers: h });
+  await db.update(appUsers).set({ lastSignInAt: new Date(), mustChangePassword: false }).where(eq(appUsers.id, u.id));
+  await logActivity({ area: "Sign-in", action: "signed in", summary: `Signed in with "Try it as ${pick.role}" (demo)`, entityType: "user", entityId: u.id, userId: u.id });
+  redirect("/");
 }

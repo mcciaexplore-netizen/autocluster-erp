@@ -15,6 +15,7 @@ import type { DB } from "../../db/client";
 import { appUsers, sharedDevices, signInAttempts } from "../../db/schema";
 import type { Grants } from "./can";
 import { accountLockedUntil, LOCK_MINUTES } from "./sign-in-limits";
+import { isDemoMode } from "./demo-mode";
 
 export { DEVICE_COOKIE, FLOOR_COOKIE } from "./floor-cookies";
 export const FLOOR_IDLE_MINUTES = 10;
@@ -95,7 +96,7 @@ export async function floorPeople(db: DB, deviceDepts: string[]) {
     join user_roles ur on ur.user_id = u.id
     join roles r on r.id = ur.role_id
     join role_permissions rp on rp.role_id = r.id and rp.permission = 'planning.operate'
-    where u.deactivated_at is null and u.pin_hash is not null
+    where u.deactivated_at is null and u.pin_hash is not null and (not u.is_demo or ${isDemoMode()})
     group by u.id, u.full_name, u.all_departments
     order by u.full_name`);
   return r.rows

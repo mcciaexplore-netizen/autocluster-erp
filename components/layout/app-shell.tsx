@@ -6,6 +6,9 @@ import { getCurrentUser } from "@/lib/auth/current-user";
 import { navFor } from "./nav";
 import { UserMenu } from "./user-menu";
 import { FloorBar } from "@/components/floor/floor-context";
+import { DemoChip } from "@/components/demo/try-as";
+import { TRY_AS_ROLES } from "@/db/demo-users";
+import { isDemoMode } from "@/lib/auth/demo-mode";
 
 function Logo() {
   return (
@@ -31,7 +34,16 @@ async function LiveUserMenu() {
   if (me.mustChangePassword) redirect("/change-password");
   // A PIN session on a shared shop-floor device: no account menu, just "Done".
   if (me.floor) return <FloorBar name={me.name} />;
-  return <UserMenu name={me.name} roles={me.roles.map((r) => r.name)} />;
+  const menu = <UserMenu name={me.name} roles={me.roles.map((r) => r.name)} />;
+  if (!isDemoMode()) return menu;
+  // Demo site: which role this is, and "Switch role".
+  const role = TRY_AS_ROLES.find((r) => r.name === me.name)?.role ?? (me.roles.map((r) => r.name).join(" + ") || "No role");
+  return (
+    <div className="flex items-center gap-2">
+      <DemoChip label={`${role} (${me.name})`} roles={TRY_AS_ROLES} />
+      {menu}
+    </div>
+  );
 }
 
 /** Only the areas the signed-in person can view. */

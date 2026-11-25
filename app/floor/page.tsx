@@ -12,6 +12,8 @@ import { db } from "@/db";
 import { getCurrentUser } from "@/lib/auth/current-user";
 import { DEVICE_COOKIE, findDevice, floorPeople } from "@/lib/auth/floor-core";
 import { getToday } from "@/lib/planning-data";
+import { isDemoMode } from "@/lib/auth/demo-mode";
+import { DEMO_PIN } from "@/db/demo-users";
 
 export const metadata: Metadata = { title: "Shop floor" };
 
@@ -91,6 +93,7 @@ async function Body() {
         }
       />
       <FloorPicker people={await floorPeople(db, device.deptCodes)} />
+      {isDemoMode() ? <p className="mt-6 rounded-xl border border-amber-300 bg-amber-50 p-3 text-center text-sm text-amber-900">Demo: every operator&apos;s PIN is {DEMO_PIN}.</p> : null}
     </>
   );
 }
