@@ -7,6 +7,8 @@
  * States: signed out; signed in as each demo role (the same kind of session "Try it as" makes); a
  * shared shop-floor device with nobody signed in; a PIN session on it; an Admin on it.
  *
+ * PAGES_STATES="shared device" checks only the states whose names contain that text (comma-separated).
+ *
  * Runs against the local demo database only (DEMO_MODE=true, a localhost DATABASE_URL). It starts its
  * own dev server, or uses one already running when BASE and DEV_LOG (that server's log file) are set.
  */
@@ -103,6 +105,11 @@ async function main() {
   states.push({ name: "shared device, nobody signed in", cookie: [gate, deviceCookie].filter(Boolean).join("; ") });
   states.push({ name: "shared device, PIN session (Rohan)", cookie: [gate, deviceCookie, floor].filter(Boolean).join("; ") });
   states.push({ name: "shared device, Admin signed in", cookie: [gate, deviceCookie, (await signIn("Demo Admin")).cookie].filter(Boolean).join("; ") });
+
+  // PAGES_STATES="shared device" (comma-separated parts of state names) checks only those states.
+  const only = (process.env.PAGES_STATES ?? "").split(",").map((x) => x.trim().toLowerCase()).filter(Boolean);
+  if (only.length) states.splice(0, states.length, ...states.filter((st) => only.some((o) => st.name.toLowerCase().includes(o))));
+  if (!states.length) throw new Error(`No state matches PAGES_STATES="${process.env.PAGES_STATES}".`);
 
   // ---- the dev server ----
   let server: ChildProcess | null = null;
