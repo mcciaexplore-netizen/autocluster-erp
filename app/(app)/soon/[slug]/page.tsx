@@ -3,7 +3,7 @@ import { Check } from "lucide-react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Sketch } from "@/components/soon/sketch";
-import { COMING_SOON, comingSoonBySlug } from "@/lib/coming-soon";
+import { COMING_SOON, comingSoonBySlug, isSoonHref } from "@/lib/coming-soon";
 
 /** Like every page in the app (each sits in the signed-in frame), it blocks on the server: no instant-navigation validation. */
 export const instant = false;
@@ -55,8 +55,9 @@ export default async function ComingSoonPage({ params }: PageProps<"/soon/[slug]
           <ul className="flex flex-wrap gap-2">
             {m.worksWith.map((w) => (
               <li key={w.label}>
-                <Link href={w.href} className="inline-block rounded-full border bg-secondary px-3 py-1 text-sm font-medium hover:border-primary/40">
+                <Link href={w.href} className="inline-flex items-center gap-1.5 rounded-full border bg-secondary px-3 py-1 text-sm font-medium hover:border-primary/40">
                   {w.label}
+                  {isSoonHref(w.href) ? <span className="rounded-full bg-muted px-1.5 py-px text-[10px] font-medium text-muted-foreground">Soon</span> : null}
                 </Link>
               </li>
             ))}

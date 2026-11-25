@@ -72,7 +72,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <div className="flex flex-1">
         <nav
           aria-label="Main"
-          className="sticky top-16 hidden h-[calc(100dvh-4rem)] w-60 shrink-0 flex-col gap-1 overflow-y-auto border-r bg-card p-3 md:flex print:hidden"
+          className="sticky top-16 hidden h-[calc(100dvh-4rem)] w-60 shrink-0 flex-col gap-1 overflow-y-auto border-r bg-card p-3 md:flex print:hidden [&>*]:shrink-0"
         >
           <Suspense fallback={<NavLinkList variant="side" pathname={null} allowed={["/"]} />}>
             <LiveNav variant="side" />

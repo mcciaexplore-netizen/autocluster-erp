@@ -125,6 +125,52 @@ export function Sketch({ kind }: { kind: SketchKind }) {
         );
       case "documents":
         return <Rows cols={["Document", "Version", "Approved by", "Read by"]} rows={4} />;
+      case "batches":
+        return (
+          <div className="grid gap-3 sm:grid-cols-3">
+            {[0, 1, 2].map((i) => (
+              <Box key={i} className="flex flex-col gap-2">
+                <Head>Batch</Head>
+                <Bar w="w-3/4" className="h-3.5" />
+                <Bar w="w-1/2" />
+                <div className="mt-1 flex gap-1.5">
+                  {Array.from({ length: 6 }, (_, k) => (
+                    <span key={k} className={cn("h-5 flex-1 rounded-md", k < 3 + i ? "bg-muted-foreground/20" : "border border-dashed border-muted-foreground/30")} />
+                  ))}
+                </div>
+                <Bar w="w-2/5" className="mt-1" />
+              </Box>
+            ))}
+          </div>
+        );
+      case "venues":
+        return (
+          <Box className="flex flex-col gap-3">
+            {["Exhibition Centre", "Auditorium", "Seminar Hall"].map((v, i) => (
+              <div key={v} className="grid grid-cols-[8rem_1fr] items-center gap-3">
+                <Head>{v}</Head>
+                <div className="relative h-7 rounded-md border border-dashed border-muted-foreground/20">
+                  <span className="absolute inset-y-1 rounded bg-muted-foreground/20" style={{ left: `${10 + i * 15}%`, width: `${25 - i * 5}%` }} />
+                  <span className="absolute inset-y-1 rounded bg-muted-foreground/15" style={{ left: `${55 + i * 5}%`, width: "18%" }} />
+                </div>
+              </div>
+            ))}
+          </Box>
+        );
+      case "milestones":
+        return (
+          <Box className="flex flex-col gap-3">
+            {[0, 1, 2, 3].map((i) => (
+              <div key={i} className="grid grid-cols-[6rem_1fr] items-center gap-3">
+                <Bar w="w-full" />
+                <div className="relative h-6">
+                  <span className="absolute inset-y-1.5 rounded-full bg-muted-foreground/20" style={{ left: `${i * 12}%`, width: `${40 + (i % 2) * 15}%` }} />
+                  <span className="absolute top-0.5 size-5 rotate-45 rounded-sm border-2 border-muted-foreground/30 bg-card" style={{ left: `${i * 12 + 45 + (i % 2) * 15}%` }} />
+                </div>
+              </div>
+            ))}
+          </Box>
+        );
     }
   })();
   return (

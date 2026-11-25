@@ -2,10 +2,10 @@
  * "Coming soon" modules: shown in the sidebar and on /soon/<slug> so people can see the full plan.
  * Nothing here is a working feature and nothing touches the database.
  */
-import { FileCheck2, FlaskConical, Globe, LayoutDashboard, RefreshCw, ShoppingCart, Wrench, type LucideIcon } from "lucide-react";
+import { Building2, FileCheck2, FlaskConical, Globe, GraduationCap, LayoutDashboard, Lightbulb, RefreshCw, ShoppingCart, Wrench, type LucideIcon } from "lucide-react";
 
 /** The shape of the faded sketch on the module's page (grey placeholders only, no data). */
-export type SketchKind = "register" | "calendar" | "approvals" | "dashboard" | "portal" | "sync" | "documents";
+export type SketchKind = "register" | "calendar" | "approvals" | "dashboard" | "portal" | "sync" | "documents" | "batches" | "venues" | "milestones";
 
 export interface ComingSoonModule {
   slug: string;
@@ -13,7 +13,7 @@ export interface ComingSoonModule {
   icon: LucideIcon;
   summary: string;
   bullets: string[];
-  /** Existing modules (or other coming-soon ones) it will work with. */
+  /** Modules it will work with: live ones link to their pages; coming-soon ones to their /soon page (and show "Soon"). */
   worksWith: { label: string; href: string }[];
   sketch: SketchKind;
 }
@@ -22,6 +22,10 @@ const ORDERS = { label: "Orders & Billing", href: "/orders" };
 const PLANNING = { label: "Planning", href: "/planning" };
 const INVENTORY = { label: "Inventory", href: "/inventory" };
 const QUOTATIONS = { label: "Quotations", href: "/quotations" };
+const CRM = { label: "CRM", href: "/crm" };
+const CUSTOMERS = { label: "Customers", href: "/customers" };
+/** Another coming-soon module, by its slug. */
+const soon = (slug: string, label: string) => ({ label, href: `/soon/${slug}` });
 
 export const COMING_SOON: ComingSoonModule[] = [
   {
@@ -107,10 +111,39 @@ export const COMING_SOON: ComingSoonModule[] = [
     icon: FileCheck2,
     summary: "Audit-ready, always.",
     bullets: ["SOPs and forms with version control", "Who read and approved each document", "Audit checklists and findings", "Ready for NABL / ISO 17025 audits"],
-    // The message was cut off after "Works with: Test": Test Reports assumed, to confirm.
-    worksWith: [{ label: "Test Reports", href: "/soon/test-reports" }],
+    worksWith: [soon("test-reports", "Test Reports"), soon("maintenance", "Maintenance & Calibration")],
     sketch: "documents",
   },
+  {
+    slug: "training",
+    name: "Training Programmes",
+    icon: GraduationCap,
+    summary: "Run courses from registration to certificate.",
+    bullets: ["Course calendar and batches", "Online registration and fees", "QR attendance", "Certificates generated automatically"],
+    worksWith: [CRM, CUSTOMERS],
+    sketch: "batches",
+  },
+  {
+    slug: "venue-booking",
+    name: "Venue Booking",
+    icon: Building2,
+    summary: "Book the Exhibition Centre, Auditorium and Seminar Hall.",
+    bullets: ["Availability calendar for each venue", "Booking requests with rates and quotation", "Advance payment and confirmation", "Uses the same booking engine as machines"],
+    worksWith: [QUOTATIONS, PLANNING],
+    sketch: "venues",
+  },
+  {
+    slug: "rnd-projects",
+    name: "R&D Projects",
+    icon: Lightbulb,
+    summary: "Track research from idea to outcome.",
+    bullets: ["Projects with milestones and owners", "Budget vs spend", "Grant reporting", "Papers, patents and outcomes"],
+    worksWith: [INVENTORY, PLANNING],
+    sketch: "milestones",
+  },
 ];
+
+/** Is this "Works with" link another coming-soon module? (It then shows the "Soon" badge.) */
+export const isSoonHref = (href: string) => href.startsWith("/soon/");
 
 export const comingSoonBySlug = (slug: string) => COMING_SOON.find((m) => m.slug === slug);
