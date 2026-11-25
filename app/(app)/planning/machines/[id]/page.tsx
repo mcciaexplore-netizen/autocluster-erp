@@ -16,6 +16,9 @@ import { dayPlus, formatHours, formatWhen, hhmm, istAt, istDate, istMinutes, seg
 import { BLOCK_TYPES } from "@/lib/validation/planning";
 import { cn } from "@/lib/utils";
 
+/** Reads who is signed in (and stops with forbidden() when they may not see it), so it blocks on the server: no instant-navigation validation. */
+export const instant = false;
+
 export const metadata: Metadata = { title: "Machine" };
 
 type Sp = Promise<Record<string, string | string[] | undefined>>;

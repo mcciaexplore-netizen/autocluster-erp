@@ -16,6 +16,9 @@ import { HolidaysSection } from "@/components/planning/holidays-section";
 import { listHolidays } from "@/lib/planning-data";
 import { todayInIndia } from "@/lib/tickets";
 
+/** Checks who is signed in and what they may see (forbidden() otherwise), so it blocks on the server: no instant-navigation validation. */
+export const instant = false;
+
 export const metadata: Metadata = { title: "Settings" };
 
 export default function SettingsPage() {

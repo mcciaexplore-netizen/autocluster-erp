@@ -157,9 +157,9 @@ describe.skipIf(skip)("permissions on the server (database)", () => {
     it("a Viewer can't open Settings, Users, Roles or the Activity log", async () => {
       current = viewer;
       const { settingsAccess, adminAccess } = await import("@/lib/admin-data");
-      const { NoAccessError } = await import("@/lib/auth/guard");
-      await expect(settingsAccess()).rejects.toBeInstanceOf(NoAccessError); // Settings
-      await expect(adminAccess()).rejects.toBeInstanceOf(NoAccessError); // Users, Roles and Activity log
+      const forbidden = { digest: "NEXT_HTTP_ERROR_FALLBACK;403" }; // Next's forbidden(): the friendly no-access page
+      await expect(settingsAccess()).rejects.toMatchObject(forbidden); // Settings
+      await expect(adminAccess()).rejects.toMatchObject(forbidden); // Users, Roles and Activity log
       const { navFor } = await import("@/components/layout/nav");
       expect(navFor(viewer.grants)).not.toContain("/settings");
       const { saveSettings } = await import("@/lib/actions/settings");

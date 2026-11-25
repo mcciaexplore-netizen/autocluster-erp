@@ -46,9 +46,9 @@ describe.skipIf(skip)("demo mode (database)", () => {
 
   it("demo users can't be added unless DEMO_MODE is true", async () => {
     demoOff();
-    await expect(setUpDemoUsers(db, auth)).rejects.toThrow(NOT_DEMO_MESSAGE);
+    await expect(setUpDemoUsers(db, auth, { now: new Date() })).rejects.toThrow(NOT_DEMO_MESSAGE);
     process.env.DEMO_MODE = "yes";
-    await expect(setUpDemoUsers(db, auth)).rejects.toThrow(NOT_DEMO_MESSAGE);
+    await expect(setUpDemoUsers(db, auth, { now: new Date() })).rejects.toThrow(NOT_DEMO_MESSAGE);
     expect(await db.select().from(s.appUsers).where(eq(s.appUsers.isDemo, true))).toHaveLength(0);
   });
 
@@ -129,7 +129,7 @@ describe.skipIf(skip)("demo mode (database)", () => {
     expect(can(a, "planning.operate", { dept: "RPT" })).toBe(true);
     demoOff();
     expect(await readAccess(db, rohan.authUserId!)).toBeNull();
-    const r = await checkSignIn(db, { email: rohan.email!, ip: null }, async () => true, async () => {});
+    const r = await checkSignIn(db, { email: rohan.email!, ip: null, now: new Date() }, async () => true, async () => {});
     expect(r).toEqual({ ok: false, message: "Email or password is not right." });
   });
 

@@ -9,6 +9,9 @@ import { EditLeadPage } from "@/components/crm/lead-pages";
 import { Button } from "@/components/ui/button";
 import { getLeadDetail, getLeadFormOptions } from "@/lib/crm-data";
 
+/** Reads who is signed in (and stops with forbidden() when they may not see it), so it blocks on the server: no instant-navigation validation. */
+export const instant = false;
+
 export const metadata: Metadata = { title: "Edit enquiry" };
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;

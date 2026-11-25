@@ -13,6 +13,9 @@ import { formatQty, formatRate } from "@/lib/inventory/numbers";
 import { UUID_RE } from "@/lib/inventory/uuid";
 import { formatINR } from "@/lib/pricing";
 
+/** Reads who is signed in (and stops with forbidden() when they may not see it), so it blocks on the server: no instant-navigation validation. */
+export const instant = false;
+
 export const metadata: Metadata = { title: "Stock record" };
 
 export default function DocPage({ params }: { params: Promise<{ id: string }> }) {

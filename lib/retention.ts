@@ -36,7 +36,7 @@ export const monthsBefore = (now: Date, months: number) => {
   return d;
 };
 
-export async function cleanUpOldEntries(db: DB, now: Date = new Date()): Promise<CleanUpResult> {
+export async function cleanUpOldEntries(db: DB, now: Date): Promise<CleanUpResult> {
   const [s] = await db.select({ months: settings.activityKeepMonths, days: settings.signInKeepDays }).from(settings).where(eq(settings.id, 1));
   const months = s?.months ?? 24;
   const days = s?.days ?? 90;

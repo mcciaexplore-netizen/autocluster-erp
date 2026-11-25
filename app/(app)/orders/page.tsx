@@ -7,6 +7,9 @@ import { blobEnv } from "@/lib/blob";
 import { getDepartments } from "@/lib/data";
 import { getBoardTickets } from "@/lib/orders-data";
 
+/** Reads who is signed in (and stops with forbidden() when they may not see it), so it blocks on the server: no instant-navigation validation. */
+export const instant = false;
+
 export const metadata: Metadata = { title: "Orders & Billing" };
 
 export default function OrdersPage() {

@@ -63,7 +63,7 @@ async function main() {
       }
     }
     console.log("Adding the demo users...");
-    await setUpDemoUsers(db, createAuth(db), { log: (m) => console.log(m) });
+    await setUpDemoUsers(db, createAuth(db), { now: new Date(), log: (m) => console.log(m) });
     console.log("Demo data saved. Uploading the sample PDFs...");
     const up = await uploadStagedFiles((m) => console.log(m));
     if (up.skipped) console.log("BLOB_READ_WRITE_TOKEN is not set, so the sample PDFs were recorded but not uploaded.");

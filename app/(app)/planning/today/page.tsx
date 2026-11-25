@@ -7,6 +7,9 @@ import { getToday } from "@/lib/planning-data";
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth/current-user";
 
+/** Reads who is signed in (and stops with forbidden() when they may not see it), so it blocks on the server: no instant-navigation validation. */
+export const instant = false;
+
 export const metadata: Metadata = { title: "Today" };
 
 export default function TodayPage() {

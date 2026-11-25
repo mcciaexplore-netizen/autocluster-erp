@@ -13,6 +13,9 @@ import { BLOCK_TYPE_NAMES, BUSY_PCT, getPlanningInsights, planningInsightFilters
 import { formatINRShort } from "@/lib/pricing";
 import { cn } from "@/lib/utils";
 
+/** Reads who is signed in (and stops with forbidden() when they may not see it), so it blocks on the server: no instant-navigation validation. */
+export const instant = false;
+
 export const metadata: Metadata = { title: "Planning insights" };
 
 type Sp = Promise<Record<string, string | string[] | undefined>>;

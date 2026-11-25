@@ -18,6 +18,9 @@ import { can } from "@/lib/auth/can";
 import { signedInUser } from "@/lib/auth/guard";
 import { formatINRShort } from "@/lib/pricing";
 
+/** Reads who is signed in (and stops with forbidden() when they may not see it), so it blocks on the server: no instant-navigation validation. */
+export const instant = false;
+
 export default function HomePage() {
   return (
     <Suspense fallback={<StatsSkeleton />}>

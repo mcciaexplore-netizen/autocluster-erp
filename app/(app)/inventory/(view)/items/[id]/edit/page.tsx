@@ -7,6 +7,9 @@ import { ItemForm } from "@/components/inventory/item-form";
 import { getInvItem, getItemFormOptions } from "@/lib/inventory-data";
 import { UUID_RE } from "@/lib/inventory/uuid";
 
+/** Reads who is signed in (and stops with forbidden() when they may not see it), so it blocks on the server: no instant-navigation validation. */
+export const instant = false;
+
 export const metadata: Metadata = { title: "Edit item" };
 
 export default function EditItemPage({ params }: { params: Promise<{ id: string }> }) {

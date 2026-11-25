@@ -27,7 +27,7 @@ export async function clearDeviceCookie() {
 export async function touchFloor(me: { id: string; floor?: { deviceId: string } }) {
   if (!me.floor) return;
   try {
-    await setFloorCookie({ u: me.id, d: me.floor.deviceId, exp: floorExpiry() });
+    await setFloorCookie({ u: me.id, d: me.floor.deviceId, exp: floorExpiry(Date.now()) });
   } catch {
     /* not in an action (a page render): nothing to refresh */
   }

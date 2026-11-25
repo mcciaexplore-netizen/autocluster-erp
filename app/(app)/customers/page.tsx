@@ -13,6 +13,9 @@ import { Card } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { getDepartments, listCustomers } from "@/lib/data";
 
+/** Reads who is signed in (and stops with forbidden() when they may not see it), so it blocks on the server: no instant-navigation validation. */
+export const instant = false;
+
 export const metadata: Metadata = { title: "Customers" };
 
 export default function CustomersPage({ searchParams }: PageProps<"/customers">) {

@@ -18,6 +18,6 @@ export async function signIn(_prev: SignInState, formData: FormData): Promise<Si
     await new Promise((r) => setTimeout(r, 700));
     return { error: "That password is not right. Please check it and try again." };
   }
-  (await cookies()).set(SESSION_COOKIE, createSessionToken(), sessionCookieOptions);
+  (await cookies()).set(SESSION_COOKIE, createSessionToken(Date.now()), sessionCookieOptions);
   redirect(safeNextPath(formData.get("next")));
 }

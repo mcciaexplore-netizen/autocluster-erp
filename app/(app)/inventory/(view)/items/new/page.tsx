@@ -6,6 +6,9 @@ import { ItemForm } from "@/components/inventory/item-form";
 import { getItemFormOptions } from "@/lib/inventory-data";
 import { EMPTY_ITEM_FORM } from "@/lib/validation/inventory";
 
+/** Reads who is signed in (and stops with forbidden() when they may not see it), so it blocks on the server: no instant-navigation validation. */
+export const instant = false;
+
 export const metadata: Metadata = { title: "Add item" };
 
 export default function NewItemPage() {

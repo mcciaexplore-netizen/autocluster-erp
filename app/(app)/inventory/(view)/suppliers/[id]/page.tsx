@@ -13,6 +13,9 @@ import { UUID_RE } from "@/lib/inventory/uuid";
 import { formatINRShort } from "@/lib/pricing";
 import { whatsappNumber } from "@/lib/reminders";
 
+/** Reads who is signed in (and stops with forbidden() when they may not see it), so it blocks on the server: no instant-navigation validation. */
+export const instant = false;
+
 export const metadata: Metadata = { title: "Supplier" };
 
 export default function SupplierPage({ params }: { params: Promise<{ id: string }> }) {

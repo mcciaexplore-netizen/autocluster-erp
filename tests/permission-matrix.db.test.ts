@@ -150,7 +150,7 @@ const DENIED = /^(You don't have permission to|You can only do this in your own 
 /** These answer null when not allowed (so they're called with real input, where allowed answers something). */
 const NULL_WHEN_REFUSED = new Set(["changedSinceAction", "earliestSlotForServiceAction"]);
 const isRefused = (name: string, result: unknown, thrown: unknown) => {
-  if (thrown) return thrown instanceof Error && thrown.constructor.name === "NoAccessError";
+  if (thrown) return (thrown as { digest?: string }).digest === "NEXT_HTTP_ERROR_FALLBACK;403"; // forbidden()
   if (result === null) return NULL_WHEN_REFUSED.has(name);
   const m = (result as { ok?: boolean; message?: string; error?: string } | undefined)?.message;
   return typeof m === "string" && DENIED.test(m);

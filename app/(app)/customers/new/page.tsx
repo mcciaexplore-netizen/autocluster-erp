@@ -9,6 +9,9 @@ import { customerPrefillFromLead } from "@/lib/crm/convert";
 import { getDepartments, getServices, getSettings } from "@/lib/data";
 import { toPricingSettings } from "@/lib/settings-shared";
 
+/** Reads who is signed in (and stops with forbidden() when they may not see it), so it blocks on the server: no instant-navigation validation. */
+export const instant = false;
+
 export const metadata: Metadata = { title: "Add new customer" };
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;

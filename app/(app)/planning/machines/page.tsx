@@ -15,6 +15,9 @@ import { formatWhen } from "@/lib/planning/hours";
 import { BLOCK_TYPES } from "@/lib/validation/planning";
 import { cn } from "@/lib/utils";
 
+/** Reads who is signed in (and stops with forbidden() when they may not see it), so it blocks on the server: no instant-navigation validation. */
+export const instant = false;
+
 export const metadata: Metadata = { title: "Machines" };
 
 export default function MachinesPage() {

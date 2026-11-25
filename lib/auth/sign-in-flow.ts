@@ -23,12 +23,12 @@ export type SignInResult = { ok: true; user: typeof appUsers.$inferSelect } | { 
 
 export async function checkSignIn(
   db: DB,
-  input: { email: string; ip: string | null; now?: Date },
+  input: { email: string; ip: string | null; now: Date },
   /** Checks the password (and creates the session); true when it was right. */
   tryPassword: () => Promise<boolean>,
   log: SignInLog,
 ): Promise<SignInResult> {
-  const now = input.now ?? new Date();
+  const now = input.now;
   const { email, ip } = input;
   const record = (success: boolean, reason: string | null) => db.insert(signInAttempts).values({ email, ip, success, reason, createdAt: now });
 

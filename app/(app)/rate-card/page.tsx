@@ -6,6 +6,9 @@ import { RateCardEditor } from "@/components/rate-card/rate-card-editor";
 import { getDepartments, getServices } from "@/lib/data";
 import { getServiceMaterials, listInvItems } from "@/lib/inventory-data";
 
+/** Reads who is signed in (and stops with forbidden() when they may not see it), so it blocks on the server: no instant-navigation validation. */
+export const instant = false;
+
 export const metadata: Metadata = { title: "Rate Card" };
 
 export default function RateCardPage() {

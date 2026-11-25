@@ -5,6 +5,9 @@ import { PageHeader } from "@/components/common/page-header";
 import { JobsList } from "@/components/planning/jobs-list";
 import { getBookingOptions, jobFiltersFromParams, listJobs } from "@/lib/planning-data";
 
+/** Reads who is signed in (and stops with forbidden() when they may not see it), so it blocks on the server: no instant-navigation validation. */
+export const instant = false;
+
 export const metadata: Metadata = { title: "Jobs" };
 
 type Sp = Promise<Record<string, string | string[] | undefined>>;

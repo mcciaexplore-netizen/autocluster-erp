@@ -6,6 +6,9 @@ import { Timeline } from "@/components/planning/timeline";
 import { Skeleton } from "@/components/ui/skeleton";
 import { getNeedsAttention, getTimeline, timelineFiltersFromParams } from "@/lib/planning-data";
 
+/** Reads who is signed in (and stops with forbidden() when they may not see it), so it blocks on the server: no instant-navigation validation. */
+export const instant = false;
+
 export const metadata: Metadata = { title: "Machine timeline" };
 
 type Sp = Promise<Record<string, string | string[] | undefined>>;

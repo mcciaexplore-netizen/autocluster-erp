@@ -4,6 +4,7 @@
  */
 import "server-only";
 import { cookies, headers } from "next/headers";
+import { connection } from "next/server";
 import { cache } from "react";
 import { db } from "@/db";
 import { setActorResolver } from "./actor";
@@ -59,8 +60,10 @@ export const getCurrentUser = cache(async (): Promise<CurrentUser | null> => {
 
 /** A PIN session on a shared device: a signed, short-lived cookie, and the device must still be shared. */
 async function floorUser(): Promise<CurrentUser | null> {
+  // Request data first, then the clock (Cache Components: never read the time while prerendering).
+  await connection();
   const jar = await cookies();
-  const session = verifyFloor(jar.get(FLOOR_COOKIE)?.value, process.env.AUTH_SECRET);
+  const session = verifyFloor(jar.get(FLOOR_COOKIE)?.value, process.env.AUTH_SECRET, Date.now());
   if (!session) return null;
   const device = await findDevice(db, jar.get(DEVICE_COOKIE)?.value);
   if (!device || device.id !== session.d) return null;

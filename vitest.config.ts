@@ -4,6 +4,8 @@ import { defineConfig } from "vitest/config";
 export default defineConfig({
   resolve: { alias: { "@": path.resolve(__dirname), "server-only": path.resolve(__dirname, "tests/server-only-stub.ts") } },
   test: {
+    // next.config's experimental.authInterrupts, so forbidden() works in tests as in the app.
+    env: { __NEXT_EXPERIMENTAL_AUTH_INTERRUPTS: "true" },
     // Database test files share one test database, so test files run one at a time.
     fileParallelism: false,
     projects: [

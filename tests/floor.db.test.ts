@@ -135,7 +135,7 @@ describe.skipIf(skip)("shared shop-floor devices (database)", () => {
   });
 
   describe("the floor session", () => {
-    const enter = (userId: string, exp = floorExpiry()) => {
+    const enter = (userId: string, exp = floorExpiry(Date.now())) => {
       jar.clear();
       jar.set(DEVICE_COOKIE, token);
       jar.set(FLOOR_COOKIE, signFloor({ u: userId, d: deviceId, exp }, SECRET));
@@ -167,7 +167,7 @@ describe.skipIf(skip)("shared shop-floor devices (database)", () => {
       jar.delete(DEVICE_COOKIE);
       expect(await me()).toBeNull();
       enter(ids.rohan);
-      jar.set(FLOOR_COOKIE, signFloor({ u: ids.rohan, d: "00000000-0000-4000-8000-000000000000", exp: floorExpiry() }, SECRET)); // another device
+      jar.set(FLOOR_COOKIE, signFloor({ u: ids.rohan, d: "00000000-0000-4000-8000-000000000000", exp: floorExpiry(Date.now()) }, SECRET)); // another device
       expect(await me()).toBeNull();
       enter(ids.rohan);
       expect(await me()).not.toBeNull();
@@ -185,7 +185,7 @@ describe.skipIf(skip)("shared shop-floor devices (database)", () => {
       expect((await allow("orders.view")).ok).toBe(false);
       expect(setCalls).toHaveLength(0);
       expect((await allow("planning.operate", { dept: "RPT" })).ok).toBe(true);
-      const renewed = verifyFloor(setCalls.find((c) => c.name === FLOOR_COOKIE)?.value, SECRET);
+      const renewed = verifyFloor(setCalls.find((c) => c.name === FLOOR_COOKIE)?.value, SECRET, Date.now());
       expect(renewed?.exp).toBeGreaterThan(soon + 8 * 60_000);
     });
   });

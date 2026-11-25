@@ -11,6 +11,9 @@ import { formatDate } from "@/lib/format";
 import { getInvLists, listCounts } from "@/lib/inventory-data";
 import { formatINRShort } from "@/lib/pricing";
 
+/** Reads who is signed in (and stops with forbidden() when they may not see it), so it blocks on the server: no instant-navigation validation. */
+export const instant = false;
+
 export const metadata: Metadata = { title: "Stock count" };
 
 export default function Page() {

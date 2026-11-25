@@ -9,6 +9,9 @@ import { Button } from "@/components/ui/button";
 import { getMachineFormOptions } from "@/lib/planning-data";
 import { EMPTY_MACHINE_FORM } from "@/lib/validation/planning";
 
+/** Reads who is signed in (and stops with forbidden() when they may not see it), so it blocks on the server: no instant-navigation validation. */
+export const instant = false;
+
 export const metadata: Metadata = { title: "Add machine" };
 
 export default function Page() {

@@ -4,6 +4,9 @@ import { JobPanelHost } from "@/components/planning/job-panel";
 import { PlanningTabs } from "@/components/planning/planning-tabs";
 import { blobEnv } from "@/lib/blob";
 
+/** Checks who is signed in and what they may see (forbidden() otherwise), so it blocks on the server: no instant-navigation validation. */
+export const instant = false;
+
 export default function PlanningLayout({ children }: { children: React.ReactNode }) {
   return (
     <AreaGate perm="planning.view" area="Planning">

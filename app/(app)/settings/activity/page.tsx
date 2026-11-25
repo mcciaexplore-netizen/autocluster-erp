@@ -6,6 +6,9 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { ActivityLog } from "@/components/users/activity-log";
 import { activityFiltersFromParams, getActivityOptions, getActivityStats, listActivity } from "@/lib/activity-data";
 
+/** Checks who is signed in and what they may see (forbidden() otherwise), so it blocks on the server: no instant-navigation validation. */
+export const instant = false;
+
 export const metadata: Metadata = { title: "Activity log" };
 
 type Sp = Promise<Record<string, string | string[] | undefined>>;

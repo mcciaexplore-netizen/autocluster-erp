@@ -35,7 +35,7 @@ export async function signInWithPassword(_prev: FormState, fd: FormData): Promis
   const h = await headers();
   const r = await checkSignIn(
     db,
-    { email, ip: await requestIp() },
+    { email, ip: await requestIp(), now: new Date() },
     async () => {
       try {
         await auth.api.signInEmail({ body: { email, password, rememberMe: remember }, headers: h });

@@ -23,6 +23,7 @@ export async function pinSignInAction(userId: string, pin: string): Promise<{ ok
     userId: id.data,
     pin: String(pin ?? "").slice(0, 12),
     ip,
+    now: new Date(),
   });
   if (!r.ok) {
     await logActivity({ area: "Sign-in", action: "failed sign-in", summary: `Failed PIN sign-in on a shared device: ${r.message}`, entityType: "user", entityId: id.data, userId: null });

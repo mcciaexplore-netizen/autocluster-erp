@@ -6,6 +6,9 @@ import { loadBuilderData } from "@/components/quotations/builder/load";
 import { QuotationBuilder } from "@/components/quotations/builder/quotation-builder";
 import { getLeadDetail } from "@/lib/crm-data";
 
+/** Reads who is signed in (and stops with forbidden() when they may not see it), so it blocks on the server: no instant-navigation validation. */
+export const instant = false;
+
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export const metadata: Metadata = { title: "Create quotation" };

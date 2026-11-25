@@ -3,18 +3,12 @@
  * Excel export and page data loader goes through one of these. Hiding buttons is never enough.
  */
 import "server-only";
-import { redirect } from "next/navigation";
+import { forbidden, redirect } from "next/navigation";
 import { SIGNED_OUT_MESSAGE } from "@/lib/auth-messages";
 import { can, canAny } from "./can";
 import { getCurrentUser, type CurrentUser } from "./current-user";
 import { touchFloor } from "./floor-session";
 import { PERMISSIONS, type Permission } from "./permissions";
-
-export class NoAccessError extends Error {
-  constructor(message = "You don't have access to this. Ask your admin if you need it.") {
-    super(message);
-  }
-}
 
 const lower = (s: string) => s.charAt(0).toLowerCase() + s.slice(1);
 
@@ -57,7 +51,7 @@ export async function allow(perm: Permission | Permission[], opts: { dept?: stri
 
 /**
  * For page data loaders: the signed-in person, if they may view this. Signed out: to sign-in.
- * Not allowed: NoAccessError (pages check the area first, so this is the safety net).
+ * Not allowed: forbidden(), the friendly no-access page (pages check the area first, so this is the safety net).
  */
 export async function need(perm: Permission | Permission[] = []): Promise<CurrentUser> {
   const raw = await getCurrentUser();
@@ -66,7 +60,8 @@ export async function need(perm: Permission | Permission[] = []): Promise<Curren
   const me = raw;
   if (!me) redirect("/sign-in");
   const perms = Array.isArray(perm) ? perm : [perm];
-  if (perms.length && !canAny(me, perms)) throw new NoAccessError();
+  // Not allowed: the friendly no-access page (forbidden.tsx), with no error in the server log.
+  if (perms.length && !canAny(me, perms)) forbidden();
   return me;
 }
 

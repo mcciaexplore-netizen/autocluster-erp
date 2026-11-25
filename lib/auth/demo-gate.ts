@@ -43,12 +43,12 @@ function safeEqual(a: string, b: string): boolean {
   return ab.length === bb.length && timingSafeEqual(ab, bb);
 }
 
-export function createSessionToken(now = Date.now()): string {
+export function createSessionToken(now: number): string {
   const payload = Buffer.from(JSON.stringify({ v: 1, exp: Math.floor(now / 1000) + SESSION_SECONDS })).toString("base64url");
   return `${payload}.${sign(payload)}`;
 }
 
-export function verifySessionToken(token: string | undefined | null, now = Date.now()): boolean {
+export function verifySessionToken(token: string | undefined | null, now: number): boolean {
   if (!token || authSetupProblem()) return false;
   const [payload, sig] = token.split(".");
   if (!payload || !sig || !safeEqual(sig, sign(payload))) return false;

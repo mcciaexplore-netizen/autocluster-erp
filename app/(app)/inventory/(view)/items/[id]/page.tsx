@@ -20,6 +20,9 @@ import { formatINRShort } from "@/lib/pricing";
 import { daysBetween, todayInIndia } from "@/lib/tickets";
 import { cn } from "@/lib/utils";
 
+/** Reads who is signed in (and stops with forbidden() when they may not see it), so it blocks on the server: no instant-navigation validation. */
+export const instant = false;
+
 export const metadata: Metadata = { title: "Item" };
 
 export default function ItemPage({ params }: { params: Promise<{ id: string }> }) {

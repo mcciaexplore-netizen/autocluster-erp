@@ -11,6 +11,9 @@ import { QuickActions } from "@/components/inventory/quick-actions";
 import { getDailyUse, getInvLists, listInvItems } from "@/lib/inventory-data";
 import { runsOutInDays } from "@/lib/inventory/calc";
 
+/** Reads who is signed in (and stops with forbidden() when they may not see it), so it blocks on the server: no instant-navigation validation. */
+export const instant = false;
+
 export const metadata: Metadata = { title: "Inventory items" };
 
 export default function ItemsPage() {

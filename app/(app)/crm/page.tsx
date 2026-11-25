@@ -6,6 +6,9 @@ import { boardStage, CrmSkeleton } from "@/components/crm/crm-skeleton";
 import { canManagePipeline } from "@/lib/crm/permissions";
 import { getBoardLeads, getCrmStages, getLeadFormOptions } from "@/lib/crm-data";
 
+/** Reads who is signed in (and stops with forbidden() when they may not see it), so it blocks on the server: no instant-navigation validation. */
+export const instant = false;
+
 export const metadata: Metadata = { title: "Enquiries" };
 
 export default function CrmPage() {

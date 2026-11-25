@@ -14,6 +14,9 @@ import { listQuotations } from "@/lib/data";
 import { formatINR, toPaise } from "@/lib/pricing";
 import { QUOTE_STATUS, QUOTE_STATUSES } from "@/lib/labels";
 
+/** Reads who is signed in (and stops with forbidden() when they may not see it), so it blocks on the server: no instant-navigation validation. */
+export const instant = false;
+
 export const metadata: Metadata = { title: "Quotations" };
 
 export default function QuotationsPage({ searchParams }: PageProps<"/quotations">) {

@@ -8,6 +8,9 @@ import { blobEnv } from "@/lib/blob";
 import { getServiceMaterials, getStockFormData, getTicketsForUse } from "@/lib/inventory-data";
 import { UUID_RE } from "@/lib/inventory/uuid";
 
+/** Reads who is signed in (and stops with forbidden() when they may not see it), so it blocks on the server: no instant-navigation validation. */
+export const instant = false;
+
 export const metadata: Metadata = { title: "Stock in & out" };
 
 const TITLES = {

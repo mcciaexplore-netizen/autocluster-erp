@@ -57,7 +57,7 @@ export function signFloor(s: FloorSession, secret: string): string {
   return `${body}.${sign(body, secret)}`;
 }
 
-export function verifyFloor(value: string | null | undefined, secret: string | undefined, now = Date.now()): FloorSession | null {
+export function verifyFloor(value: string | null | undefined, secret: string | undefined, now: number): FloorSession | null {
   if (!value || !secret || secret.length < 32) return null;
   const [body, mac] = value.split(".");
   if (!body || !mac) return null;
@@ -73,7 +73,7 @@ export function verifyFloor(value: string | null | undefined, secret: string | u
   }
 }
 
-export const floorExpiry = (now = Date.now()) => now + FLOOR_IDLE_MINUTES * 60_000;
+export const floorExpiry = (now: number) => now + FLOOR_IDLE_MINUTES * 60_000;
 
 // ---- PINs ---------------------------------------------------------------------------------------
 
@@ -117,9 +117,9 @@ export const pinLockedMessage = (until: Date, now: Date) => {
 export async function pinSignIn(
   db: DB,
   checkPin: PinCheck,
-  input: { deviceToken: string | null | undefined; userId: string; pin: string; ip: string | null; now?: Date },
+  input: { deviceToken: string | null | undefined; userId: string; pin: string; ip: string | null; now: Date },
 ): Promise<{ ok: true; session: FloorSession; name: string; deviceName: string } | { ok: false; message: string }> {
-  const now = input.now ?? new Date();
+  const now = input.now;
   const device = await findDevice(db, input.deviceToken);
   if (!device) return { ok: false, message: "This device isn't set up as a shared shop-floor device. Ask your admin." };
   const key = pinKey(input.userId);

@@ -9,6 +9,9 @@ import { changePassword } from "@/lib/actions/session";
 import { getProfile } from "@/lib/profile-data";
 import { OwnPinForm, ThisDeviceForm } from "@/components/floor/device-forms";
 
+/** Reads who is signed in (and stops with forbidden() when they may not see it), so it blocks on the server: no instant-navigation validation. */
+export const instant = false;
+
 export const metadata: Metadata = { title: "Profile" };
 
 export default function ProfilePage() {

@@ -44,7 +44,7 @@ async function main() {
       }
     }
     console.log("Adding the demo users...");
-    await setUpDemoUsers(db, createAuth(db), { log: (m) => console.log(m) });
+    await setUpDemoUsers(db, createAuth(db), { now: new Date(), log: (m) => console.log(m) });
     const up = await uploadStagedFiles((m) => console.log(m));
     if (!up.skipped) console.log(`Uploaded ${up.uploaded} sample PDF(s).${up.failed.length ? ` ${up.failed.length} could not be uploaded.` : ""}`);
     console.log("Done.");

@@ -9,6 +9,9 @@ import { UsersList } from "@/components/users/users-list";
 import { getUserFormOptions, listSharedDevices, listUsers, userFiltersFromParams } from "@/lib/users-data";
 import { SharedDevicesList } from "@/components/floor/device-forms";
 
+/** Reads who is signed in (and stops with forbidden() when they may not see it), so it blocks on the server: no instant-navigation validation. */
+export const instant = false;
+
 export const metadata: Metadata = { title: "Users" };
 
 type Sp = Promise<Record<string, string | string[] | undefined>>;

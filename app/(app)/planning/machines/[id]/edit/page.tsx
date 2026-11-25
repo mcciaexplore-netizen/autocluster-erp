@@ -10,6 +10,9 @@ import { Button } from "@/components/ui/button";
 import { getMachine, getMachineFormOptions } from "@/lib/planning-data";
 import { UUID_RE } from "@/lib/inventory/uuid";
 
+/** Reads who is signed in (and stops with forbidden() when they may not see it), so it blocks on the server: no instant-navigation validation. */
+export const instant = false;
+
 export const metadata: Metadata = { title: "Edit machine" };
 
 export default function Page({ params }: { params: Promise<{ id: string }> }) {

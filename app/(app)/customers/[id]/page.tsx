@@ -24,6 +24,9 @@ import { invoiceChips, todayInIndia } from "@/lib/tickets";
 import { StageChip, ToneChip } from "@/components/orders/stage-chip";
 import { toPricingSettings } from "@/lib/settings-shared";
 
+/** Reads who is signed in (and stops with forbidden() when they may not see it), so it blocks on the server: no instant-navigation validation. */
+export const instant = false;
+
 export const metadata: Metadata = { title: "Customer" };
 
 export default function CustomerPage({ params }: PageProps<"/customers/[id]">) {

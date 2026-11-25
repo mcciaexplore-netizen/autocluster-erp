@@ -12,6 +12,9 @@ import { QuotationBuilder } from "@/components/quotations/builder/quotation-buil
 import { getQuotationWithPrices } from "@/lib/data";
 import { itemToDraft } from "@/lib/quote-items";
 
+/** Reads who is signed in (and stops with forbidden() when they may not see it), so it blocks on the server: no instant-navigation validation. */
+export const instant = false;
+
 export const metadata: Metadata = { title: "Edit quotation" };
 
 export default function EditQuotationPage({ params }: PageProps<"/quotations/[id]/edit">) {

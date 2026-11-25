@@ -41,7 +41,7 @@ export async function listUsers(f: UserFilters = {}) {
       select id, full_name as name, email, mobile, can_sign_in, all_departments, deactivated_at::text, last_sign_in_at::text, is_demo from app_users order by deactivated_at nulls first, full_name`),
     db.select({ userId: userRoles.userId, id: roles.id, name: roles.name }).from(userRoles).innerJoin(roles, eq(roles.id, userRoles.roleId)).orderBy(asc(roles.sortOrder)),
     db.select().from(userDepartments),
-    lockedEmails(db),
+    lockedEmails(db, new Date()),
   ]);
   const list = rows.rows.map((u) => {
     const status: UserStatus = u.deactivated_at ? "DEACTIVATED" : !u.can_sign_in ? "NAME_ONLY" : u.email && locked.has(u.email) ? "LOCKED" : "ACTIVE";
@@ -93,7 +93,7 @@ export async function getUser(id: string) {
       select a.created_at::text as at, a.summary, b.full_name as by from activity_log a left join app_users b on b.id = a.user_id
       where a.entity_type = 'user' and a.entity_id = ${id} order by a.created_at desc limit 20`),
   ]);
-  const locked = u.email ? (await lockedEmails(db)).has(u.email) : false;
+  const locked = u.email ? (await lockedEmails(db, new Date())).has(u.email) : false;
   return {
     id: u.id,
     name: u.fullName,

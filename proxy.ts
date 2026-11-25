@@ -22,7 +22,7 @@ export function proxy(request: NextRequest) {
   if (pathname.startsWith("/api/cron/")) return NextResponse.next();
 
   if (authEnabled()) {
-    const passedGate = verifySessionToken(request.cookies.get(SESSION_COOKIE)?.value);
+    const passedGate = verifySessionToken(request.cookies.get(SESSION_COOKIE)?.value, Date.now());
     if (pathname === "/login") return passedGate ? NextResponse.redirect(new URL("/", request.url)) : NextResponse.next();
     if (!passedGate) {
       const url = new URL("/login", request.url);

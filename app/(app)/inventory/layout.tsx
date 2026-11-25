@@ -3,6 +3,9 @@ import { AreaGate } from "@/components/auth/area-gate";
 import { InventoryAutoRefresh } from "@/components/inventory/auto-refresh";
 import { InventoryTabs } from "@/components/inventory/inventory-tabs";
 
+/** Checks who is signed in and what they may see (forbidden() otherwise), so it blocks on the server: no instant-navigation validation. */
+export const instant = false;
+
 /**
  * Inventory: people who can view it, plus operators who may only record materials for their own
  * jobs (/inventory/movements/new). Every other Inventory page also needs "inventory.view"

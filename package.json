@@ -11,6 +11,7 @@
     "db:seed": "tsx scripts/seed.ts",
     "db:studio": "drizzle-kit studio",
     "test": "vitest run",
+    "test:pages": "tsx scripts/check-pages.ts",
     "typecheck": "tsc --noEmit",
     "db:reset": "tsx scripts/reset.ts",
     "db:backup": "tsx scripts/db-backup.ts",

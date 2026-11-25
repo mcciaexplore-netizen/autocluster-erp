@@ -12,32 +12,32 @@ describe("demo password sessions", () => {
   });
 
   it("accepts a fresh token and rejects a tampered one", () => {
-    const t = createSessionToken();
-    expect(verifySessionToken(t)).toBe(true);
-    expect(verifySessionToken(t.slice(0, -2) + "zz")).toBe(false);
-    expect(verifySessionToken("garbage")).toBe(false);
-    expect(verifySessionToken(undefined)).toBe(false);
+    const t = createSessionToken(Date.now());
+    expect(verifySessionToken(t, Date.now())).toBe(true);
+    expect(verifySessionToken(t.slice(0, -2) + "zz", Date.now())).toBe(false);
+    expect(verifySessionToken("garbage", Date.now())).toBe(false);
+    expect(verifySessionToken(undefined, Date.now())).toBe(false);
   });
   it("expires after 7 days", () => {
     const t = createSessionToken(Date.now() - 8 * 24 * 3600 * 1000);
-    expect(verifySessionToken(t)).toBe(false);
+    expect(verifySessionToken(t, Date.now())).toBe(false);
   });
   it("signs everyone out when the password or secret changes", () => {
-    const t = createSessionToken();
+    const t = createSessionToken(Date.now());
     process.env.DEMO_PASSWORD = "new password";
-    expect(verifySessionToken(t)).toBe(false);
+    expect(verifySessionToken(t, Date.now())).toBe(false);
     process.env.DEMO_PASSWORD = "correct horse";
     process.env.AUTH_SECRET = "y".repeat(48);
-    expect(verifySessionToken(t)).toBe(false);
+    expect(verifySessionToken(t, Date.now())).toBe(false);
   });
   it("never stores the password in the token", () => {
-    expect(createSessionToken()).not.toContain("correct");
-    expect(Buffer.from(createSessionToken().split(".")[0], "base64url").toString()).not.toContain("horse");
+    expect(createSessionToken(Date.now())).not.toContain("correct");
+    expect(Buffer.from(createSessionToken(Date.now()).split(".")[0], "base64url").toString()).not.toContain("horse");
   });
   it("refuses tokens when AUTH_SECRET is too short", () => {
-    const t = createSessionToken();
+    const t = createSessionToken(Date.now());
     process.env.AUTH_SECRET = "short";
-    expect(verifySessionToken(t)).toBe(false);
+    expect(verifySessionToken(t, Date.now())).toBe(false);
   });
   it("checks the password", () => {
     expect(passwordMatches("correct horse")).toBe(true);

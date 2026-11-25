@@ -44,10 +44,10 @@ export const demoEmail = (name: string) => `${name.toLowerCase().replace(/[^a-z]
 const OPERATORS_BEFORE = ["Amit Patil", "Rohan Deshpande", "Priya Shah"];
 
 /** Adds the demo users. `hashPin` stores the demo PIN as a hash, like any PIN. */
-export async function setUpDemoUsers(db: DB, auth: Auth, opts: { now?: Date; log?: (m: string) => void } = {}) {
+export async function setUpDemoUsers(db: DB, auth: Auth, opts: { now: Date; log?: (m: string) => void }) {
   if (!isDemoMode()) throw new Error(NOT_DEMO_MESSAGE);
   const log = opts.log ?? (() => {});
-  const now = opts.now ?? new Date();
+  const now = opts.now;
   await ensureAppUsersForTeam(db);
   const roles = await ensureDefaultRoles(db);
   const ctx = await auth.$context;

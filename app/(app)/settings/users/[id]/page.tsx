@@ -11,6 +11,9 @@ import { StatusChip } from "@/components/users/users-list";
 import { getCurrentUser } from "@/lib/auth/current-user";
 import { getUser, getUserFormOptions } from "@/lib/users-data";
 
+/** Reads who is signed in (and stops with forbidden() when they may not see it), so it blocks on the server: no instant-navigation validation. */
+export const instant = false;
+
 export const metadata: Metadata = { title: "User" };
 
 const when = new Intl.DateTimeFormat("en-IN", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "Asia/Kolkata" });

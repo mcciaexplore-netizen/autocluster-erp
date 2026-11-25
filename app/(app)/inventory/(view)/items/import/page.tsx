@@ -8,6 +8,9 @@ import { ItemImport } from "@/components/inventory/item-import";
 import { Button } from "@/components/ui/button";
 import { getInvLists } from "@/lib/inventory-data";
 
+/** Reads who is signed in (and stops with forbidden() when they may not see it), so it blocks on the server: no instant-navigation validation. */
+export const instant = false;
+
 export const metadata: Metadata = { title: "Import items" };
 
 export default function Page() {

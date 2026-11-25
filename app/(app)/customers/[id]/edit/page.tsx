@@ -8,6 +8,9 @@ import { toDetailsInput } from "@/lib/customer-form";
 import { getCustomer, getDepartments, getServices, getSettings } from "@/lib/data";
 import { toPricingSettings } from "@/lib/settings-shared";
 
+/** Reads who is signed in (and stops with forbidden() when they may not see it), so it blocks on the server: no instant-navigation validation. */
+export const instant = false;
+
 export const metadata: Metadata = { title: "Edit customer" };
 
 export default function EditCustomerPage({ params }: PageProps<"/customers/[id]/edit">) {
