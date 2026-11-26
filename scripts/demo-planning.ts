@@ -626,6 +626,7 @@ export async function loadPlanningDemo(conn: DB | Tx, opts: { log?: (m: string) 
   }
   log(`  Operators' daily work: ${opBooked} jobs for Amit, Rohan and Priya over the next 3 weeks`);
 
+
   // Waiting for PO (Deccan): tentative holds. The Xenon one expires tomorrow; the melt flow one has expired.
   const deccanXenon = jobRows.find((j) => j.stage === "WAITING_PO" && j.service_id === svcId("Xenon test chamber"));
   const deccanMfi = jobRows.find((j) => j.stage === "WAITING_PO" && j.service_id === svcId("Melt flow index"));
@@ -646,6 +647,87 @@ export async function loadPlanningDemo(conn: DB | Tx, opts: { log?: (m: string) 
   const holdJob = job(onHold.id);
   await db.update(s.jobs).set({ status: "ON_HOLD", holdReason: "Waiting for customer drawings", promisedDate: day(12), operatorId: operatorFor("PPF") }).where(eq(s.jobs.id, holdJob.id));
   await db.insert(s.jobEvents).values({ jobId: holdJob.id, type: "ON_HOLD", message: "On hold: Waiting for customer drawings", createdBy: "Demo User", createdAt: istAt(day(-4), 15 * 60) });
+
+  // ---- This week on every department's board: a realistic spread at different hours ----------
+  // Short jobs on each machine for the rest of the week (operator machines at varied times in the
+  // day; day-and-night chambers with overnight runs), one job running now and one tentative booking
+  // (no PO yet) per department. Custom items, so the Inventory demo's stock numbers don't change;
+  // never on the 5-Axis VMC, so its "booked over 90%" story stays as it is.
+  const weekEnd = dayPlus(weekStart(today), 7);
+  const weekSlots: { m: typeof s.machines.$inferSelect; start: Date; hours: number; kind: "planned" | "running" | "tentative"; others?: (typeof s.machines.$inferSelect)[] }[] = [];
+  const START_HOURS = [9.5, 11, 13.5, 15, 10, 14];
+  const depts = [...new Set(machineRows.map((m) => m.deptCode))];
+  for (const dept of depts) {
+    const list = machineRows.filter((m) => m.deptCode === dept && m.isActive && m.name !== "5-Axis VMC (Non-Continuous)");
+    list.forEach((m, i) => {
+      for (let d = 0; dayPlus(today, d) < weekEnd; d++) {
+        const date = dayPlus(today, d);
+        const iso = ((new Date(`${date}T00:00:00Z`).getUTCDay() + 6) % 7) + 1;
+        if (m.runsNonstop) {
+          // Chambers: an overnight run every couple of days.
+          if ((i + d) % 2 === 0) weekSlots.push({ m, start: istAt(date, (17 + (i % 3)) * 60), hours: 18 + ((i + d) % 4) * 6, kind: "planned" });
+        } else if (pattern.days.includes(iso) && !pattern.holidays.has(date) && (i + d) % 3 !== 2) {
+          const h = START_HOURS[(i * 2 + d) % START_HOURS.length];
+          weekSlots.push({ m, start: istAt(date, Math.round(h * 60)), hours: 1.5 + ((i + d) % 4) * 0.75, kind: "planned" });
+        }
+      }
+    });
+    // Running now: on an operator machine during working hours, otherwise on a day-and-night machine (if the department has one).
+    const nowMin = Math.round((now.getTime() - istAt(today, 0).getTime()) / 60_000);
+    const working = pattern.days.includes(((new Date(`${today}T00:00:00Z`).getUTCDay() + 6) % 7) + 1) && !pattern.holidays.has(today) && nowMin - 90 >= pattern.shiftStart && nowMin + 150 <= pattern.shiftEnd;
+    const candidates = list.filter((m) => (working ? !m.runsNonstop : m.runsNonstop));
+    if (candidates.length) weekSlots.push({ m: candidates[0], others: candidates.slice(1), start: new Date(Math.floor((now.getTime() - 90 * 60_000) / 1_800_000) * 1_800_000), hours: 4, kind: "running" });
+    const held = list[1] ?? list[0];
+    if (held) weekSlots.push({ m: held, start: istAt(dayPlus(today, 2), 12 * 60), hours: 3, kind: "tentative" });
+  }
+  const WEEK_WORK: Record<string, string> = {
+    PPF: "Machining of fixture parts (customer material)",
+    RPT: "Prototype prints in customer-supplied material",
+    ENV: "Environmental test run (customer profile)",
+    RPL: "Material test batch (customer specimens)",
+    MET: "Inspection of first-off parts",
+  };
+  let weekBooked = 0;
+  for (const dept of depts) {
+    const mine = weekSlots.filter((w) => w.m.deptCode === dept && w.start.getTime() + w.hours * HOUR > now.getTime() - 2 * HOUR);
+    if (!mine.length) continue;
+    const pool = POOL[dept] ?? [NASHIK];
+    for (const kind of ["firm", "tentative"] as const) {
+      const group = mine.filter((w) => (kind === "tentative") === (w.kind === "tentative"));
+      if (!group.length) continue;
+      const ts = await order(
+        pool[depts.indexOf(dept) % pool.length],
+        -3,
+        `Quotation for ${WEEK_WORK[dept]?.toLowerCase() ?? "work"}`,
+        group.map((w) => ({ custom: { dept, description: WEEK_WORK[dept] ?? "Work as per drawing", unitLabel: "per hour", ratePaise: 1200_00 }, q: { quantity: w.hours }, notes: `On ${w.m.name}` })),
+        kind === "tentative" ? null : -1,
+      );
+      const rows = (await db.execute<{ id: string; ticket_id: string }>(sql`select j.id, t.id as ticket_id from jobs j join tickets t on t.id = j.ticket_id where t.id = any(${sql.param(ts.map((t) => t.id))}::uuid[])`)).rows;
+      for (const [k, t] of ts.entries()) {
+        const w = group[k];
+        const jobId = rows.find((r) => r.ticket_id === t.id)!.id;
+        const opId = operatorFor(dept);
+        await db.update(s.jobs).set({ hoursNeeded: String(w.hours), operatorId: opId, promisedDate: dayPlus(istDate(w.start), 3) }).where(eq(s.jobs.id, jobId));
+        // The running job tries each suitable machine in turn; others keep to their machine.
+        for (const m of [w.m, ...(w.others ?? [])]) {
+          try {
+            const r = await book(jobId, m.name, w.start, w.hours, { exactStart: true });
+            await db.update(s.jobBookings).set({ operatorId: opId }).where(eq(s.jobBookings.id, r.booking.id));
+            if (w.kind === "running") {
+              await db.insert(s.jobTimeLogs).values({ jobId, bookingId: r.booking.id, machineId: m.id, operatorId: opId, startedAt: w.start, endedAt: null });
+              await db.update(s.jobs).set({ status: "RUNNING" }).where(eq(s.jobs.id, jobId));
+              await db.insert(s.jobEvents).values({ jobId, type: "STARTED", message: `Started on ${m.name} by ${operatorName(opId)}`, createdBy: operatorName(opId) ?? "Demo User", createdAt: w.start });
+            }
+            weekBooked++;
+            break;
+          } catch {
+            /* that time is taken (a story booking or the operators' daily work) */
+          }
+        }
+      }
+    }
+  }
+  log(`  This week: ${weekBooked} more bookings across every department at different hours (one running now and one tentative in each)`);
 
   // ---- The numbers for the summary ------------------------------------------------------------
   const vmcBooked = await db.execute<{ start_at: string; end_at: string }>(sql`select start_at::text, end_at::text from job_bookings where machine_id = ${vmc.id} and cancelled_at is null and end_at > ${now}`);

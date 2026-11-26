@@ -12,10 +12,10 @@ import { StillBrokenDown } from "@/components/planning/still-broken";
 import { ClashActions } from "@/components/planning/clash-actions";
 import { Button } from "@/components/ui/button";
 import { UUID_RE } from "@/lib/inventory/uuid";
-import { getMachine, getRecentInternalUse, type MachineDetail } from "@/lib/planning-data";
-import { dayPlus, formatHours, formatWhen, hhmm, istAt, istDate, istMinutes, segmentsOn } from "@/lib/planning/hours";
+import { getMachine, getRecentInternalUse, getTimeline, listHolidays, type MachineDetail, type TimelineData } from "@/lib/planning-data";
+import { MachineWeek } from "@/components/planning/machine-week";
+import { dayPlus, formatHours, formatWhen, istAt, istDate } from "@/lib/planning/hours";
 import { BLOCK_TYPES } from "@/lib/validation/planning";
-import { cn } from "@/lib/utils";
 
 /** Reads who is signed in (and stops with forbidden() when they may not see it), so it blocks on the server: no instant-navigation validation. */
 export const instant = false;
@@ -47,6 +47,8 @@ async function Detail({ params, searchParams }: { params: Promise<{ id: string }
   const sp = await searchParams;
   // Internal-use records are only for people who can block machine time (the others can still see the machine).
   const [d, stockRecords] = await Promise.all([getMachine(id, typeof sp.week === "string" ? sp.week : undefined), (await may("planning.blocks")) ? getRecentInternalUse() : []]);
+  // The week, drawn like the Department board (same bookings, colours and blocked time).
+  const [t, holidays] = d ? await Promise.all([getTimeline({ view: "week", date: d.week.from, machine: id }), listHolidays()]) : [null, []];
   if (!d) notFound();
   const m = d.machine;
   return (
@@ -122,7 +124,7 @@ async function Detail({ params, searchParams }: { params: Promise<{ id: string }
         </section>
       ) : null}
 
-      <Week d={d} />
+      <Week d={d} t={t} holidays={holidays} />
 
       <div className="grid gap-6 lg:grid-cols-2">
         <section className="rounded-2xl border bg-card p-5">
@@ -182,19 +184,11 @@ async function Detail({ params, searchParams }: { params: Promise<{ id: string }
 }
 
 /** The week, Monday to Sunday: bookings and blocked time per day (in India time). */
-function Week({ d }: { d: MachineDetail }) {
+function Week({ d, t, holidays }: { d: MachineDetail; t: TimelineData | null; holidays: { date: string; name: string }[] }) {
   const days = Array.from({ length: 7 }, (_, i) => dayPlus(d.week.from, i));
-  const today = istDate(new Date());
+  const now = new Date();
   const range = `${formatWhen(istAt(days[0], 0)).split(",")[0]} to ${formatWhen(istAt(days[6], 0)).split(",")[0]}`;
-  const items = (day: string) => {
-    const start = istAt(day, 0);
-    const end = istAt(dayPlus(day, 1), 0);
-    const clip = (a: Date, b: Date) => `${a < start ? "00:00" : hhmm(Math.round(istMinutes(a)))} to ${b >= end ? "24:00" : hhmm(Math.round(istMinutes(b)))}`;
-    return [
-      ...d.week.blocks.filter((b) => b.startAt < end && b.endAt > start).map((b) => ({ key: b.id, at: b.startAt, block: b, text: clip(b.startAt, b.endAt) })),
-      ...d.week.bookings.filter((b) => b.startAt < end && b.endAt > start).map((b) => ({ key: b.id, at: b.startAt, booking: b, text: clip(b.startAt, b.endAt) })),
-    ].sort((a, b) => a.at.getTime() - b.at.getTime());
-  };
+  const p = d.pattern;
   return (
     <section className="rounded-2xl border bg-card p-4 sm:p-5" aria-labelledby="week-h">
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
@@ -219,64 +213,44 @@ function Week({ d }: { d: MachineDetail }) {
           </Button>
         </div>
       </div>
-      <ol className="grid gap-2 md:grid-cols-7">
-        {days.map((day) => {
-          const list = items(day);
-          const off = !d.machine.runsNonstop && !segmentsOn(day, d.pattern).length;
-          return (
-            <li key={day} className={cn("min-h-28 rounded-xl border p-2", day === today && "border-primary/50 ring-1 ring-primary/20", off && "bg-secondary/60")}>
-              <p className={cn("mb-1.5 text-xs font-semibold", day === today ? "text-primary" : "text-muted-foreground")}>
-                {formatWhen(istAt(day, 0)).split(",")[0]}
-                {off ? " · day off" : ""}
-              </p>
-              <ul className="flex flex-col gap-1.5">
-                {list.map((it) =>
-                  "block" in it && it.block ? (
-                    <li
-                      key={it.key}
-                      className="flex items-start justify-between gap-1 rounded-lg border border-slate-300 bg-[repeating-linear-gradient(135deg,#f1f5f9_0_6px,#e2e8f0_6px_12px)] p-1.5 text-xs text-slate-800"
-                    >
-                      <span>
-                        <span className="block font-medium">{BLOCK_TYPES[it.block.type]}</span>
-                        {it.text}
-                        {it.block.note ? <span className="block text-slate-600">{it.block.note}</span> : null}
-                        {it.block.invDocumentId ? (
-                          <Link href={`/inventory/movements/${it.block.invDocumentId}`} className="block font-medium underline">
-                            Spares used
-                          </Link>
-                        ) : null}
-                      </span>
-                      {it.block.endAt > new Date() ? (
-                        <Can perm="planning.blocks" dept={d.machine.deptCode}>
-                          <DeleteBlockButton blockId={it.block.id} label={BLOCK_TYPES[it.block.type].toLowerCase()} />
-                        </Can>
-                      ) : null}
-                    </li>
-                  ) : "booking" in it && it.booking ? (
-                    <li
-                      key={it.key}
-                      className={cn(
-                        "rounded-lg border p-1.5 text-xs",
-                        it.booking.isTentative
-                          ? "border-amber-300 bg-[repeating-linear-gradient(135deg,#fffbeb_0_6px,#fef3c7_6px_12px)] text-amber-950"
-                          : it.booking.jobStatus === "RUNNING"
-                            ? "border-emerald-300 bg-emerald-50 text-emerald-950"
-                            : "border-blue-200 bg-blue-50 text-blue-950",
-                      )}
-                    >
-                      <span className="block font-medium tabular-nums">{it.booking.ticketNo}</span>
-                      <span className="block truncate">{it.booking.company}</span>
-                      {it.text}
-                      {it.booking.isTentative ? <span className="block">Tentative: waiting for PO</span> : null}
-                    </li>
-                  ) : null,
-                )}
-                {!list.length ? <li className="text-xs text-muted-foreground">{off ? "" : "Free"}</li> : null}
-              </ul>
-            </li>
-          );
-        })}
-      </ol>
+      <MachineWeek
+        machine={{ id: d.machine.id, runsNonstop: d.machine.runsNonstop }}
+        deptCode={d.machine.deptCode}
+        weekFrom={d.week.from}
+        today={istDate(now)}
+        nowIso={now.toISOString()}
+        hours={{ days: p.days, shiftStart: p.shiftStart, shiftEnd: p.shiftEnd, breakStart: p.breakStart, breakEnd: p.breakEnd }}
+        holidays={holidays.filter((h) => days.includes(h.date)).map((h) => ({ date: h.date, name: h.name }))}
+        allHolidays={[...p.holidays]}
+        bookings={t?.bookings ?? []}
+        blocks={t?.blocks ?? []}
+        full24={false}
+      />
+      {d.week.blocks.length ? (
+        <div className="mt-4">
+          <h3 className="mb-2 text-sm font-semibold">Not available this week</h3>
+          <ul className="flex flex-col gap-1.5">
+            {d.week.blocks.map((b) => (
+              <li key={b.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-300 bg-[repeating-linear-gradient(135deg,#f1f5f9_0_6px,#e2e8f0_6px_12px)] p-2 text-xs text-slate-800">
+                <span>
+                  <span className="font-medium">{BLOCK_TYPES[b.type]}</span> · {formatWhen(b.startAt)} to {formatWhen(b.endAt)}
+                  {b.note ? <span className="block text-slate-600">{b.note}</span> : null}
+                  {b.invDocumentId ? (
+                    <Link href={`/inventory/movements/${b.invDocumentId}`} className="font-medium underline">
+                      Spares used
+                    </Link>
+                  ) : null}
+                </span>
+                {b.endAt > now ? (
+                  <Can perm="planning.blocks" dept={d.machine.deptCode}>
+                    <DeleteBlockButton blockId={b.id} label={BLOCK_TYPES[b.type].toLowerCase()} />
+                  </Can>
+                ) : null}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
     </section>
   );
 }

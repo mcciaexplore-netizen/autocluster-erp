@@ -7,6 +7,7 @@ import { cn } from "@/lib/utils";
 
 export const PLAN_TABS: { href: string; label: string; show: (can: ReturnType<typeof useCan>) => boolean }[] = [
   { href: "/planning", label: "Timeline", show: () => true },
+  { href: "/planning/department", label: "Department board", show: () => true },
   // Operators (who only run jobs) see Today and the Timeline.
   { href: "/planning/jobs", label: "Jobs", show: (can) => !operatorOnly(can) },
   { href: "/planning/today", label: "Today", show: () => true },

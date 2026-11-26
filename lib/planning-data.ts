@@ -618,6 +618,66 @@ export async function getTimeline(f: TimelineFilters) {
 }
 export type TimelineData = Awaited<ReturnType<typeof getTimeline>>;
 
+// ---- department board ------------------------------------------------------------------------------
+
+/**
+ * The Department board: one week of each machine in the chosen department (only departments they may
+ * see), with what's running now, use % for the week, holidays and the working hours to draw with.
+ */
+export async function getDepartmentBoard(f: { dept: string | null; date: string }) {
+  await connection();
+  const me = await need(["planning.view"]);
+  const scope = planningScope(me);
+  const week = weekWindow(f.date);
+  const now = new Date();
+  const [t, plan, running] = await Promise.all([getTimeline({ view: "week", date: week.from, dept: f.dept ?? undefined }), getPlanningSettings(), runningLogs(db)]);
+  const p = plan.pattern;
+  const names = new Map(t.options.team.map((x) => [x.id, x.name]));
+  const busyNow = (machineId: string) => t.bookings.find((b) => b.machineId === machineId && new Date(b.start) <= now && new Date(b.end) > now);
+  const blockedNow = (machineId: string) => t.blocks.find((b) => b.machineId === machineId && new Date(b.start) <= now && new Date(b.end) > now);
+  let available = 0;
+  let booked = 0;
+  const machinesOut = t.machines
+    .filter((m) => inScope(scope, m.deptCode))
+    .map((m) => {
+      const use = machineUse({
+        window: week,
+        pattern: p,
+        nonstop: m.runsNonstop,
+        parallelJobs: m.parallelJobs,
+        blocks: t.blocks.filter((b) => b.machineId === m.id).map((b) => ({ start: new Date(b.start), end: new Date(b.end) })),
+        bookings: t.bookings.filter((b) => b.machineId === m.id).map((b) => ({ start: new Date(b.start), end: new Date(b.end) })),
+      });
+      available += use.availableHours;
+      booked += use.bookedHours;
+      const log = running.find((r) => r.machine_id === m.id);
+      const b = busyNow(m.id);
+      const nowJob = log ? { ticketNo: log.ticket_no, operator: log.operator_id ? (names.get(log.operator_id) ?? null) : null, running: true } : b ? { ticketNo: b.ticketNo, operator: b.operator, running: b.status === "RUNNING" } : null;
+      const free = !nowJob && !blockedNow(m.id) && m.status === "AVAILABLE";
+      return { ...m, usePct: use.bookedPct, now: nowJob, free };
+    });
+  const holidaysThisWeek = plan.holidays.filter((h) => h.date >= week.from && h.date < dayPlus(week.from, 7)).map((h) => ({ date: h.date, name: h.name }));
+  return {
+    weekFrom: week.from,
+    today: istDate(now),
+    nowIso: now.toISOString(),
+    hours: { days: p.days, shiftStart: p.shiftStart, shiftEnd: p.shiftEnd, breakStart: p.breakStart, breakEnd: p.breakEnd },
+    holidays: holidaysThisWeek,
+    allHolidays: plan.holidays.map((h) => h.date),
+    machines: machinesOut,
+    bookings: t.bookings,
+    blocks: t.blocks,
+    toPlan: t.toPlan,
+    options: t.options,
+    summary: {
+      running: machinesOut.filter((m) => m.now?.running).length,
+      free: machinesOut.filter((m) => m.free).length,
+      weekPct: available > 0 ? (booked / available) * 100 : null,
+    },
+  };
+}
+export type DepartmentBoardData = Awaited<ReturnType<typeof getDepartmentBoard>>;
+
 /** For booking from the timeline: one job's details for the Book time form. */
 export async function getBookJob(jobId: string) {
   await connection();

@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { may } from "@/lib/auth/guard";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Suspense } from "react";
@@ -44,7 +45,8 @@ async function Detail({
   const [{ id }, sp] = await Promise.all([params, searchParams]);
   const [q, settings] = await Promise.all([getQuotation(id), getSettings()]);
   if (!q) notFound();
-  const lead = await getLeadRef(q.leadId);
+  // The linked enquiry is CRM: only for people who can see CRM (Planners and others still see the quotation).
+  const lead = (await may("crm.view")) ? await getLeadRef(q.leadId) : null;
   // Prices hidden from this person: list the lines without the priced document.
   const view = q.pricesHidden ? null : viewFromSaved(q as Parameters<typeof viewFromSaved>[0], settings);
 

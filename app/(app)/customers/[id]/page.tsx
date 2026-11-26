@@ -1,4 +1,5 @@
 import { Can } from "@/components/auth/permissions-provider";
+import { may } from "@/lib/auth/guard";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -46,7 +47,7 @@ export default function CustomerPage({ params }: PageProps<"/customers/[id]">) {
 
 async function CustomerDetail({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const [c, departments, services, settings] = await Promise.all([getCustomer(id), getDepartments(), getServices(), getSettings()]);
+  const [c, departments, services, settings, seesCrm] = await Promise.all([getCustomer(id), getDepartments(), getServices(), getSettings(), may("crm.view")]);
   if (!c) notFound();
 
   const pricing = toPricingSettings(settings);
@@ -121,7 +122,8 @@ async function CustomerDetail({ params }: { params: Promise<{ id: string }> }) {
           <TabsTrigger value="details">Details</TabsTrigger>
           <TabsTrigger value="quotations">Quotations</TabsTrigger>
           <TabsTrigger value="orders">Orders</TabsTrigger>
-          <TabsTrigger value="enquiries">Enquiries</TabsTrigger>
+          {/* Enquiries are CRM: only for people who can see CRM (the rest of the page is for everyone who may see customers). */}
+          {seesCrm ? <TabsTrigger value="enquiries">Enquiries</TabsTrigger> : null}
         </TabsList>
 
         <TabsContent value="details" className="flex flex-col gap-6">
@@ -224,11 +226,13 @@ async function CustomerDetail({ params }: { params: Promise<{ id: string }> }) {
           </Suspense>
         </TabsContent>
 
-        <TabsContent value="enquiries">
-          <Suspense fallback={<ListSkeleton rows={3} />}>
-            <CustomerEnquiries id={c.id} />
-          </Suspense>
-        </TabsContent>
+        {seesCrm ? (
+          <TabsContent value="enquiries">
+            <Suspense fallback={<ListSkeleton rows={3} />}>
+              <CustomerEnquiries id={c.id} />
+            </Suspense>
+          </TabsContent>
+        ) : null}
       </Tabs>
     </>
   );
