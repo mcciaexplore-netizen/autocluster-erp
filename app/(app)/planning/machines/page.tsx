@@ -8,13 +8,12 @@ import { EmptyState } from "@/components/common/empty-state";
 import { ListSkeleton } from "@/components/common/form-skeleton";
 import { PageHeader } from "@/components/common/page-header";
 import { BlockTimeButton } from "@/components/planning/block-time";
-import { MachineChips, MachineStatusChip, pctText } from "@/components/planning/machine-bits";
+import { LiveStatusChip, MachineChips, pctText } from "@/components/planning/machine-bits";
 import { StillBrokenDown } from "@/components/planning/still-broken";
 import { Button } from "@/components/ui/button";
 import { getRecentInternalUse, listMachines, planningDeptChoice } from "@/lib/planning-data";
 import { DeptChips } from "@/components/planning/dept-chips";
 import { formatWhen } from "@/lib/planning/hours";
-import { BLOCK_TYPES } from "@/lib/validation/planning";
 import { cn } from "@/lib/utils";
 
 /** Reads who is signed in (and stops with forbidden() when they may not see it), so it blocks on the server: no instant-navigation validation. */
@@ -87,25 +86,9 @@ async function List({ searchParams }: { searchParams: Sp }) {
                               <span className="block font-semibold">{m.name}</span>
                               <span className="text-sm text-muted-foreground tabular-nums">{[m.code, m.makeModel].filter(Boolean).join(" · ")}</span>
                             </span>
-                            <MachineStatusChip status={m.status} />
                           </span>
+                          <LiveStatusChip live={m.live} className="self-start" />
                           <MachineChips m={m} />
-                          <span className="text-sm">
-                            {m.blockedNow ? (
-                              <span className="font-medium text-slate-700">Now: not available ({BLOCK_TYPES[m.blockedNow.type].toLowerCase()})</span>
-                            ) : m.running.length ? (
-                              <span className="font-medium text-emerald-800">
-                                Now: Job {m.running[0].ticketNo} for {m.running[0].company} (running)
-                              </span>
-                            ) : m.now.length ? (
-                              <span className="font-medium text-emerald-800">
-                                Now: Job {m.now[0].ticketNo} for {m.now[0].company}
-                                {m.now.length > 1 ? ` (+${m.now.length - 1} more)` : ""}
-                              </span>
-                            ) : (
-                              <span className="font-medium text-emerald-700">Free</span>
-                            )}
-                          </span>
                           <span className="text-sm text-muted-foreground">{m.next ? `Next: ${formatWhen(m.next.startAt)}, ${m.next.ticketNo}` : "Nothing booked next"}</span>
                           <span className="mt-auto flex items-center gap-3 pt-1">
                             <span className="h-2 flex-1 overflow-hidden rounded-full bg-secondary" aria-hidden>

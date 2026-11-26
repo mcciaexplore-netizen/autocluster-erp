@@ -1,5 +1,6 @@
 "use client";
 
+import { LiveStatusChip } from "@/components/planning/machine-bits";
 import { bookingColour } from "@/lib/planning/booking-colour";
 import { DeptChips } from "@/components/planning/dept-chips";
 import type { DeptChoice } from "@/lib/planning/dept-scope";
@@ -368,8 +369,8 @@ function MachineRow({
           {m.code}
           {m.runsNonstop ? " · day and night" : ""}
           {m.parallelJobs > 1 ? ` · ${m.parallelJobs} at once` : ""}
-          {m.status === "BREAKDOWN" ? <span className="font-semibold text-red-700"> · broken down</span> : null}
         </span>
+        <LiveStatusChip live={m.live} className="mt-0.5 self-start text-[10px]" />
       </div>
       <div ref={setNodeRef} className={cn("relative", isOver && "bg-primary/5")} style={{ width, height }}>
         {days.map((d, i) =>

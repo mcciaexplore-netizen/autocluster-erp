@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 export const MACHINE_STATUS = {
-  AVAILABLE: { label: "Available", className: "border-emerald-200 bg-emerald-50 text-emerald-800" },
+  AVAILABLE: { label: "In service", className: "border-emerald-200 bg-emerald-50 text-emerald-800" },
   MAINTENANCE: { label: "Under maintenance", className: "border-amber-200 bg-amber-50 text-amber-900" },
   BREAKDOWN: { label: "Breakdown", className: "border-red-200 bg-red-50 text-red-800" },
   INACTIVE: { label: "Inactive", className: "border-slate-200 bg-slate-50 text-slate-600" },

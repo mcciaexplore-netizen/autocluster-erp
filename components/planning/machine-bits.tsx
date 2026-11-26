@@ -1,8 +1,19 @@
 import { cn } from "@/lib/utils";
+import { LIVE_CHIP, type LiveStatus } from "@/lib/planning/live-status";
 import { MACHINE_STATUS, type MachineStatusName } from "@/lib/validation/planning";
 
 const chip = "inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-medium whitespace-nowrap";
 
+/** What a machine is doing right now: Running, Booked not started, Free, out of use, or Inactive. */
+export function LiveStatusChip({ live, className }: { live: LiveStatus; className?: string }) {
+  return (
+    <span className={cn(chip, "max-w-full truncate", LIVE_CHIP[live.kind], className)} title={live.label}>
+      {live.label}
+    </span>
+  );
+}
+
+/** The machine's setting (In service, Under maintenance, Breakdown, Inactive): for the machine form only. */
 export function MachineStatusChip({ status }: { status: MachineStatusName }) {
   const s = MACHINE_STATUS[status];
   return <span className={cn(chip, s.className)}>{s.label}</span>;

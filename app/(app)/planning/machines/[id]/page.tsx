@@ -7,7 +7,7 @@ import { notFound } from "next/navigation";
 import { Suspense } from "react";
 import { FormSkeleton } from "@/components/common/form-skeleton";
 import { BlockTimeButton, BreakdownButton, DeleteBlockButton, FixedButton } from "@/components/planning/block-time";
-import { MachineChips, MachineStatusChip, pctText } from "@/components/planning/machine-bits";
+import { LiveStatusChip, MachineChips, pctText } from "@/components/planning/machine-bits";
 import { StillBrokenDown } from "@/components/planning/still-broken";
 import { ClashActions } from "@/components/planning/clash-actions";
 import { Button } from "@/components/ui/button";
@@ -57,7 +57,7 @@ async function Detail({ params, searchParams }: { params: Promise<{ id: string }
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-3">
             <h1 className="font-title text-3xl text-primary md:text-4xl">{m.name}</h1>
-            <MachineStatusChip status={m.status} />
+            <LiveStatusChip live={d.live} />
           </div>
           <p className="mt-1 text-muted-foreground">
             <span className="tabular-nums">{m.code}</span> · {d.department ? `${d.department.code} - ${d.department.name}` : m.deptCode}

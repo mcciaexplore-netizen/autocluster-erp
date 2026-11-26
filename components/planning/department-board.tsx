@@ -16,10 +16,9 @@ import type { DepartmentBoardData } from "@/lib/planning-data";
 import { boardSummary, weekDates } from "@/lib/planning/board";
 import type { DeptChoice } from "@/lib/planning/dept-scope";
 import { dayPlus, formatHours, hhmm } from "@/lib/planning/hours";
-import { cn } from "@/lib/utils";
 import { BookTimeDialog, type BookJob } from "./book-time";
 import { DeptChips } from "./dept-chips";
-import { MachineStatusChip, pctText } from "./machine-bits";
+import { LiveStatusChip, pctText } from "./machine-bits";
 import { WeekGrid } from "./week-grid";
 
 type Machine = DepartmentBoardData["machines"][number];
@@ -133,12 +132,9 @@ function CardHeader({ m, week }: { m: Machine; week: string }) {
       <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
         <span className="min-w-0 font-semibold text-primary">{m.name}</span>
         <span className="text-xs text-muted-foreground tabular-nums">{m.code}</span>
-        <MachineStatusChip status={m.status} />
       </span>
-      <span className="mt-0.5 flex flex-wrap items-center justify-between gap-x-2 text-xs">
-        <span className={cn(m.now ? (m.now.running ? "font-medium text-emerald-700" : "text-foreground") : "text-muted-foreground")}>
-          {m.now ? `Now: ${m.now.ticketNo.split("/").pop()}${m.now.operator ? ` (${m.now.operator.split(" ")[0]})` : ""}` : "Free"}
-        </span>
+      <span className="mt-1 flex flex-wrap items-center justify-between gap-x-2 gap-y-1 text-xs">
+        <LiveStatusChip live={m.live} />
         <span className="text-muted-foreground">This week: {pctText(m.usePct)}</span>
       </span>
     </Link>

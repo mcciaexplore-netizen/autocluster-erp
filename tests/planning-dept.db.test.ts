@@ -158,6 +158,52 @@ describe.skipIf(skip)("Planning: a one-department person gets no other departmen
     current = null;
   });
 
+  it("live status everywhere: booked not started, then running, then calibration; Home counts only out-of-use machines", async () => {
+    const d = await import("@/lib/planning-data");
+    current = planner([], true);
+    const live = async (id: string) => {
+      const machinesTab = (await d.listMachines()).machines.find((m) => m.id === id)!.live;
+      const page = (await d.getMachine(id))!.live;
+      return { machinesTab, page };
+    };
+    const ms = await d.listMachines();
+    const free = ms.machines.find((m) => m.live.kind === "free" && !m.runsNonstop)!;
+    expect(free).toBeTruthy();
+    const [job] = (await db.execute<{ id: string; ticket_no: string }>(sql`select j.id, t.ticket_no from jobs j join tickets t on t.id = j.ticket_id where j.status = 'TO_PLAN' limit 1`)).rows;
+    const short = job.ticket_no.split("/").pop();
+    const now = Date.now();
+    const homeBefore = (await d.getPlanningHomeStats()).notAvailable;
+
+    // A booking that covers now, nobody pressed Start.
+    const [b] = await db.insert(s.jobBookings).values({ jobId: job.id, machineId: free.id, startAt: new Date(now - 3_600_000), endAt: new Date(now + 3_600_000), hours: "2" }).returning();
+    let l = await live(free.id);
+    expect(l.machinesTab).toEqual({ kind: "booked", label: `Booked now: ${short}, not started` });
+    expect(l.page).toEqual(l.machinesTab);
+    const board = await d.getDepartmentBoard({ dept: free.deptCode, date: istDate(new Date()) });
+    expect(board.machines.find((m) => m.id === free.id)?.live.kind).toBe("booked");
+    const tl = await d.getTimeline({ view: "week", date: istDate(new Date()), dept: free.deptCode });
+    expect(tl.machines.find((m) => m.id === free.id)?.live.kind).toBe("booked");
+
+    // Started: Running, with who.
+    await db.insert(s.jobTimeLogs).values({ jobId: job.id, bookingId: b.id, machineId: free.id, operatorId: null, startedAt: new Date(now - 1_800_000) });
+    l = await live(free.id);
+    expect(l.machinesTab).toEqual({ kind: "running", label: `Running: ${short}` });
+    expect((await d.getDepartmentBoard({ dept: free.deptCode, date: istDate(new Date()) })).summary.running).toBeGreaterThanOrEqual(1);
+    expect((await d.getPlanningHomeStats()).notAvailable).toBe(homeBefore); // busy is not "not available"
+
+    // Calibration now (the job stopped): red, with when it's back; Home counts it.
+    await db.delete(s.jobTimeLogs).where(sql`booking_id = ${b.id}`);
+    await db.delete(s.jobBookings).where(sql`id = ${b.id}`);
+    await db.insert(s.machineBlocks).values({ machineId: free.id, type: "CALIBRATION", startAt: new Date(now - 600_000), endAt: new Date(now + 2 * 3_600_000), note: "live status test" });
+    l = await live(free.id);
+    expect(l.machinesTab.kind).toBe("calibration");
+    expect(l.machinesTab.label).toMatch(/^Calibration · back (at|[A-Z][a-z]{2}) /);
+    expect((await d.getPlanningHomeStats()).notAvailable).toBe(homeBefore + 1);
+    await db.delete(s.machineBlocks).where(sql`note = 'live status test'`);
+    expect((await live(free.id)).machinesTab.kind).toBe("free");
+    current = null;
+  });
+
   it("the board draws holidays and blocked time for the week", async () => {
     const d = await import("@/lib/planning-data");
     current = planner([], true);
