@@ -47,7 +47,7 @@ async function Detail({ params, searchParams }: { params: Promise<{ id: string }
   const sp = await searchParams;
   // Internal-use records are only for people who can block machine time (the others can still see the machine).
   const [d, stockRecords] = await Promise.all([getMachine(id, typeof sp.week === "string" ? sp.week : undefined), (await may("planning.blocks")) ? getRecentInternalUse() : []]);
-  // The week, drawn like the Department board (same bookings, colours and blocked time).
+  // The week, drawn like the Department board: only this machine's bookings and blocked time are read (on the server).
   const [t, holidays] = d ? await Promise.all([getTimeline({ view: "week", date: d.week.from, machine: id }), listHolidays()]) : [null, []];
   if (!d) notFound();
   const m = d.machine;

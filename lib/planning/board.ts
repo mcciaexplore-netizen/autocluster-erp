@@ -38,17 +38,27 @@ export const weekDates = (weekFrom: string) => Array.from({ length: 7 }, (_, d) 
 /**
  * The hours a machine's calendar shows (in minutes, whole hours): day-and-night machines and the
  * "Show full 24 hours" switch show 00:00-24:00; machines that need an operator show their working
- * hours plus 1 hour either side, widened to include any booking or block that falls outside them.
+ * hours plus 1 hour either side (work only happens then; a multi-day booking is drawn in those hours).
  */
-export function visibleRange(machine: { runsNonstop: boolean }, pattern: WorkPattern, full24: boolean, segments: DaySegment[] = []): { from: number; to: number } {
+export function visibleRange(machine: { runsNonstop: boolean }, pattern: WorkPattern, full24: boolean): { from: number; to: number } {
   if (full24 || machine.runsNonstop) return { from: 0, to: DAY };
-  let from = Math.max(0, pattern.shiftStart - 60);
-  let to = Math.min(DAY, pattern.shiftEnd + 60);
-  for (const g of segments) {
-    from = Math.min(from, g.startMin);
-    to = Math.max(to, g.endMin);
-  }
+  const from = Math.max(0, pattern.shiftStart - 60);
+  const to = Math.min(DAY, pattern.shiftEnd + 60);
   return { from: Math.floor(from / 60) * 60, to: Math.min(DAY, Math.ceil(to / 60) * 60) };
+}
+
+/**
+ * For hours booked: machines that need an operator only work in working hours (not in the break, not on
+ * days off or holidays), so a booking stored across several days counts only that time.
+ */
+export function workingParts(segments: DaySegment[], weekFrom: string, pattern: WorkPattern, runsNonstop: boolean): DaySegment[] {
+  if (runsNonstop) return segments;
+  return segments.flatMap((g) => {
+    const off = nonWorking(dayPlus(weekFrom, g.day), pattern, false);
+    let parts = [{ startMin: g.startMin, endMin: g.endMin }];
+    for (const o of off) parts = parts.flatMap((x) => (o.endMin <= x.startMin || o.startMin >= x.endMin ? [x] : [{ startMin: x.startMin, endMin: Math.max(x.startMin, o.startMin) }, { startMin: Math.min(x.endMin, o.endMin), endMin: x.endMin }]).filter((y) => y.endMin > y.startMin));
+    return parts.map((x) => ({ day: g.day, ...x }));
+  });
 }
 
 /** Hour labels every 2 hours inside the range (e.g. 08:00, 10:00 ...). */

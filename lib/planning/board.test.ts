@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { bookedHoursByDay, boardSummary, daySegments, hourLabels, nonWorking, visibleRange } from "./board";
+import { bookedHoursByDay, boardSummary, daySegments, hourLabels, nonWorking, visibleRange, workingParts } from "./board";
 import { istAt, patternFromSettings } from "./hours";
 
 // Week of Monday 23 Nov 2026 (India time).
@@ -33,8 +33,11 @@ describe("Department board drawing rules", () => {
     expect(visibleRange({ runsNonstop: false }, pattern, false)).toEqual({ from: 480, to: 1140 }); // 08:00-19:00
     expect(visibleRange({ runsNonstop: true }, pattern, false)).toEqual({ from: 0, to: 1440 });
     expect(visibleRange({ runsNonstop: false }, pattern, true)).toEqual({ from: 0, to: 1440 });
-    // A booking at 20:00-21:30 widens the view so it's never hidden.
-    expect(visibleRange({ runsNonstop: false }, pattern, false, [{ day: 0, startMin: 1200, endMin: 1290 }])).toEqual({ from: 480, to: 1320 });
+    // A booking stored across several days on an operator machine counts only working time: Tue 08:00 to Wed 12:00
+    // = Tue 09:00-13:00 and 13:30-18:00 (8.5 h) + Wed 09:00-12:00 (3 h).
+    const segs = daySegments(at("2026-11-24", 8), at("2026-11-25", 12), WEEK);
+    expect(bookedHoursByDay(workingParts(segs, WEEK, pattern, false))).toEqual([0, 8.5, 3, 0, 0, 0, 0]);
+    expect(bookedHoursByDay(workingParts(segs, WEEK, pattern, true))).toEqual([0, 16, 12, 0, 0, 0, 0]);
     expect(hourLabels({ from: 480, to: 1140 })).toEqual([480, 600, 720, 840, 960, 1080]);
   });
 

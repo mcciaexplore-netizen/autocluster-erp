@@ -119,6 +119,45 @@ describe.skipIf(skip)("Planning: a one-department person gets no other departmen
     current = null;
   });
 
+  it("a machine's page reads only its own bookings and blocked time, never another machine's (even in the same department)", async () => {
+    const d = await import("@/lib/planning-data");
+    current = planner([], true);
+    // Two machines of one department that both have bookings in the same week.
+    const [pair] = (
+      await db.execute<{ a: string; b: string; week: string }>(sql`
+        select x.machine_id as a, y.machine_id as b, to_char(date_trunc('week', x.start_at at time zone 'Asia/Kolkata'), 'YYYY-MM-DD') as week
+        from job_bookings x
+        join machines mx on mx.id = x.machine_id
+        join job_bookings y on y.machine_id <> x.machine_id and y.cancelled_at is null
+          and date_trunc('week', y.start_at at time zone 'Asia/Kolkata') = date_trunc('week', x.start_at at time zone 'Asia/Kolkata')
+        join machines my on my.id = y.machine_id and my.dept_code = mx.dept_code
+        where x.cancelled_at is null
+        limit 1`)
+    ).rows;
+    expect(pair).toBeTruthy();
+    // Blocked time on both machines that week.
+    const at = new Date(`${pair.week}T10:00:00+05:30`);
+    const until = new Date(at.getTime() + 2 * 3_600_000);
+    await db.insert(s.machineBlocks).values([
+      { machineId: pair.a, type: "MAINTENANCE", startAt: at, endAt: until, note: "test A" },
+      { machineId: pair.b, type: "CALIBRATION", startAt: at, endAt: until, note: "test B" },
+    ]);
+    const theirs = (await db.execute<{ id: string }>(sql`select id from job_bookings where machine_id = ${pair.b} and cancelled_at is null`)).rows.map((r) => r.id);
+    const mine = (await db.execute<{ id: string }>(sql`
+      select id from job_bookings where machine_id = ${pair.a} and cancelled_at is null
+        and start_at < ${new Date(at.getTime() + 7 * 86_400_000)} and end_at > ${new Date(`${pair.week}T00:00:00+05:30`)}`)).rows.map((r) => r.id);
+    // What the machine page loads (the same call the page makes).
+    const t = await d.getTimeline({ view: "week", date: pair.week, machine: pair.a });
+    expect(t.bookings.length).toBeGreaterThan(0);
+    expect(t.bookings.every((b) => b.machineId === pair.a)).toBe(true);
+    expect(t.bookings.map((b) => b.id).sort()).toEqual([...mine].sort());
+    expect(t.bookings.some((b) => theirs.includes(b.id))).toBe(false);
+    expect(t.blocks.length).toBeGreaterThan(0);
+    expect(t.blocks.every((b) => b.machineId === pair.a)).toBe(true);
+    expect(t.blocks.some((b) => b.note === "test B")).toBe(false);
+    current = null;
+  });
+
   it("the board draws holidays and blocked time for the week", async () => {
     const d = await import("@/lib/planning-data");
     current = planner([], true);

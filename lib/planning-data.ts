@@ -542,13 +542,14 @@ export async function getTimeline(f: TimelineFilters) {
       from job_bookings b join jobs j on j.id = b.job_id join tickets t on t.id = j.ticket_id
       left join team_members tm on tm.id = coalesce(b.operator_id, j.operator_id)
       join machines bm on bm.id = b.machine_id
-      where b.cancelled_at is null and b.start_at < ${end} and b.end_at > ${start} and ${deptIn(sql`bm.dept_code`, scope)}
+      where b.cancelled_at is null and b.start_at < ${end} and b.end_at > ${start} and ${deptIn(sql`bm.dept_code`, scope)} ${f.machine ? sql`and b.machine_id = ${f.machine}` : sql``}
       order by b.start_at`),
     db
       .select({ b: machineBlocks })
       .from(machineBlocks)
       .innerJoin(machines, eq(machines.id, machineBlocks.machineId))
-      .where(and(lt(machineBlocks.startAt, end), gt(machineBlocks.endAt, start), deptIn(sql`${machines.deptCode}`, scope)))
+      // One machine (its page): only that machine's blocked time is read.
+      .where(and(lt(machineBlocks.startAt, end), gt(machineBlocks.endAt, start), deptIn(sql`${machines.deptCode}`, scope), f.machine ? eq(machineBlocks.machineId, f.machine) : undefined))
       .then((r) => r.map((x) => x.b)),
     db.execute<{ id: string; ticket_no: string; company: string; service: string; dept: string | null; priority: "NORMAL" | "URGENT"; promised_date: string | null; hours_needed: string | null; planned: string | null; stage: string }>(sql`
       select j.id, t.ticket_no, t.snapshot->>'companyName' as company, t.snapshot->>'description' as service, t.snapshot->>'deptCode' as dept, j.priority,
