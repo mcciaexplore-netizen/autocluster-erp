@@ -3,14 +3,15 @@
 import { can } from "@/lib/auth/can";
 import { signedInUser } from "@/lib/auth/guard";
 import { assertInScope, bookingJobId, jobDept, machineDept } from "@/lib/auth/scope";
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
+import { deptIn, planningScope } from "@/lib/planning/dept-scope";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { db } from "@/db";
 import { bookTime, cancelBooking, extendHold, findFreeSlots, moveBooking, moveToNextFreeSlot, PastBookingError } from "@/db/booking-writer";
 import { addJobEvent, bulkMarkDone, bulkUpdateJobs, updateJobDetails } from "@/db/job-writer";
 import { UserFacingError } from "@/db/quote-writer";
-import { files, jobFiles, jobs, machineServices, services } from "@/db/schema";
+import { files, jobFiles, jobs, machines, machineServices, services } from "@/db/schema";
 import { suggestHours } from "@/lib/planning/time-needed";
 import { allow } from "@/lib/auth/guard";
 import type { Permission } from "@/lib/auth/permissions";
@@ -112,7 +113,11 @@ export async function bookSlotAction(input: { jobId: string; machineId: string; 
 
 export async function findSlotsAction(machineIds: string[], h: number, ignoreBookingId?: string | null) {
   return run("planning.view", async () => {
-    const slots = await findFreeSlots(db, z.array(id).max(200).parse(machineIds), hours.parse(h), { ignoreBookingId: ignoreBookingId ? id.parse(ignoreBookingId) : undefined });
+    // Only machines of the departments they may see.
+    const scope = planningScope((await signedInUser())!);
+    const asked = z.array(id).max(200).parse(machineIds);
+    const allowed = asked.length ? (await db.select({ id: machines.id }).from(machines).where(and(inArray(machines.id, asked), deptIn(sql`${machines.deptCode}`, scope)))).map((m) => m.id) : [];
+    const slots = await findFreeSlots(db, allowed, hours.parse(h), { ignoreBookingId: ignoreBookingId ? id.parse(ignoreBookingId) : undefined });
     return slots.map((s) => ({ machineId: s.machineId, machine: s.machine, start: s.start.toISOString(), end: s.end.toISOString() }));
   });
 }

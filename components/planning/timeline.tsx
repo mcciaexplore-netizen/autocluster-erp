@@ -1,5 +1,7 @@
 "use client";
 
+import { DeptChips } from "@/components/planning/dept-chips";
+import type { DeptChoice } from "@/lib/planning/dept-scope";
 import { DndContext, DragOverlay, PointerSensor, useDraggable, useDroppable, useSensor, useSensors, type DragEndEvent, type DragStartEvent } from "@dnd-kit/core";
 import { CSS } from "@dnd-kit/utilities";
 import { CalendarDays, ChevronDown, ChevronLeft, ChevronRight, GripVertical, X } from "lucide-react";
@@ -45,7 +47,7 @@ function lanes(list: Booking[]) {
   return { lane: out, count: Math.max(1, ends.length) };
 }
 
-export function Timeline({ data, view, date }: { data: TimelineData; view: "day" | "week" | "2w"; date: string }) {
+export function Timeline({ data, view, date, deptChoice }: { data: TimelineData; view: "day" | "week" | "2w"; date: string; deptChoice?: DeptChoice }) {
   const router = useRouter();
   const pathname = usePathname();
   const params = useSearchParams();
@@ -202,14 +204,14 @@ export function Timeline({ data, view, date }: { data: TimelineData; view: "day"
         </label>
         <span className="text-sm font-medium">{rangeText}</span>
         <div className="flex w-full flex-wrap items-center gap-2 lg:ml-auto lg:w-auto">
-          {filterSel("dept", "Department", data.departments.map((d) => ({ value: d.code, label: d.code })), "All departments")}
+          {deptChoice ? <DeptChips choice={deptChoice} /> : null}
           {filterSel("machine", "Machine", data.allMachines.map((m) => ({ value: m.id, label: m.name })), "All machines")}
           {filterSel("operator", "Operator", data.options.team.map((t) => ({ value: t.id, label: t.name })), "Any operator")}
           {filterSel("customer", "Customer", data.customers.map((c) => ({ value: c.id, label: c.name })), "Any customer")}
           {chip("late", "Late only")}
           {chip("tentative", "Tentative only")}
-          {["dept", "machine", "operator", "customer", "late", "tentative"].some((k) => params.get(k)) ? (
-            <Button variant="ghost" size="sm" onClick={() => set({ dept: null, machine: null, operator: null, customer: null, late: null, tentative: null })}>
+          {["machine", "operator", "customer", "late", "tentative"].some((k) => params.get(k)) ? (
+            <Button variant="ghost" size="sm" onClick={() => set({ machine: null, operator: null, customer: null, late: null, tentative: null })}>
               <X aria-hidden /> Clear
             </Button>
           ) : null}

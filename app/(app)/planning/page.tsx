@@ -34,5 +34,5 @@ async function Attention() {
 async function Body({ searchParams }: { searchParams: Sp }) {
   const f = await timelineFiltersFromParams(await searchParams);
   const data = await getTimeline(f);
-  return <Timeline data={data} view={f.view} date={f.date} />;
+  return <Timeline data={data} view={f.view} date={f.date} deptChoice={f.deptChoice} />;
 }

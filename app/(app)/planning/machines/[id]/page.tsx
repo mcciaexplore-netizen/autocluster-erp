@@ -1,4 +1,5 @@
 import { Can } from "@/components/auth/permissions-provider";
+import { may } from "@/lib/auth/guard";
 import type { Metadata } from "next";
 import { ArrowLeft, ChevronLeft, ChevronRight, Pencil } from "lucide-react";
 import Link from "next/link";
@@ -44,7 +45,8 @@ async function Detail({ params, searchParams }: { params: Promise<{ id: string }
   const { id } = await params;
   if (!UUID_RE.test(id)) notFound();
   const sp = await searchParams;
-  const [d, stockRecords] = await Promise.all([getMachine(id, typeof sp.week === "string" ? sp.week : undefined), getRecentInternalUse()]);
+  // Internal-use records are only for people who can block machine time (the others can still see the machine).
+  const [d, stockRecords] = await Promise.all([getMachine(id, typeof sp.week === "string" ? sp.week : undefined), (await may("planning.blocks")) ? getRecentInternalUse() : []]);
   if (!d) notFound();
   const m = d.machine;
   return (

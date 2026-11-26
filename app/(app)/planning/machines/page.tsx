@@ -1,4 +1,5 @@
 import { Can } from "@/components/auth/permissions-provider";
+import { may } from "@/lib/auth/guard";
 import type { Metadata } from "next";
 import { Cog, Plus } from "lucide-react";
 import Link from "next/link";
@@ -10,7 +11,8 @@ import { BlockTimeButton } from "@/components/planning/block-time";
 import { MachineChips, MachineStatusChip, pctText } from "@/components/planning/machine-bits";
 import { StillBrokenDown } from "@/components/planning/still-broken";
 import { Button } from "@/components/ui/button";
-import { getRecentInternalUse, listMachines } from "@/lib/planning-data";
+import { getRecentInternalUse, listMachines, planningDeptChoice } from "@/lib/planning-data";
+import { DeptChips } from "@/components/planning/dept-chips";
 import { formatWhen } from "@/lib/planning/hours";
 import { BLOCK_TYPES } from "@/lib/validation/planning";
 import { cn } from "@/lib/utils";
@@ -20,18 +22,26 @@ export const instant = false;
 
 export const metadata: Metadata = { title: "Machines" };
 
-export default function MachinesPage() {
+type Sp = Promise<Record<string, string | string[] | undefined>>;
+
+export default function MachinesPage({ searchParams }: { searchParams: Sp }) {
   return (
     <div>
       <Suspense fallback={<ListSkeleton rows={6} />}>
-        <List />
+        <List searchParams={searchParams} />
       </Suspense>
     </div>
   );
 }
 
-async function List() {
-  const [{ departments, machines }, stockRecords] = await Promise.all([listMachines(), getRecentInternalUse()]);
+async function List({ searchParams }: { searchParams: Sp }) {
+  const sp = await searchParams;
+  const deptChoice = await planningDeptChoice(typeof sp.dept === "string" ? sp.dept : null);
+  // Internal-use records are only for people who can block machine time (the others can still see the machines).
+  const [all, stockRecords] = await Promise.all([listMachines(), (await may("planning.blocks")) ? getRecentInternalUse() : []]);
+  // Their own departments only (the server sends no others); "All" shows each department in turn.
+  const departments = all.departments.filter((d) => !deptChoice.chosen || d.code === deptChoice.chosen);
+  const machines = all.machines.filter((m) => !deptChoice.chosen || m.deptCode === deptChoice.chosen);
   const picks = machines.filter((m) => m.isActive).map((m) => ({ id: m.id, name: m.name, code: m.code, deptCode: m.deptCode }));
   return (
     <>
@@ -53,6 +63,7 @@ async function List() {
           </div>
         }
       />
+      <DeptChips choice={deptChoice} className="mb-5" />
       {!machines.length ? (
         <EmptyState icon={Cog} title="No machines yet" description="Add the machines and chambers that jobs are booked on." />
       ) : (
