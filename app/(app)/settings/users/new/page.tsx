@@ -32,5 +32,5 @@ export default function NewUserPage() {
 async function Form() {
   const o = await getUserFormOptions();
   const operator = o.roles.find((r) => r.name === "Operator");
-  return <UserForm id={null} roles={o.roles} departments={o.departments} initial={{ name: "", canSignIn: true, email: "", mobile: "", roleIds: operator ? [operator.id] : [], allDepartments: false, deptCodes: [] }} />;
+  return <UserForm id={null} roles={o.roles} departments={o.departments} initial={{ name: "", canSignIn: true, email: "", mobile: "", roleIds: operator ? [operator.id] : [], allDepartments: false, deptCodes: [], maxMachines: "" }} />;
 }

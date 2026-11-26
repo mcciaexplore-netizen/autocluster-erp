@@ -1,5 +1,7 @@
 "use client";
 
+import { DeptChips } from "@/components/planning/dept-chips";
+import type { DeptChoice } from "@/lib/planning/dept-scope";
 import { CheckCheck, Download, Loader2, Search, X } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
@@ -22,7 +24,7 @@ import { cn } from "@/lib/utils";
 const ALL = "all";
 const NONE = "none";
 
-export function JobsList({ jobs, departments, machines, team }: { jobs: JobRow[]; departments: { code: string; name: string }[]; machines: { id: string; name: string }[]; team: { id: string; name: string }[] }) {
+export function JobsList({ jobs, deptChoice, machines, team }: { jobs: JobRow[]; deptChoice: DeptChoice; machines: { id: string; name: string }[]; team: { id: string; name: string }[] }) {
   const params = useSearchParams();
   // Ticking jobs (to change operator, priority or mark done) needs "planning.book".
   const canBulk = useCan()("planning.book");
@@ -78,7 +80,7 @@ export function JobsList({ jobs, departments, machines, team }: { jobs: JobRow[]
       </button>
     );
   };
-  const any = ["q", "status", "dept", "machine", "operator", "promised", "late", "notplanned", "over", "check"].some((k) => params.get(k));
+  const any = ["q", "status", "machine", "operator", "promised", "late", "notplanned", "over", "check"].some((k) => params.get(k));
   const bulk = (change: { operatorId?: string | null; priority?: "NORMAL" | "URGENT" }) =>
     start(async () => {
       const r = await bulkJobsAction(picked, change);
@@ -96,9 +98,9 @@ export function JobsList({ jobs, departments, machines, team }: { jobs: JobRow[]
           <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
           <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search ticket no., customer or service" className="h-11 pl-9" aria-label="Search jobs" />
         </div>
+        <DeptChips choice={deptChoice} />
         <div className="flex flex-wrap items-end gap-3">
           {pick("status", "Status", (Object.keys(JOB_STATUS_UI) as JobStatusName[]).map((s) => ({ value: s, label: JOB_STATUS_UI[s].label })), "Any status")}
-          {pick("dept", "Department", departments.map((d) => ({ value: d.code, label: `${d.code} - ${d.name}` })), "Any department")}
           {pick("machine", "Machine", machines.map((m) => ({ value: m.id, label: m.name })), "Any machine")}
           {pick("operator", "Operator", team.map((t) => ({ value: t.id, label: t.name })), "Anyone")}
           <label className="flex flex-col gap-1 text-xs font-medium text-muted-foreground">

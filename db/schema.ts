@@ -306,6 +306,8 @@ export const settings = pgTable("settings", {
   activityKeepMonths: integer("activity_keep_months").notNull().default(24),
   signInKeepDays: integer("sign_in_keep_days").notNull().default(90),
   actualVsQuotedAlertPct: integer("actual_vs_quoted_alert_pct").notNull().default(10),
+  /** "Machines one person can run at once" (day-and-night machines don't count). Each person can have their own. */
+  maxMachinesPerPerson: integer("max_machines_per_person").notNull().default(4),
   readyWhatsappTemplate: text("ready_whatsapp_template").notNull().default(DEFAULT_READY_WHATSAPP_TEMPLATE),
   updatedAt: timestamp("updated_at", { withTimezone: true })
     .notNull()
@@ -933,6 +935,8 @@ export const machines = pgTable(
     parallelJobs: integer("parallel_jobs").notNull().default(1),
     /** "Runs day and night": ignores working hours and holidays. */
     runsNonstop: boolean("runs_nonstop").notNull().default(false),
+    /** "Needs the operator to stay at the machine": while a job runs on it, that person can't run anything else. */
+    operatorMustStay: boolean("operator_must_stay").notNull().default(false),
     notes: text("notes"),
     isActive: boolean("is_active").notNull().default(true),
     sortOrder: integer("sort_order").notNull().default(0),
@@ -1199,6 +1203,8 @@ export const appUsers = pgTable("app_users", {
   mobile: text("mobile"),
   canSignIn: boolean("can_sign_in").notNull().default(false),
   allDepartments: boolean("all_departments").notNull().default(true),
+  /** This person's own "Machines one person can run at once" (empty = the Settings > Planning number). */
+  maxMachines: integer("max_machines"),
   pinHash: text("pin_hash"),
   mustChangePassword: boolean("must_change_password").notNull().default(false),
   /** Demo accounts ("Try it as..."): only exist when DEMO_MODE is true. */

@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 export const MACHINE_STATUS = {
-  AVAILABLE: { label: "Available", className: "border-emerald-200 bg-emerald-50 text-emerald-800" },
+  AVAILABLE: { label: "In service", className: "border-emerald-200 bg-emerald-50 text-emerald-800" },
   MAINTENANCE: { label: "Under maintenance", className: "border-amber-200 bg-amber-50 text-amber-900" },
   BREAKDOWN: { label: "Breakdown", className: "border-red-200 bg-red-50 text-red-800" },
   INACTIVE: { label: "Inactive", className: "border-slate-200 bg-slate-50 text-slate-600" },
@@ -34,6 +34,7 @@ export const machineFormSchema = z.object({
   serviceIds: z.array(z.number().int().positive()).max(100),
   parallelJobs: z.number({ message: "Enter a number, e.g. 1." }).int({ message: "Use a whole number." }).min(1, { message: "Use 1 or more." }).max(50, { message: "Use 50 or less." }),
   runsNonstop: z.boolean(),
+  operatorMustStay: z.boolean(),
   location: text(120, "Keep the place under 120 characters."),
   status: z.enum(["AVAILABLE", "MAINTENANCE", "BREAKDOWN", "INACTIVE"]),
   notes: z.string().max(2000),
@@ -51,6 +52,7 @@ export const EMPTY_MACHINE_FORM: MachineFormValues = {
   serviceIds: [],
   parallelJobs: 1,
   runsNonstop: false,
+  operatorMustStay: false,
   location: "",
   status: "AVAILABLE",
   notes: "",

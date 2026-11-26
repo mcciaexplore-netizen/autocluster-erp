@@ -56,7 +56,8 @@ async function main() {
     "/crm/enquiries/[id]": await one(sql`select id from leads where deleted_at is null limit 1`),
     "/customers/[id]": await one(sql`select id from customers where deleted_at is null limit 1`),
     "/quotations/[id]": await one(sql`select id from quotations where deleted_at is null limit 1`),
-    "/planning/machines/[id]": await one(sql`select id from machines limit 1`),
+    // An RPT machine: every demo person may see RPT (a machine of another department is refused on purpose).
+    "/planning/machines/[id]": await one(sql`select id from machines where dept_code = 'RPT' limit 1`),
     "/inventory/items/[id]": await one(sql`select id from inv_items limit 1`),
     "/inventory/suppliers/[id]": await one(sql`select id from inv_suppliers limit 1`),
     "/inventory/movements/[id]": await one(sql`select id from inv_documents limit 1`),
@@ -162,6 +163,13 @@ async function main() {
         const logged = readLog().slice(before).split("\n").filter((l) => ERROR_LINE.test(l));
         if (status >= 500) problems.push(`${st.name}: ${u} answered ${status}`);
         if (body.includes('id="__next_error__"')) problems.push(`${st.name}: ${u} showed a Next.js error page`);
+        // A "no access" page in an area this person's own menu offers is a bug (e.g. a loader asking for a permission
+        // the page doesn't need). Adding, editing, importing and Insights can legitimately be refused inside an area.
+        // (The menu streams in after the first HTML, so its links are looked for anywhere in the page.)
+        const area = `/${u.split("/")[1] ?? ""}`;
+        // The friendly page is drawn in the browser when the refusal comes after streaming starts: look for Next's marker too.
+        const refused = /You don(&#x27;|')t have access to/.test(body) || body.includes("NEXT_HTTP_ERROR_FALLBACK;403");
+        if (refused && area !== "/" && body.includes(`href="${area}"`) && !/\/(new|edit|import)(\/|$)|\/insights/.test(u)) problems.push(`${st.name}: ${u} showed "no access" although their menu offers ${area}`);
         if (logged.length) problems.push(`${st.name}: ${u} printed in the server console:\n      ${logged.slice(0, 3).map((l) => l.trim().slice(0, 220)).join("\n      ")}`);
       }
       console.log(`  ${st.name}: ${urls.length} pages opened`);

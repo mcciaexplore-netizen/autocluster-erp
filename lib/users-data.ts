@@ -103,6 +103,7 @@ export async function getUser(id: string) {
     hasAccount: !!u.authUserId,
     mustChangePassword: u.mustChangePassword,
     allDepartments: u.allDepartments,
+    maxMachines: u.maxMachines,
     deptCodes: ds.map((d) => d.code),
     roleIds: rs.map((r) => r.roleId),
     deactivatedAt: u.deactivatedAt?.toISOString() ?? null,

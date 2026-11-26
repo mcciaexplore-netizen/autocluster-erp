@@ -111,6 +111,8 @@ export interface UserFormInput {
   roleIds: number[];
   allDepartments: boolean;
   deptCodes: string[];
+  /** Their own "Machines one person can run at once" (null = the Settings number; left out = unchanged). */
+  maxMachines?: number | null;
 }
 
 function cleanInput(v: UserFormInput) {
@@ -124,6 +126,7 @@ function cleanInput(v: UserFormInput) {
   if (mobile && !MOBILE_RE.test(mobile)) throw new UserFacingError("Enter a 10-digit mobile number, e.g. 98220 12345.");
   if (v.canSignIn && !v.roleIds.length) throw new UserFacingError("Please choose at least one role.");
   if (!v.allDepartments && !v.deptCodes.length) throw new UserFacingError("Please choose their departments, or All departments.");
+  if (v.maxMachines != null && (!Number.isInteger(v.maxMachines) || v.maxMachines < 1 || v.maxMachines > 20)) throw new UserFacingError("Machines at once: use a whole number from 1 to 20, or leave it empty.");
   return { name, email, mobile };
 }
 
@@ -158,7 +161,7 @@ export async function saveUser(db: DB, auth: Auth, id: string | null, v: UserFor
     }
     const [u] = await db
       .insert(appUsers)
-      .values({ teamMemberId: tm.id, authUserId, fullName: name, email, mobile, canSignIn: v.canSignIn, mustChangePassword: v.canSignIn, allDepartments: v.allDepartments })
+      .values({ teamMemberId: tm.id, authUserId, fullName: name, email, mobile, canSignIn: v.canSignIn, mustChangePassword: v.canSignIn, allDepartments: v.allDepartments, maxMachines: v.maxMachines ?? null })
       .returning();
     await setUserRoles(db, u.id, roleIds);
     await setDepartments(db, u.id, v.allDepartments, v.deptCodes);
@@ -193,9 +196,11 @@ export async function saveUser(db: DB, auth: Auth, id: string | null, v: UserFor
   }
   if (name !== before.fullName) changes.push(`name ${name}`);
   if ((mobile ?? null) !== (before.mobile ?? null)) changes.push("mobile");
+  const maxMachines = v.maxMachines === undefined ? before.maxMachines : v.maxMachines;
+  if (maxMachines !== before.maxMachines) changes.push(`machines at once ${maxMachines ?? "as in Settings"}`);
   await db
     .update(appUsers)
-    .set({ fullName: name, email, mobile, canSignIn: v.canSignIn, authUserId, mustChangePassword: tempPassword ? true : before.mustChangePassword, allDepartments: v.allDepartments, updatedAt: new Date() })
+    .set({ fullName: name, email, mobile, canSignIn: v.canSignIn, authUserId, mustChangePassword: tempPassword ? true : before.mustChangePassword, allDepartments: v.allDepartments, maxMachines, updatedAt: new Date() })
     .where(eq(appUsers.id, id));
   await db.update(teamMembers).set({ name, email, phone: mobile }).where(eq(teamMembers.id, before.teamMemberId));
   if ([...beforeRoles].sort().join() !== [...roleIds].sort().join()) {

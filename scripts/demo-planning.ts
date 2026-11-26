@@ -12,9 +12,10 @@
  *   the laser and the CMM.
  */
 import { stageDemoFile } from "./demo-files";
-import { eq, inArray, sql } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import type { DB, Tx } from "../db/client";
 import { bookTime } from "../db/booking-writer";
+import { startJob } from "../db/work-writer";
 import { addInvoice } from "../db/invoice-writer";
 import { recordPayment } from "../db/payment-writer";
 import { addPurchaseOrder, registerFile } from "../db/po-writer";
@@ -29,7 +30,7 @@ import { financialYear, paiseToRupeeString, toPaise } from "../lib/pricing";
 import { DEFAULT_TERMS } from "../lib/settings-shared";
 import { samplePdf } from "./demo-orders";
 
-type M = { dept: string; name: string; make?: string; specs?: string; standards?: string; services?: string[]; parallel?: number; nonstop?: boolean; nabl?: boolean; notes?: string };
+type M = { dept: string; name: string; make?: string; specs?: string; standards?: string; services?: string[]; parallel?: number; nonstop?: boolean; stay?: boolean; nabl?: boolean; notes?: string };
 
 /** ACDRI's machines, from the equipment catalogue (plus 3 that are only on the rate card). */
 export const DEMO_MACHINES: M[] = [
@@ -53,19 +54,19 @@ export const DEMO_MACHINES: M[] = [
   { dept: "ENV", name: "Water Spray Test Chamber", services: ["Water spray chamber"], nonstop: true, nabl: true },
   { dept: "ENV", name: "Thermal Shock Test Chamber", services: ["Thermal shock chamber"], nonstop: true, nabl: true },
   { dept: "ENV", name: "High-Low Temperature Chamber", services: ["High-low chamber"], nonstop: true, nabl: true },
-  { dept: "RPL", name: "Universal Testing Machine (UTM)", make: "Tinius Olsen", standards: "ASTM D638, ASTM D412, ISO 178", services: ["UTM"], nabl: true },
+  { dept: "RPL", name: "Universal Testing Machine (UTM)", make: "Tinius Olsen", standards: "ASTM D638, ASTM D412, ISO 178", services: ["UTM"], nabl: true , stay: true },
   { dept: "RPL", name: "Thermogravimetric Analyser (TGA)", make: "Shimadzu", nabl: true },
   { dept: "RPL", name: "Instron Actuator (fatigue)", make: "Instron", nonstop: true, nabl: true },
   { dept: "RPL", name: "Ozone Test Chamber", make: "In 2000 - L2 (low concentration)", standards: "ASTM D1171, ASTM D1149", services: ["Ozone chamber"], nonstop: true, nabl: true },
-  { dept: "RPL", name: "Impact Tester", make: "CEAST S.p.A. Resil Impactor", standards: "ISO 180, ISO 179", nabl: true },
+  { dept: "RPL", name: "Impact Tester", make: "CEAST S.p.A. Resil Impactor", standards: "ISO 180, ISO 179", nabl: true , stay: true },
   { dept: "RPL", name: "Accelerated Weathering Tester (QUV/Spray)", make: "Q-Lab", services: ["QUV Weather-Ometer"], nonstop: true, nabl: true },
   { dept: "RPL", name: "Melt Flow Indexer", make: "Tinius Olsen MP 600", standards: "ASTM D1238, ISO 1133", services: ["Melt flow index"], nabl: true },
   { dept: "RPL", name: "Differential Scanning Calorimeter (DSC)", make: "Shimadzu DSC 60", standards: "ASTM E928, ASTM D1525, ASTM D648", services: ["DSC"], nabl: true },
   { dept: "RPL", name: "HDT & VICAT Softening Temperature Tester", make: "CEAST S.p.A. HDT 3", standards: "ASTM D648, ASTM D1525", parallel: 3, nabl: true, notes: "3 stations: one job per station." },
-  { dept: "RPL", name: "Multi Head Micro Hardness Tester", make: "Gibitre", standards: "ISO 48, ISO 868, BS 903", nabl: true },
-  { dept: "RPL", name: "FTIR Spectrometer", make: "Thermo Electron Nicolet 380", standards: "ASTM E1252", services: ["FTIR"], nabl: true },
+  { dept: "RPL", name: "Multi Head Micro Hardness Tester", make: "Gibitre", standards: "ISO 48, ISO 868, BS 903", nabl: true , stay: true },
+  { dept: "RPL", name: "FTIR Spectrometer", make: "Thermo Electron Nicolet 380", standards: "ASTM E1252", services: ["FTIR"], nabl: true , stay: true },
   { dept: "RPL", name: "Hot Air Oven", services: ["Hot air oven"], nonstop: true, nabl: true, notes: "On the rate card; not in the equipment catalogue." },
-  { dept: "MET", name: "Co-ordinate Measuring Machine (CMM)", make: "Accurate Cordimesur", specs: "Large-bed measurement of dies, auto and mechanical parts, prototypes" },
+  { dept: "MET", name: "Co-ordinate Measuring Machine (CMM)", make: "Accurate Cordimesur", specs: "Large-bed measurement of dies, auto and mechanical parts, prototypes" , stay: true },
 ];
 
 /** Fixed-date public holidays (Maharashtra), for this year and next. */
@@ -188,6 +189,7 @@ export async function loadPlanningDemo(conn: DB | Tx, opts: { log?: (m: string) 
         nablAccredited: m.nabl ?? false,
         parallelJobs: m.parallel ?? 1,
         runsNonstop: m.nonstop ?? false,
+        operatorMustStay: m.stay ?? false,
         notes: m.notes ?? null,
         sortOrder: i + 1,
       })),
@@ -626,6 +628,7 @@ export async function loadPlanningDemo(conn: DB | Tx, opts: { log?: (m: string) 
   }
   log(`  Operators' daily work: ${opBooked} jobs for Amit, Rohan and Priya over the next 3 weeks`);
 
+
   // Waiting for PO (Deccan): tentative holds. The Xenon one expires tomorrow; the melt flow one has expired.
   const deccanXenon = jobRows.find((j) => j.stage === "WAITING_PO" && j.service_id === svcId("Xenon test chamber"));
   const deccanMfi = jobRows.find((j) => j.stage === "WAITING_PO" && j.service_id === svcId("Melt flow index"));
@@ -646,6 +649,158 @@ export async function loadPlanningDemo(conn: DB | Tx, opts: { log?: (m: string) 
   const holdJob = job(onHold.id);
   await db.update(s.jobs).set({ status: "ON_HOLD", holdReason: "Waiting for customer drawings", promisedDate: day(12), operatorId: operatorFor("PPF") }).where(eq(s.jobs.id, holdJob.id));
   await db.insert(s.jobEvents).values({ jobId: holdJob.id, type: "ON_HOLD", message: "On hold: Waiting for customer drawings", createdBy: "Demo User", createdAt: istAt(day(-4), 15 * 60) });
+
+  // ---- Several machines at once (through the real Start rules) ---------------------------------
+  // Amit runs 3 PPF machines right now (5-Axis, 3-Axis, Turn Mill); Priya has 2 chambers running on
+  // their own and is running a UTM test (the UTM needs her to stay; chambers don't count).
+  const RUN_STORY: { who: string; dept: string; machines: string[] }[] = [
+    { who: "Amit Patil", dept: "PPF", machines: ["5-Axis VMC (Non-Continuous)", "3-Axis VMC", "Turn Mill Centre"] },
+    { who: "Priya Shah", dept: "ENV", machines: ["Salt Spray Test Chamber"] },
+    { who: "Priya Shah", dept: "RPL", machines: ["Universal Testing Machine (UTM)"] },
+  ];
+  const storyDepts = new Set(["PPF", "MET", "ENV", "RPL"]); // the "this week" layer adds no other running job here
+  let storyRunning = 0;
+  for (const r of RUN_STORY) {
+    const opId = team.find((t) => t.name === r.who)?.id ?? null;
+    if (!opId) continue;
+    const need: string[] = [];
+    for (const name of r.machines) {
+      // A booking already covering now (e.g. today's daily job) is simply started. One starting within the
+      // hour with nothing before it (e.g. the 5-Axis story, after the break) is moved to have started an hour ago.
+      const mId = machine(name).id;
+      const from = new Date(Math.floor((now.getTime() - 60 * 60_000) / 1_800_000) * 1_800_000);
+      let cover = (
+        await db.execute<{ job_id: string; start_at: string }>(sql`
+          select b.job_id, b.start_at::text from job_bookings b join jobs j on j.id = b.job_id
+          where b.machine_id = ${mId} and b.cancelled_at is null and b.start_at <= ${now} and b.end_at > ${now} and j.status in ('PLANNED', 'TO_PLAN')
+          order by b.start_at limit 1`)
+      ).rows[0];
+      if (!cover) {
+        const soon = (
+          await db.execute<{ id: string; job_id: string }>(sql`
+            select b.id, b.job_id from job_bookings b join jobs j on j.id = b.job_id
+            where b.machine_id = ${mId} and b.cancelled_at is null and b.start_at > ${now} and b.start_at <= ${new Date(now.getTime() + 60 * 60_000)} and j.status in ('PLANNED', 'TO_PLAN')
+              and not exists (select 1 from job_bookings o where o.machine_id = ${mId} and o.cancelled_at is null and o.id <> b.id and o.end_at > ${from} and o.start_at < b.start_at)
+            order by b.start_at limit 1`)
+        ).rows[0];
+        if (soon) {
+          await db.update(s.jobBookings).set({ startAt: from }).where(eq(s.jobBookings.id, soon.id));
+          cover = { job_id: soon.job_id, start_at: from.toISOString() };
+        }
+      }
+      if (!cover) {
+        need.push(name);
+        continue;
+      }
+      await db.update(s.jobs).set({ operatorId: opId }).where(eq(s.jobs.id, cover.job_id));
+      await db.update(s.jobBookings).set({ operatorId: opId }).where(and(eq(s.jobBookings.jobId, cover.job_id), eq(s.jobBookings.machineId, machine(name).id)));
+      const at = new Date(Math.max(new Date(cover.start_at).getTime(), now.getTime() - 90 * 60_000));
+      await startJob(db, cover.job_id, { operatorId: opId, now: at });
+      storyRunning++;
+    }
+    if (!need.length) continue;
+    const ts = await order((POOL[r.dept] ?? [NASHIK])[0], -3, `Quotation for ${r.dept === "PPF" ? "machining of fixture parts" : "test runs"}`, need.map((name) => ({ custom: { dept: r.dept, description: r.dept === "PPF" ? "Machining of fixture parts (customer material)" : "Test run (customer specimens)", unitLabel: "per hour", ratePaise: 1200_00 }, q: { quantity: 4 }, notes: `On ${name}` })), -1);
+    const rows = (await db.execute<{ id: string; ticket_id: string }>(sql`select j.id, t.id as ticket_id from jobs j join tickets t on t.id = j.ticket_id where t.id = any(${sql.param(ts.map((t) => t.id))}::uuid[])`)).rows;
+    for (const [k, t] of ts.entries()) {
+      const jobId = rows.find((x) => x.ticket_id === t.id)!.id;
+      const m = machine(need[k]);
+      const from = new Date(Math.floor((now.getTime() - 60 * 60_000) / 1_800_000) * 1_800_000);
+      await db.update(s.jobs).set({ hoursNeeded: "4", operatorId: opId, promisedDate: day(2) }).where(eq(s.jobs.id, jobId));
+      for (const hours of [4, 2, 1]) {
+        try {
+          const b = await book(jobId, m.name, from, m.runsNonstop ? 24 : hours, { exactStart: true });
+          await db.update(s.jobBookings).set({ operatorId: opId }).where(eq(s.jobBookings.id, b.booking.id));
+          await startJob(db, jobId, { operatorId: opId, now: new Date(Math.max(from.getTime(), now.getTime() - 60 * 60_000)) });
+          storyRunning++;
+          break;
+        } catch {
+          /* that time is taken: try a shorter run */
+        }
+      }
+    }
+  }
+  log(`  Several machines at once: ${storyRunning} jobs started now (Amit on 3 PPF machines; Priya on 2 chambers and the UTM)`);
+
+  // ---- This week on every department's board: a realistic spread at different hours ----------
+  // Short jobs on each machine for the rest of the week (operator machines at varied times in the
+  // day; day-and-night chambers with overnight runs), one job running now and one tentative booking
+  // (no PO yet) per department. Custom items, so the Inventory demo's stock numbers don't change;
+  // never on the 5-Axis VMC, so its "booked over 90%" story stays as it is.
+  const weekEnd = dayPlus(weekStart(today), 7);
+  const weekSlots: { m: typeof s.machines.$inferSelect; start: Date; hours: number; kind: "planned" | "running" | "tentative"; others?: (typeof s.machines.$inferSelect)[] }[] = [];
+  const START_HOURS = [9.5, 11, 13.5, 15, 10, 14];
+  const depts = [...new Set(machineRows.map((m) => m.deptCode))];
+  for (const dept of depts) {
+    const list = machineRows.filter((m) => m.deptCode === dept && m.isActive && m.name !== "5-Axis VMC (Non-Continuous)");
+    list.forEach((m, i) => {
+      for (let d = 0; dayPlus(today, d) < weekEnd; d++) {
+        const date = dayPlus(today, d);
+        const iso = ((new Date(`${date}T00:00:00Z`).getUTCDay() + 6) % 7) + 1;
+        if (m.runsNonstop) {
+          // Chambers: an overnight run every couple of days.
+          if ((i + d) % 2 === 0) weekSlots.push({ m, start: istAt(date, (17 + (i % 3)) * 60), hours: 18 + ((i + d) % 4) * 6, kind: "planned" });
+        } else if (pattern.days.includes(iso) && !pattern.holidays.has(date) && (i + d) % 3 !== 2) {
+          const h = START_HOURS[(i * 2 + d) % START_HOURS.length];
+          weekSlots.push({ m, start: istAt(date, Math.round(h * 60)), hours: 1.5 + ((i + d) % 4) * 0.75, kind: "planned" });
+        }
+      }
+    });
+    // Running now: on an operator machine during working hours, otherwise on a day-and-night machine (if the department has one).
+    const nowMin = Math.round((now.getTime() - istAt(today, 0).getTime()) / 60_000);
+    const working = pattern.days.includes(((new Date(`${today}T00:00:00Z`).getUTCDay() + 6) % 7) + 1) && !pattern.holidays.has(today) && nowMin - 90 >= pattern.shiftStart && nowMin + 150 <= pattern.shiftEnd;
+    const candidates = list.filter((m) => (working ? !m.runsNonstop : m.runsNonstop));
+    if (candidates.length && !storyDepts.has(dept)) weekSlots.push({ m: candidates[0], others: candidates.slice(1), start: new Date(Math.floor((now.getTime() - 90 * 60_000) / 1_800_000) * 1_800_000), hours: 4, kind: "running" });
+    const held = list[1] ?? list[0];
+    if (held) weekSlots.push({ m: held, start: istAt(dayPlus(today, 2), 12 * 60), hours: 3, kind: "tentative" });
+  }
+  const WEEK_WORK: Record<string, string> = {
+    PPF: "Machining of fixture parts (customer material)",
+    RPT: "Prototype prints in customer-supplied material",
+    ENV: "Environmental test run (customer profile)",
+    RPL: "Material test batch (customer specimens)",
+    MET: "Inspection of first-off parts",
+  };
+  let weekBooked = 0;
+  for (const dept of depts) {
+    const mine = weekSlots.filter((w) => w.m.deptCode === dept && w.start.getTime() + w.hours * HOUR > now.getTime() - 2 * HOUR);
+    if (!mine.length) continue;
+    const pool = POOL[dept] ?? [NASHIK];
+    for (const kind of ["firm", "tentative"] as const) {
+      const group = mine.filter((w) => (kind === "tentative") === (w.kind === "tentative"));
+      if (!group.length) continue;
+      const ts = await order(
+        pool[depts.indexOf(dept) % pool.length],
+        -3,
+        `Quotation for ${WEEK_WORK[dept]?.toLowerCase() ?? "work"}`,
+        group.map((w) => ({ custom: { dept, description: WEEK_WORK[dept] ?? "Work as per drawing", unitLabel: "per hour", ratePaise: 1200_00 }, q: { quantity: w.hours }, notes: `On ${w.m.name}` })),
+        kind === "tentative" ? null : -1,
+      );
+      const rows = (await db.execute<{ id: string; ticket_id: string }>(sql`select j.id, t.id as ticket_id from jobs j join tickets t on t.id = j.ticket_id where t.id = any(${sql.param(ts.map((t) => t.id))}::uuid[])`)).rows;
+      for (const [k, t] of ts.entries()) {
+        const w = group[k];
+        const jobId = rows.find((r) => r.ticket_id === t.id)!.id;
+        const opId = operatorFor(dept);
+        await db.update(s.jobs).set({ hoursNeeded: String(w.hours), operatorId: opId, promisedDate: dayPlus(istDate(w.start), 3) }).where(eq(s.jobs.id, jobId));
+        // The running job tries each suitable machine in turn; others keep to their machine.
+        for (const m of [w.m, ...(w.others ?? [])]) {
+          try {
+            const r = await book(jobId, m.name, w.start, w.hours, { exactStart: true });
+            await db.update(s.jobBookings).set({ operatorId: opId }).where(eq(s.jobBookings.id, r.booking.id));
+            if (w.kind === "running") {
+              await db.insert(s.jobTimeLogs).values({ jobId, bookingId: r.booking.id, machineId: m.id, operatorId: opId, startedAt: w.start, endedAt: null });
+              await db.update(s.jobs).set({ status: "RUNNING" }).where(eq(s.jobs.id, jobId));
+              await db.insert(s.jobEvents).values({ jobId, type: "STARTED", message: `Started on ${m.name} by ${operatorName(opId)}`, createdBy: operatorName(opId) ?? "Demo User", createdAt: w.start });
+            }
+            weekBooked++;
+            break;
+          } catch {
+            /* that time is taken (a story booking or the operators' daily work) */
+          }
+        }
+      }
+    }
+  }
+  log(`  This week: ${weekBooked} more bookings across every department at different hours (one tentative in each; running now where the story above has none)`);
 
   // ---- The numbers for the summary ------------------------------------------------------------
   const vmcBooked = await db.execute<{ start_at: string; end_at: string }>(sql`select start_at::text, end_at::text from job_bookings where machine_id = ${vmc.id} and cancelled_at is null and end_at > ${now}`);

@@ -1,5 +1,9 @@
 "use client";
 
+import { LiveStatusChip } from "@/components/planning/machine-bits";
+import { bookingColour } from "@/lib/planning/booking-colour";
+import { DeptChips } from "@/components/planning/dept-chips";
+import type { DeptChoice } from "@/lib/planning/dept-scope";
 import { DndContext, DragOverlay, PointerSensor, useDraggable, useDroppable, useSensor, useSensors, type DragEndEvent, type DragStartEvent } from "@dnd-kit/core";
 import { CSS } from "@dnd-kit/utilities";
 import { CalendarDays, ChevronDown, ChevronLeft, ChevronRight, GripVertical, X } from "lucide-react";
@@ -45,7 +49,7 @@ function lanes(list: Booking[]) {
   return { lane: out, count: Math.max(1, ends.length) };
 }
 
-export function Timeline({ data, view, date }: { data: TimelineData; view: "day" | "week" | "2w"; date: string }) {
+export function Timeline({ data, view, date, deptChoice }: { data: TimelineData; view: "day" | "week" | "2w"; date: string; deptChoice?: DeptChoice }) {
   const router = useRouter();
   const pathname = usePathname();
   const params = useSearchParams();
@@ -202,14 +206,14 @@ export function Timeline({ data, view, date }: { data: TimelineData; view: "day"
         </label>
         <span className="text-sm font-medium">{rangeText}</span>
         <div className="flex w-full flex-wrap items-center gap-2 lg:ml-auto lg:w-auto">
-          {filterSel("dept", "Department", data.departments.map((d) => ({ value: d.code, label: d.code })), "All departments")}
+          {deptChoice ? <DeptChips choice={deptChoice} /> : null}
           {filterSel("machine", "Machine", data.allMachines.map((m) => ({ value: m.id, label: m.name })), "All machines")}
           {filterSel("operator", "Operator", data.options.team.map((t) => ({ value: t.id, label: t.name })), "Any operator")}
           {filterSel("customer", "Customer", data.customers.map((c) => ({ value: c.id, label: c.name })), "Any customer")}
           {chip("late", "Late only")}
           {chip("tentative", "Tentative only")}
-          {["dept", "machine", "operator", "customer", "late", "tentative"].some((k) => params.get(k)) ? (
-            <Button variant="ghost" size="sm" onClick={() => set({ dept: null, machine: null, operator: null, customer: null, late: null, tentative: null })}>
+          {["machine", "operator", "customer", "late", "tentative"].some((k) => params.get(k)) ? (
+            <Button variant="ghost" size="sm" onClick={() => set({ machine: null, operator: null, customer: null, late: null, tentative: null })}>
               <X aria-hidden /> Clear
             </Button>
           ) : null}
@@ -365,8 +369,8 @@ function MachineRow({
           {m.code}
           {m.runsNonstop ? " · day and night" : ""}
           {m.parallelJobs > 1 ? ` · ${m.parallelJobs} at once` : ""}
-          {m.status === "BREAKDOWN" ? <span className="font-semibold text-red-700"> · broken down</span> : null}
         </span>
+        <LiveStatusChip live={m.live} className="mt-0.5 self-start text-[10px]" />
       </div>
       <div ref={setNodeRef} className={cn("relative", isOver && "bg-primary/5")} style={{ width, height }}>
         {days.map((d, i) =>
@@ -393,6 +397,9 @@ function MachineRow({
   );
 }
 
+/** The narrowest a booking is drawn, so its ticket number stays readable. */
+const MIN_BAR_PX = 36;
+
 function Bar({ b, x, width, top, nonstop, onOpen, pph, dept }: { b: Booking; x: (iso: string) => number; width: number; top: number; nonstop: boolean; onOpen: () => void; pph: number; dept: string }) {
   const started = new Date(b.start) <= new Date();
   const done = ["DONE", "HANDED_OVER"].includes(b.status);
@@ -402,16 +409,9 @@ function Bar({ b, x, width, top, nonstop, onOpen, pph, dept }: { b: Booking; x: 
   const { setNodeRef: setResizeRef, attributes: resizeAttributes, listeners: resizeListeners, transform: resizeTransform } = useDraggable({ id: `resize:${b.id}`, data: { type: "resize", booking: b, nonstop }, disabled: done || !canBook });
   const left = Math.max(0, x(b.start));
   const right = Math.min(width, x(b.end));
-  const w = Math.max(6, right - left + (resizeTransform?.x ?? 0));
-  const colour = b.holdExpired
-    ? "border-red-500 bg-red-100 text-red-950"
-    : b.tentative
-      ? "border-amber-400 bg-[repeating-linear-gradient(135deg,#fffbeb_0_6px,#fde68a_6px_12px)] text-amber-950"
-      : b.status === "RUNNING"
-        ? "border-emerald-500 bg-emerald-200 text-emerald-950"
-        : done
-          ? "border-slate-300 bg-slate-200 text-slate-700"
-          : "border-blue-400 bg-blue-200 text-blue-950";
+  // Very short bookings keep a readable minimum width (ticket no. visible; full details on hover).
+  const w = Math.max(MIN_BAR_PX, right - left + (resizeTransform?.x ?? 0));
+  const colour = bookingColour(b);
   return (
     <div
       ref={setNodeRef}
@@ -421,7 +421,7 @@ function Bar({ b, x, width, top, nonstop, onOpen, pph, dept }: { b: Booking; x: 
       tabIndex={0}
       onClick={onOpen}
       onKeyDown={(e) => e.key === "Enter" && onOpen()}
-      title={`${b.ticketNo} · ${b.company} · ${b.service}\n${formatWhen(new Date(b.start))} to ${formatWhen(new Date(b.end))} (${formatHours(b.hours)})${b.operator ? `\n${b.operator}` : ""}${b.tentative ? `\nTentative: waiting for PO (held until ${b.holdUntil?.split("-").reverse().join("/")})` : ""}${b.late ? "\nLate: past the promised date" : ""}${b.overrun ? "\nStill running? Past its booked end" : ""}`}
+      title={`${b.ticketNo} · starts ${formatWhen(new Date(b.start))}\n${b.company} · ${b.service}\n${formatWhen(new Date(b.start))} to ${formatWhen(new Date(b.end))} (${formatHours(b.hours)})${b.operator ? `\n${b.operator}` : ""}${b.tentative ? `\nTentative: waiting for PO (held until ${b.holdUntil?.split("-").reverse().join("/")})` : ""}${b.late ? "\nLate: past the promised date" : ""}${b.overrun ? "\nStill running? Past its booked end" : ""}`}
       className={cn("absolute z-[5] flex items-center overflow-hidden rounded-md border text-[11px] leading-tight shadow-sm select-none", colour, b.late && "ring-2 ring-red-600", b.overrun && "animate-pulse ring-2 ring-red-600", !started && !done && canBook && "cursor-grab", isDragging && "z-30 opacity-80 shadow-lg")}
       style={{ left, width: w, top, height: LANE - 4, transform: CSS.Translate.toString(transform) }}
     >

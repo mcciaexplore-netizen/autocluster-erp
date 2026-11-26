@@ -17,6 +17,23 @@ import { dayPlus, istAt, istDate, patternFromSettings, type Span, type WorkPatte
 import { JOB_STATUS_UI, type JobStatusName } from "@/lib/planning/job-status";
 import { machineUse, weekStart } from "@/lib/planning/use";
 import { isOverrun, quotedVsActual } from "@/lib/planning/work";
+import { chooseDept, deptIn, inScope, PLANNING_DEPT_COOKIE, planningScope, type DeptChoice, type DeptScope } from "@/lib/planning/dept-scope";
+import { cookies } from "next/headers";
+import { forbidden } from "next/navigation";
+import { alsoRunning } from "@/lib/planning/board";
+import { isOutOfUse, liveStatus, type LiveStatus } from "@/lib/planning/live-status";
+
+/**
+ * Which department a Planning tab shows, and which they may pick (only their own; "All" only with
+ * every department). Remembered on the device in a cookie.
+ */
+export async function planningDeptChoice(asked: string | null | undefined, opts: { allByDefault: boolean } = { allByDefault: true }): Promise<DeptChoice> {
+  await connection();
+  const me = await need(["planning.view"]);
+  const depts = await db.select({ code: departments.code, name: departments.name }).from(departments).orderBy(asc(departments.sortOrder));
+  const remembered = (await cookies()).get(PLANNING_DEPT_COOKIE)?.value;
+  return chooseDept(planningScope(me), depts, asked, remembered ? decodeURIComponent(remembered) : null, opts);
+}
 
 /** Working hours and holidays, as a pattern for the working-hours maths. */
 
@@ -132,21 +149,68 @@ async function overdueBreakdowns(now: Date): Promise<Map<string, Date>> {
   return new Map(rows.rows.map((r) => [r.id, new Date(r.expected)]));
 }
 
+/**
+ * Each machine's live status right now (Running, Booked not started, Free, Under maintenance /
+ * Calibration / Breakdown, Inactive): one chip everywhere a machine's status shows.
+ */
+async function liveStatuses(rows: { id: string; status: "AVAILABLE" | "MAINTENANCE" | "BREAKDOWN" | "INACTIVE"; isActive: boolean }[], now: Date): Promise<Map<string, LiveStatus>> {
+  if (!rows.length) return new Map();
+  const ids = sql.param(rows.map((m) => m.id));
+  const [logs, nowBookings, nowBlocks, team] = await Promise.all([
+    runningLogs(db),
+    db.execute<{ machine_id: string; ticket_no: string }>(sql`
+      select b.machine_id, t.ticket_no from job_bookings b join jobs j on j.id = b.job_id join tickets t on t.id = j.ticket_id
+      where b.cancelled_at is null and b.start_at <= ${now} and b.end_at > ${now} and j.status not in ('DONE', 'HANDED_OVER', 'CANCELLED') and b.machine_id = any(${ids}::uuid[])
+      order by b.start_at`),
+    db.execute<{ machine_id: string; type: string; end_at: string }>(sql`
+      select machine_id, type, end_at::text from machine_blocks where start_at <= ${now} and end_at > ${now} and machine_id = any(${ids}::uuid[]) order by end_at desc`),
+    db.select({ id: teamMembers.id, name: teamMembers.name }).from(teamMembers),
+  ]);
+  const name = (id: string | null) => (id ? (team.find((t) => t.id === id)?.name ?? null) : null);
+  return new Map(
+    rows.map((m) => {
+      const log = logs.find((l) => l.machine_id === m.id);
+      const booking = nowBookings.rows.find((b) => b.machine_id === m.id);
+      const block = nowBlocks.rows.find((b) => b.machine_id === m.id);
+      return [
+        m.id,
+        liveStatus({
+          machine: { status: m.status, isActive: m.isActive },
+          now,
+          running: log ? { ticketNo: log.ticket_no, operator: name(log.operator_id) } : null,
+          bookingNow: booking ? { ticketNo: booking.ticket_no } : null,
+          blockNow: block ? { type: block.type, end: new Date(block.end_at) } : null,
+        }),
+      ];
+    }),
+  );
+}
+
+/** Bookings that clash with blocked time, on machines of the departments they may see. */
+async function clashesInScope(now: Date, scope: DeptScope) {
+  const all = await bookingsClashingWithBlocks(db, now);
+  if (scope === null) return all;
+  const ok = new Set((await db.select({ id: machines.id }).from(machines).where(deptIn(sql`${machines.deptCode}`, scope))).map((m) => m.id));
+  return all.filter((c) => ok.has(c.machineId));
+}
+
 /** For "Needs attention": machines still broken down after their expected end. */
 export async function listOverdueBreakdowns() {
   await connection();
-  await need(["planning.view"]);
+  const me = await need(["planning.view"]);
+  const scope = planningScope(me);
   const now = new Date();
   const map = await overdueBreakdowns(now);
   if (!map.size) return [];
-  const rows = await db.select({ id: machines.id, name: machines.name, code: machines.code }).from(machines).where(sql`${machines.id} = any(${sql.param([...map.keys()])}::uuid[])`);
-  return rows.map((m) => ({ ...m, expectedEnd: map.get(m.id)! })).sort((a, b) => a.expectedEnd.getTime() - b.expectedEnd.getTime());
+  const rows = await db.select({ id: machines.id, name: machines.name, code: machines.code, deptCode: machines.deptCode }).from(machines).where(sql`${machines.id} = any(${sql.param([...map.keys()])}::uuid[])`);
+  return rows.filter((m) => inScope(scope, m.deptCode)).map((m) => ({ id: m.id, name: m.name, code: m.code, expectedEnd: map.get(m.id)! })).sort((a, b) => a.expectedEnd.getTime() - b.expectedEnd.getTime());
 }
 
 /** Machines with their services, what's running now, the next booking and use % this week. */
 export async function listMachines() {
   await connection();
-  await need(["planning.view"]);
+  const me = await need(["planning.view"]);
+  const scope = planningScope(me);
   const now = new Date();
   const week = weekWindow(istDate(now));
   const [plan, rows, links, depts, weekBookings, weekBlocks, upcoming, blockedNow, overdue, running] = await Promise.all([
@@ -161,7 +225,9 @@ export async function listMachines() {
     overdueBreakdowns(now),
     runningLogs(db),
   ]);
-  const list = rows.map((m) => {
+  const mineRows = rows.filter((m) => inScope(scope, m.deptCode));
+  const live = await liveStatuses(mineRows, now);
+  const list = mineRows.map((m) => {
     const mine = upcoming.filter((b) => b.machineId === m.id);
     return {
       ...m,
@@ -172,18 +238,21 @@ export async function listMachines() {
       blockedNow: blockedNow.find((b) => b.machineId === m.id) ?? null,
       overdueBreakdown: overdue.get(m.id) ?? null,
       use: machineUseFor(m, week, plan.pattern, weekBookings, weekBlocks),
+      live: live.get(m.id)!,
     };
   });
-  return { departments: depts, machines: list };
+  return { departments: depts.filter((d) => inScope(scope, d.code)), machines: list };
 }
 export type MachineListRow = Awaited<ReturnType<typeof listMachines>>["machines"][number];
 
 /** One machine: its week (bookings and blocked time), use %, services and job history. */
 export async function getMachine(id: string, weekOf?: string) {
   await connection();
-  await need(["planning.view"]);
+  const me = await need(["planning.view"]);
+  const scope = planningScope(me);
   const [m] = await db.select().from(machines).where(eq(machines.id, id));
   if (!m) return null;
+  if (!inScope(scope, m.deptCode)) forbidden(); // another department's machine
   const now = new Date();
   const week = weekWindow(weekOf && /^\d{4}-\d{2}-\d{2}$/.test(weekOf) ? weekOf : istDate(now));
   const month = monthWindow(istDate(now));
@@ -211,7 +280,9 @@ export async function getMachine(id: string, weekOf?: string) {
     overdueBreakdowns(now),
     bookingsClashingWithBlocks(db, now),
   ]);
+  const live = (await liveStatuses([m], now)).get(m.id)!;
   return {
+    live,
     clashes: clashes.filter((c) => c.machineId === id),
     machine: m,
     department: dept[0] ?? null,
@@ -229,11 +300,12 @@ export type MachineDetail = NonNullable<Awaited<ReturnType<typeof getMachine>>>;
 /** Active machines for pickers (block time etc.). */
 export async function getMachinePicks() {
   await connection();
-  await need(["planning.view"]);
+  const me = await need(["planning.view"]);
+  const scope = planningScope(me);
   return db
     .select({ id: machines.id, name: machines.name, code: machines.code, deptCode: machines.deptCode, status: machines.status })
     .from(machines)
-    .where(eq(machines.isActive, true))
+    .where(and(eq(machines.isActive, true), deptIn(sql`${machines.deptCode}`, scope)))
     .orderBy(asc(machines.deptCode), asc(machines.sortOrder), asc(machines.name));
 }
 
@@ -278,11 +350,12 @@ const ACTUAL_SQL = sql`(select coalesce(sum(extract(epoch from (coalesce(l.ended
 /** The jobs list (and its Excel), newest first, with planned and actual hours. */
 export async function listJobs(f: JobFilters = {}, limit = 500) {
   await connection();
-  await need(["planning.view"]);
+  const me = await need(["planning.view"]);
+  const scope = planningScope(me);
   const today = istDate(new Date());
   const [set] = await db.select({ alert: settings.actualVsQuotedAlertPct }).from(settings).where(eq(settings.id, 1));
   const alert = set?.alert ?? 10;
-  const where = [sql`true`];
+  const where = [deptIn(sql`t.snapshot->>'deptCode'`, scope)];
   if (f.q) {
     const t = `%${f.q}%`;
     where.push(sql`(t.ticket_no ilike ${t} or t.snapshot->>'companyName' ilike ${t} or t.snapshot->>'description' ilike ${t})`);
@@ -356,7 +429,8 @@ export type JobRow = Awaited<ReturnType<typeof listJobs>>[number];
 /** Machines for booking: the ones linked to the job's service first; all machines grouped by department. */
 export async function getBookingOptions() {
   await connection();
-  await need(["planning.view"]);
+  const me = await need(["planning.view"]);
+  const scope = planningScope(me);
   const [ms, links, depts, team, plan] = await Promise.all([
     db
       .select({ id: machines.id, name: machines.name, code: machines.code, deptCode: machines.deptCode, status: machines.status, runsNonstop: machines.runsNonstop, parallelJobs: machines.parallelJobs })
@@ -370,8 +444,9 @@ export async function getBookingOptions() {
   ]);
   const s = plan.settings;
   return {
-    machines: ms.map((m) => ({ ...m, serviceIds: links.filter((l) => l.machineId === m.id).map((l) => l.serviceId) })),
-    departments: depts,
+    // "Show all machines" in Book time stays within their departments (unless they have every department).
+    machines: ms.filter((m) => inScope(scope, m.deptCode)).map((m) => ({ ...m, serviceIds: links.filter((l) => l.machineId === m.id).map((l) => l.serviceId) })),
+    departments: depts.filter((d) => inScope(scope, d.code)),
     team,
     /** The working-hours settings, so the form can work out the end live. */
     hours: { workingDays: s.workingDays, shiftStart: s.shiftStart, shiftEnd: s.shiftEnd, breakStart: s.breakStart, breakEnd: s.breakEnd, holidays: plan.holidays.map((h) => h.date) },
@@ -392,6 +467,8 @@ export async function getJobDetail(id: string) {
     .leftJoin(teamMembers, eq(teamMembers.id, jobs.operatorId))
     .where(eq(jobs.id, id));
   if (!row) return null;
+  // Another department's job: as if it didn't exist (nothing about it is sent).
+  if (!inScope(planningScope(me), (row.ticket.snapshot as { deptCode?: string | null }).deptCode)) return null;
   const [item] = await db.execute<{ service_id: number | null; unit_type: string | null; custom: boolean; customer_id: string }>(sql`
     select qi.service_id, qi.unit_type, qi.is_custom_item as custom, t.customer_id from tickets t join quotation_items qi on qi.id = t.quotation_item_id where t.id = ${row.ticket.id}`).then((r) => r.rows);
   const [bookings, logs, events, fileRows, actual] = await Promise.all([
@@ -454,6 +531,7 @@ export interface TimelineFilters {
   view: TimelineView;
   date: string;
   dept?: string;
+  deptChoice?: DeptChoice;
   machine?: string;
   operator?: string;
   customer?: string;
@@ -463,18 +541,20 @@ export interface TimelineFilters {
 
 export async function timelineFiltersFromParams(sp: Record<string, string | string[] | undefined>): Promise<TimelineFilters> {
   await connection();
-  const me = await need();
+  await need();
   const one = (k: string) => (typeof sp[k] === "string" ? (sp[k] as string) : "");
   const uuid = (v: string) => (/^[0-9a-f-]{36}$/i.test(v) ? v : undefined);
   const view = (["day", "week", "2w"] as const).find((v) => v === one("view")) ?? "week";
   const today = istDate(new Date());
   let date = /^\d{4}-\d{2}-\d{2}$/.test(one("date")) ? one("date") : today;
   if (view !== "day") date = weekStart(date); // weeks start on Monday
+  // Their own departments only; one department opens straight on it.
+  const deptChoice = await planningDeptChoice(one("dept") || null);
   return {
     view,
     date,
-    // Operators start on their own department's machines (they can still pick another to view).
-    dept: /^[A-Z]{2,6}$/.test(one("dept")) ? one("dept") : one("dept") === "all" ? undefined : isOperatorOnly(me) && me.departments.length === 1 ? me.departments[0] : undefined,
+    dept: deptChoice.chosen ?? undefined,
+    deptChoice,
     machine: uuid(one("machine")),
     operator: uuid(one("operator")),
     customer: uuid(one("customer")),
@@ -488,13 +568,14 @@ export const VIEW_DAYS: Record<TimelineView, number> = { day: 1, week: 7, "2w": 
 /** Machines, bookings and blocked time in the window, and the jobs still to plan. */
 export async function getTimeline(f: TimelineFilters) {
   await connection();
-  await need(["planning.view"]);
+  const me = await need(["planning.view"]);
+  const scope = planningScope(me);
   const start = istAt(f.date, 0);
   const end = istAt(dayPlus(f.date, VIEW_DAYS[f.view]), 0);
   const today = istDate(new Date());
   const [[warnSet], ms, bookingRows, blocks, toPlan, options, customers] = await Promise.all([
     db.select({ pct: settings.overrunWarningPct }).from(settings).where(eq(settings.id, 1)),
-    db.select().from(machines).where(eq(machines.isActive, true)).orderBy(asc(machines.sortOrder), asc(machines.name)),
+    db.select().from(machines).where(and(eq(machines.isActive, true), deptIn(sql`${machines.deptCode}`, scope))).orderBy(asc(machines.sortOrder), asc(machines.name)),
     db.execute<{
       id: string; job_id: string; machine_id: string; start_at: string; end_at: string; hours: string; is_tentative: boolean; hold_until: string | null; note: string | null;
       ticket_no: string; company: string; service: string; status: JobStatusName; promised_date: string | null; operator_id: string | null; operator: string | null; customer_id: string; priority: string;
@@ -504,20 +585,28 @@ export async function getTimeline(f: TimelineFilters) {
         coalesce(b.operator_id, j.operator_id) as operator_id, tm.name as operator, t.customer_id, j.priority
       from job_bookings b join jobs j on j.id = b.job_id join tickets t on t.id = j.ticket_id
       left join team_members tm on tm.id = coalesce(b.operator_id, j.operator_id)
-      where b.cancelled_at is null and b.start_at < ${end} and b.end_at > ${start}
+      join machines bm on bm.id = b.machine_id
+      where b.cancelled_at is null and b.start_at < ${end} and b.end_at > ${start} and ${deptIn(sql`bm.dept_code`, scope)} ${f.machine ? sql`and b.machine_id = ${f.machine}` : sql``}
       order by b.start_at`),
-    db.select().from(machineBlocks).where(and(lt(machineBlocks.startAt, end), gt(machineBlocks.endAt, start))),
+    db
+      .select({ b: machineBlocks })
+      .from(machineBlocks)
+      .innerJoin(machines, eq(machines.id, machineBlocks.machineId))
+      // One machine (its page): only that machine's blocked time is read.
+      .where(and(lt(machineBlocks.startAt, end), gt(machineBlocks.endAt, start), deptIn(sql`${machines.deptCode}`, scope), f.machine ? eq(machineBlocks.machineId, f.machine) : undefined))
+      .then((r) => r.map((x) => x.b)),
     db.execute<{ id: string; ticket_no: string; company: string; service: string; dept: string | null; priority: "NORMAL" | "URGENT"; promised_date: string | null; hours_needed: string | null; planned: string | null; stage: string }>(sql`
       select j.id, t.ticket_no, t.snapshot->>'companyName' as company, t.snapshot->>'description' as service, t.snapshot->>'deptCode' as dept, j.priority,
         j.promised_date::text, j.hours_needed, t.stage,
         (select sum(b.hours) from job_bookings b where b.job_id = j.id and b.cancelled_at is null) as planned
       from jobs j join tickets t on t.id = j.ticket_id
-      where j.status = 'TO_PLAN' ${f.dept ? sql`and t.snapshot->>'deptCode' = ${f.dept}` : sql``}
+      where j.status = 'TO_PLAN' and ${deptIn(sql`t.snapshot->>'deptCode'`, scope)} ${f.dept ? sql`and t.snapshot->>'deptCode' = ${f.dept}` : sql``}
       order by j.priority desc, coalesce(j.promised_date, '9999-12-31'), t.ticket_no`),
     getBookingOptions(),
-    db.execute<{ id: string; name: string }>(sql`select distinct c.id, c.company_name as name from tickets t join customers c on c.id = t.customer_id join jobs j on j.ticket_id = t.id order by 2`),
+    db.execute<{ id: string; name: string }>(sql`select distinct c.id, c.company_name as name from tickets t join customers c on c.id = t.customer_id join jobs j on j.ticket_id = t.id where ${deptIn(sql`t.snapshot->>'deptCode'`, scope)} order by 2`),
   ]);
   const machineList = ms.filter((m) => (!f.dept || m.deptCode === f.dept) && (!f.machine || m.id === f.machine));
+  const live = await liveStatuses(machineList, new Date());
   const bookings = bookingRows.rows
     .map((b) => {
       const endAt = new Date(b.end_at);
@@ -549,7 +638,7 @@ export async function getTimeline(f: TimelineFilters) {
   return {
     window: { start: start.toISOString(), end: end.toISOString(), days: VIEW_DAYS[f.view] },
     departments: options.departments,
-    machines: machineList.map((m) => ({ id: m.id, name: m.name, code: m.code, deptCode: m.deptCode, status: m.status, runsNonstop: m.runsNonstop, parallelJobs: m.parallelJobs })),
+    machines: machineList.map((m) => ({ id: m.id, name: m.name, code: m.code, deptCode: m.deptCode, status: m.status, runsNonstop: m.runsNonstop, parallelJobs: m.parallelJobs, live: live.get(m.id)! })),
     allMachines: ms.map((m) => ({ id: m.id, name: m.name })),
     bookings,
     blocks: blocks.map((b) => ({ id: b.id, machineId: b.machineId, type: b.type, start: b.startAt.toISOString(), end: b.endAt.toISOString(), note: b.note })),
@@ -574,6 +663,78 @@ export async function getTimeline(f: TimelineFilters) {
   };
 }
 export type TimelineData = Awaited<ReturnType<typeof getTimeline>>;
+
+// ---- department board ------------------------------------------------------------------------------
+
+/**
+ * The Department board: one week of each machine in the chosen department (only departments they may
+ * see), with what's running now, use % for the week, holidays and the working hours to draw with.
+ */
+export async function getDepartmentBoard(f: { dept: string | null; date: string }) {
+  await connection();
+  const me = await need(["planning.view"]);
+  const scope = planningScope(me);
+  const week = weekWindow(f.date);
+  const now = new Date();
+  const [t, plan] = await Promise.all([getTimeline({ view: "week", date: week.from, dept: f.dept ?? undefined }), getPlanningSettings()]);
+  const p = plan.pattern;
+  let available = 0;
+  let booked = 0;
+  const machinesOut = t.machines
+    .filter((m) => inScope(scope, m.deptCode))
+    .map((m) => {
+      const use = machineUse({
+        window: week,
+        pattern: p,
+        nonstop: m.runsNonstop,
+        parallelJobs: m.parallelJobs,
+        blocks: t.blocks.filter((b) => b.machineId === m.id).map((b) => ({ start: new Date(b.start), end: new Date(b.end) })),
+        bookings: t.bookings.filter((b) => b.machineId === m.id).map((b) => ({ start: new Date(b.start), end: new Date(b.end) })),
+      });
+      available += use.availableHours;
+      booked += use.bookedHours;
+      return { ...m, usePct: use.bookedPct };
+    });
+  const holidaysThisWeek = plan.holidays.filter((h) => h.date >= week.from && h.date < dayPlus(week.from, 7)).map((h) => ({ date: h.date, name: h.name }));
+  // Who is running what right now (several machines at once is normal): on the machines they may see.
+  const [logs, team, seeable] = await Promise.all([
+    runningLogs(db),
+    db.select({ id: teamMembers.id, name: teamMembers.name }).from(teamMembers),
+    db.select({ id: machines.id }).from(machines).where(deptIn(sql`${machines.deptCode}`, scope)),
+  ]);
+  const ok = new Set(seeable.map((m) => m.id));
+  const open = logs.filter((l) => l.operator_id && l.machine_id && ok.has(l.machine_id));
+  const nameOf = (id: string) => team.find((x) => x.id === id)?.name ?? "Someone";
+  const onBoard = new Set(machinesOut.map((m) => m.id));
+  const perPerson = new Map<string, Set<string>>();
+  for (const l of open) if (onBoard.has(l.machine_id!)) perPerson.set(l.operator_id!, (perPerson.get(l.operator_id!) ?? new Set()).add(l.machine_id!));
+  const bookings = t.bookings.map((b) => {
+    const mine = open.find((l) => l.job_id === b.jobId && l.machine_id === b.machineId && new Date(b.start) <= now && new Date(b.end) > now);
+    if (!mine) return b;
+    const others = open.filter((l) => l.operator_id === mine.operator_id && l.job_id !== b.jobId).map((l) => l.ticket_no);
+    return { ...b, alsoRunning: alsoRunning(nameOf(mine.operator_id!), [...new Set(others)]) };
+  });
+  return {
+    weekFrom: week.from,
+    today: istDate(now),
+    nowIso: now.toISOString(),
+    hours: { days: p.days, shiftStart: p.shiftStart, shiftEnd: p.shiftEnd, breakStart: p.breakStart, breakEnd: p.breakEnd },
+    holidays: holidaysThisWeek,
+    allHolidays: plan.holidays.map((h) => h.date),
+    machines: machinesOut,
+    bookings,
+    blocks: t.blocks,
+    toPlan: t.toPlan,
+    options: t.options,
+    summary: {
+      running: machinesOut.filter((m) => m.live.kind === "running").length,
+      free: machinesOut.filter((m) => m.live.kind === "free").length,
+      weekPct: available > 0 ? (booked / available) * 100 : null,
+      people: [...perPerson].map(([id, ms]) => ({ name: nameOf(id), machines: ms.size })),
+    },
+  };
+}
+export type DepartmentBoardData = Awaited<ReturnType<typeof getDepartmentBoard>>;
 
 /** For booking from the timeline: one job's details for the Book time form. */
 export async function getBookJob(jobId: string) {
@@ -600,7 +761,9 @@ export async function getBookJob(jobId: string) {
 /** "Needs attention" (top of the Timeline): everything someone should act on now. */
 export async function getNeedsAttention() {
   await connection();
-  await need(["planning.view"]);
+  const me = await need(["planning.view"]);
+  const scope = planningScope(me);
+  const inDept = deptIn(sql`t.snapshot->>'deptCode'`, scope);
   const now = new Date();
   const today = istDate(now);
   const [[set], late, holds, running, unplannedLate, clashes, broken] = await Promise.all([
@@ -609,7 +772,7 @@ export async function getNeedsAttention() {
     db.execute<{ booking_id: string; job_id: string; ticket_no: string; company: string; machine: string; hold_until: string; start_at: string }>(sql`
       select b.id as booking_id, b.job_id, t.ticket_no, t.snapshot->>'companyName' as company, m.name as machine, b.hold_until::text, b.start_at::text
       from job_bookings b join jobs j on j.id = b.job_id join tickets t on t.id = j.ticket_id join machines m on m.id = b.machine_id
-      where b.cancelled_at is null and b.is_tentative and b.hold_until < ${today} and j.status not in ('CANCELLED', 'DONE', 'HANDED_OVER')
+      where b.cancelled_at is null and b.is_tentative and b.hold_until < ${today} and j.status not in ('CANCELLED', 'DONE', 'HANDED_OVER') and ${inDept}
       order by b.hold_until`),
     db.execute<{ job_id: string; ticket_no: string; company: string; machine: string | null; started_at: string; booked_start: string | null; booked_end: string | null }>(sql`
       select j.id as job_id, t.ticket_no, t.snapshot->>'companyName' as company, m.name as machine,
@@ -618,12 +781,12 @@ export async function getNeedsAttention() {
       from jobs j join tickets t on t.id = j.ticket_id
       left join lateral (select * from job_bookings b where b.job_id = j.id and b.cancelled_at is null order by b.end_at desc limit 1) b on true
       left join machines m on m.id = b.machine_id
-      where j.status = 'RUNNING'`),
+      where j.status = 'RUNNING' and ${inDept}`),
     db.execute<{ id: string; ticket_no: string; company: string; promised_date: string }>(sql`
       select j.id, t.ticket_no, t.snapshot->>'companyName' as company, j.promised_date::text
       from jobs j join tickets t on t.id = j.ticket_id
-      where j.status = 'TO_PLAN' and j.promised_date < ${today} order by j.promised_date`),
-    bookingsClashingWithBlocks(db, now),
+      where j.status = 'TO_PLAN' and j.promised_date < ${today} and ${inDept} order by j.promised_date`),
+    clashesInScope(now, scope),
     listOverdueBreakdowns(),
   ]);
   const pct = set?.pct ?? 50;
@@ -735,7 +898,9 @@ export async function getToday() {
     };
   });
   // Operators (who run jobs but don't plan them) see the jobs of their own departments.
-  const shown = isOperatorOnly(me) ? cards.filter((c) => can(me, "planning.operate", { dept: c.deptCode })) : cards;
+  // Everyone sees only their own departments' work.
+  const mine = cards.filter((c) => inScope(planningScope(me), c.deptCode));
+  const shown = isOperatorOnly(me) ? mine.filter((c) => can(me, "planning.operate", { dept: c.deptCode })) : mine;
   return { today, team, cards: shown, readyTemplate: set?.readyWhatsappTemplate ?? "", orgName: set?.orgName ?? "", warnPct: warn };
 }
 export type TodayData = Awaited<ReturnType<typeof getToday>>;
@@ -744,16 +909,18 @@ export type TodayCard = TodayData["cards"][number];
 /** The 4 Planning cards on the home page. */
 export async function getPlanningHomeStats() {
   await connection();
-  await need(["planning.view"]);
+  const me = await need(["planning.view"]);
+  const scope = planningScope(me);
   const now = new Date();
   const [counts, late, blocked] = await Promise.all([
-    db.execute<{ to_plan: string; running: string }>(sql`select count(*) filter (where status = 'TO_PLAN') as to_plan, count(*) filter (where status = 'RUNNING') as running from jobs`),
+    db.execute<{ to_plan: string; running: string }>(
+      sql`select count(*) filter (where j.status = 'TO_PLAN') as to_plan, count(*) filter (where j.status = 'RUNNING') as running from jobs j join tickets t on t.id = j.ticket_id where ${deptIn(sql`t.snapshot->>'deptCode'`, scope)}`,
+    ),
     listJobs({ late: true }, 1000),
-    db.execute<{ n: string }>(sql`
-      select count(*) as n from machines m
-      where m.is_active and (m.status in ('BREAKDOWN', 'MAINTENANCE') or exists (select 1 from machine_blocks b where b.machine_id = m.id and b.start_at <= ${now} and b.end_at > ${now}))`),
+    // Out of use right now: maintenance, calibration, breakdown and inactive (busy machines are not "not available").
+    db.select({ id: machines.id, status: machines.status, isActive: machines.isActive }).from(machines).where(deptIn(sql`${machines.deptCode}`, scope)).then(async (ms) => [...(await liveStatuses(ms, now)).values()].filter((l) => isOutOfUse(l.kind)).length),
   ]);
-  return { toPlan: Number(counts.rows[0].to_plan), running: Number(counts.rows[0].running), late: late.length, notAvailable: Number(blocked.rows[0].n) };
+  return { toPlan: Number(counts.rows[0].to_plan), running: Number(counts.rows[0].running), late: late.length, notAvailable: blocked };
 }
 
 /** Internal-use stock records from the last 60 days, so a maintenance block can point to the spares used. */

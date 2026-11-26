@@ -3,7 +3,10 @@
  * hours are decimal hours, dates are India dates.
  */
 import "server-only";
-import { sql } from "drizzle-orm";
+import { asc, sql } from "drizzle-orm";
+import { cookies } from "next/headers";
+import { departments } from "@/db/schema";
+import { chooseDept, inScope, PLANNING_DEPT_COOKIE, planningScope } from "@/lib/planning/dept-scope";
 import { moneyView, need } from "@/lib/auth/guard";
 import { connection } from "next/server";
 import { db } from "@/db";
@@ -42,13 +45,15 @@ export const MIN_EARNING_HOURS = 1;
 /** Default: the last 30 days (as on Inventory Insights). */
 export async function planningInsightFiltersFromParams(sp: Record<string, string | string[] | undefined>): Promise<PlanningInsightFilters> {
   await connection();
-  await need();
+  const me = await need();
   const today = istDate(new Date());
   const one = (k: string) => (typeof sp[k] === "string" ? (sp[k] as string) : "");
   let from = DATE_RE.test(one("from")) ? one("from") : dayPlus(today, -30);
   let to = DATE_RE.test(one("to")) ? one("to") : today;
   if (from > to) [from, to] = [to, from];
-  const dept = /^[A-Z]{2,6}$/.test(one("dept")) ? one("dept") : null;
+  const depts = await db.select({ code: departments.code, name: departments.name }).from(departments).orderBy(asc(departments.sortOrder));
+  const remembered = (await cookies()).get(PLANNING_DEPT_COOKIE)?.value;
+  const dept = chooseDept(planningScope(me), depts, one("dept") || null, remembered, { allByDefault: true }).chosen;
   return { from, to, dept };
 }
 
@@ -64,10 +69,14 @@ export const BLOCK_TYPE_NAMES: Record<BlockTypeName, string> = {
 
 const DONE = sql`j.status in ('DONE', 'HANDED_OVER')`;
 
-export async function getPlanningInsights(f: PlanningInsightFilters) {
+export async function getPlanningInsights(filters: PlanningInsightFilters) {
   await connection();
   const me = await need(["insights.planning"]);
+  let f = filters;
   const sale = moneyView(me).sale;
+  // Only their own departments: a department they may not see, or "all" without every department, is not allowed.
+  const scope = planningScope(me);
+  if (!(f.dept ? inScope(scope, f.dept) : scope === null)) f = { ...f, dept: scope?.[0] ?? "-" };
   const now = new Date();
   const today = istDate(now);
   const range: Span = {

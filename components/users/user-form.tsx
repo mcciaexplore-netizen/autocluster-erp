@@ -15,7 +15,7 @@ import { cn } from "@/lib/utils";
 
 type RoleOption = { id: number; name: string; description: string };
 type Dept = { code: string; name: string };
-export type UserFormValues = { name: string; canSignIn: boolean; email: string; mobile: string; roleIds: number[]; allDepartments: boolean; deptCodes: string[] };
+export type UserFormValues = { name: string; canSignIn: boolean; email: string; mobile: string; roleIds: number[]; allDepartments: boolean; deptCodes: string[]; maxMachines: string };
 
 /** Shown once after saving or resetting: the temporary password, with Copy. It is never shown again. */
 export function TempPasswordDialog({ name, password, onClose }: { name: string; password: string | null; onClose: () => void }) {
@@ -78,7 +78,7 @@ export function UserForm({
 
   const save = () =>
     start(async () => {
-      const r = await saveUserAction(id, { ...v, email: v.email.trim() || null, mobile: v.mobile.trim() || null });
+      const r = await saveUserAction(id, { ...v, email: v.email.trim() || null, mobile: v.mobile.trim() || null, maxMachines: v.maxMachines.trim() ? Number(v.maxMachines) : null });
       if (!r.ok) return void toast.error(r.message);
       toast.success(id ? "Saved." : `${v.name.trim()} was added.`);
       if (r.data.tempPassword) setTemp({ password: r.data.tempPassword, then: id ? null : `/settings/users/${r.data.id}` });
@@ -185,6 +185,14 @@ export function UserForm({
             );
           })}
         </div>
+      </section>
+
+      <section className="rounded-2xl border bg-card p-4 sm:p-6">
+        <h2 className="mb-1 text-lg font-semibold">Machines at once</h2>
+        <p className="mb-4 text-sm text-muted-foreground">How many machines this person can run at the same time. Leave empty to use the number in Settings &gt; Planning. Day-and-night machines don&apos;t count.</p>
+        <Field label="Machines this person can run at once" optional helper="e.g. 2. Empty = the Settings number." className="max-w-xs">
+          {(p) => <Input {...p} type="number" min={1} max={20} step={1} inputMode="numeric" value={v.maxMachines} onChange={(e) => set("maxMachines", e.target.value)} />}
+        </Field>
       </section>
 
       <div className="flex flex-wrap gap-3">

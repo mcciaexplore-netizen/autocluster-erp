@@ -1,4 +1,6 @@
 import type { Metadata } from "next";
+import { DeptChips } from "@/components/planning/dept-chips";
+import { planningDeptChoice } from "@/lib/planning-data";
 import { AlertTriangle, Download, Info } from "lucide-react";
 import Link from "next/link";
 import { Suspense } from "react";
@@ -41,7 +43,9 @@ const list = (names: string[]) => (names.length <= 1 ? names.join("") : `${names
 const jobHref = (id: string) => `/planning/jobs?job=${id}`;
 
 async function Body({ searchParams }: { searchParams: Sp }) {
-  const f = await planningInsightFiltersFromParams(await searchParams);
+  const sp = await searchParams;
+  const f = await planningInsightFiltersFromParams(sp);
+  const deptChoice = await planningDeptChoice(f.dept ?? "all");
   const d = await getPlanningInsights(f);
   const q = new URLSearchParams({
     from: f.from,
@@ -51,7 +55,7 @@ async function Body({ searchParams }: { searchParams: Sp }) {
   const excel = (s: PlanningSection) => `/api/planning/insights?section=${s}&${q}`;
   return (
     <>
-      <InsightsFilters from={f.from} to={f.to} dept={f.dept} departments={d.departments} periods="planning" />
+      <InsightsFilters from={f.from} to={f.to} dept={f.dept} departments={d.departments} periods="planning" deptSlot={<DeptChips choice={deptChoice} className="self-end" />} />
       <div className="flex flex-col gap-6">
         <Section
           title="Machine use"

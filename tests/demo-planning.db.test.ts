@@ -63,9 +63,42 @@ describe.skipIf(skip)("planning demo data (database)", () => {
   });
 
   it("running now, on hold, to plan (urgent and past its promised date), and a late job", async () => {
-    expect((await jobsWith(sql`j.status = 'RUNNING'`)).rows).toHaveLength(1);
-    const running = await db.execute(sql`select 1 from job_time_logs where ended_at is null`);
-    expect(running.rows).toHaveLength(1);
+    // The high-low test (started 20 hours ago), plus one job running now in each department's board.
+    const running = await db.execute<{ machine: string; dept: string }>(sql`
+      select m.name as machine, m.dept_code as dept from job_time_logs l join machines m on m.id = l.machine_id where l.ended_at is null`);
+    expect(running.rows.some((r) => r.machine === "High-Low Temperature Chamber")).toBe(true);
+    // Each department has a job running now where a machine can legally run: any day-and-night machine,
+    // or (in working hours) a machine that needs an operator.
+    const [set] = await db.select().from(s.settings);
+    const ms = await db.select().from(s.machines);
+    const nowMin = Math.round((now.getTime() - istAt(today, 0).getTime()) / 60_000);
+    const [sh, sm] = set.shiftStart.split(":").map(Number);
+    const [eh, em] = set.shiftEnd.split(":").map(Number);
+    const iso = ((new Date(`${today}T00:00:00Z`).getUTCDay() + 6) % 7) + 1;
+    const holiday = (await db.select().from(s.holidays)).some((h) => h.date === today);
+    const working = set.workingDays.includes(iso) && !holiday && nowMin - 90 >= sh * 60 + sm && nowMin + 150 <= eh * 60 + em;
+    const depts = new Set(running.rows.map((r) => r.dept));
+    for (const dept of new Set(ms.filter((m) => m.isActive && m.runsNonstop).map((m) => m.deptCode))) expect(depts.has(dept), dept).toBe(true);
+    // In working hours, operator machines run too (a department whose only machine is busy with the operator's own job for today may have none).
+    if (working) expect(depts.size).toBeGreaterThanOrEqual(3);
+    // Several machines at once: Amit on the 5-Axis, 3-Axis and Turn Mill; Priya with 2 chambers and the UTM.
+    const byWho = await db.execute<{ who: string; machine: string; nonstop: boolean; stay: boolean }>(sql`
+      select tm.name as who, m.name as machine, m.runs_nonstop as nonstop, m.operator_must_stay as stay
+      from job_time_logs l join machines m on m.id = l.machine_id join team_members tm on tm.id = l.operator_id where l.ended_at is null`);
+    const runs = (who: string) => byWho.rows.filter((r) => r.who === who);
+    const amitOn = ["3-Axis VMC", "5-Axis VMC (Non-Continuous)", "Turn Mill Centre"];
+    expect(runs("Amit Patil").every((r) => amitOn.includes(r.machine))).toBe(true);
+    expect(runs("Amit Patil").length).toBeGreaterThanOrEqual(working ? 3 : 2);
+    expect(runs("Priya Shah").filter((r) => r.nonstop).length).toBeGreaterThanOrEqual(2);
+    expect(runs("Priya Shah").some((r) => r.machine === "Universal Testing Machine (UTM)")).toBe(true);
+    // The demo keeps the rules: nobody runs a "must stay" machine alongside another attended one.
+    for (const who of new Set(byWho.rows.map((r) => r.who))) {
+      const attended = runs(who).filter((r) => !r.nonstop);
+      if (attended.some((r) => r.stay)) expect(attended, who).toHaveLength(1);
+    }
+    const mustStay = (await db.select().from(s.machines)).filter((m) => m.operatorMustStay).map((m) => m.name).sort();
+    expect(mustStay).toEqual(["Co-ordinate Measuring Machine (CMM)", "FTIR Spectrometer", "Impact Tester", "Multi Head Micro Hardness Tester", "Universal Testing Machine (UTM)"]);
+    expect((await jobsWith(sql`j.status = 'RUNNING'`)).rows).toHaveLength(running.rows.length);
     const hold = (await jobsWith(sql`j.status = 'ON_HOLD'`)).rows;
     expect(hold.map((h) => h.hold_reason)).toEqual(["Waiting for customer drawings"]);
     const toPlan = (await jobsWith(sql`j.status = 'TO_PLAN'`)).rows;
@@ -79,7 +112,10 @@ describe.skipIf(skip)("planning demo data (database)", () => {
 
   it("one tentative hold expires tomorrow and one has expired; a machine is under maintenance next week; a breakdown in the last 30 days", async () => {
     const holds = await db.execute<{ hold_until: string }>(sql`select hold_until::text from job_bookings where is_tentative and cancelled_at is null order by hold_until`);
-    expect(holds.rows.map((h) => h.hold_until)).toEqual([dayPlus(today, -1), dayPlus(today, 1)]);
+    // The Deccan story: one hold expired yesterday, one expires tomorrow (the departments' boards add later ones).
+    const dates = holds.rows.map((h) => h.hold_until);
+    expect(dates.slice(0, 2)).toEqual([dayPlus(today, -1), dayPlus(today, 1)]);
+    expect(dates.slice(2).every((d) => d > dayPlus(today, 1))).toBe(true);
     const blocks = await db.execute<{ type: string; start_at: string }>(sql`select type, start_at::text from machine_blocks`);
     expect(blocks.rows.some((b) => b.type === "MAINTENANCE" && new Date(b.start_at) > now)).toBe(true);
     expect(blocks.rows.some((b) => b.type === "BREAKDOWN" && istDate(new Date(b.start_at)) >= dayPlus(today, -30))).toBe(true);

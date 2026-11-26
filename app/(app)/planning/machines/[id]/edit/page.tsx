@@ -53,6 +53,7 @@ async function Body({ params }: { params: Promise<{ id: string }> }) {
           serviceIds: d.services.map((s) => s.id),
           parallelJobs: m.parallelJobs,
           runsNonstop: m.runsNonstop,
+          operatorMustStay: m.operatorMustStay,
           location: m.location ?? "",
           status: m.status,
           notes: m.notes ?? "",

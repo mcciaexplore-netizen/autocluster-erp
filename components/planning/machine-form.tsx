@@ -145,6 +145,19 @@ export function MachineForm({ machineId, initial, options }: { machineId: string
               </label>
             )}
           />
+          <Controller
+            control={control}
+            name="operatorMustStay"
+            render={({ field }) => (
+              <label className="flex min-h-11 items-center justify-between gap-3 rounded-xl border px-4 py-2.5 md:col-span-2">
+                <span>
+                  <span className="block font-medium">Needs the operator to stay at the machine</span>
+                  <span className="text-sm text-muted-foreground">On for tests someone must watch, e.g. CMM or UTM: while a job runs on it, that person can&apos;t run another machine. Off for CNC machines, printers and chambers.</span>
+                </span>
+                <Switch checked={field.value} onCheckedChange={field.onChange} />
+              </label>
+            )}
+          />
           <Field label="Notes" optional error={e.notes?.message} className="md:col-span-2">
             {(p) => <Textarea {...p} rows={2} {...register("notes")} maxLength={2000} />}
           </Field>

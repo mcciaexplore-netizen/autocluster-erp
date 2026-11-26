@@ -43,6 +43,7 @@ async function checkRow(tx: Tx, v: MachineFormValues) {
       nablAccredited: v.nablAccredited,
       parallelJobs: v.parallelJobs,
       runsNonstop: v.runsNonstop,
+      operatorMustStay: v.operatorMustStay,
       location: clean(v.location),
       status: v.status,
       isActive: v.status !== "INACTIVE",

@@ -43,7 +43,10 @@ export function InsightsFilters({
   dept,
   departments,
   periods = "inventory",
+  deptSlot,
 }: {
+  /** Planning: department chips (only their own departments) instead of the department list. */
+  deptSlot?: React.ReactNode;
   from: string;
   to: string;
   dept: string | null;
@@ -93,6 +96,7 @@ export function InsightsFilters({
         To
         <Input type="date" className="h-11 w-40" value={to} min={from} onChange={(e) => e.target.value && go({ to: e.target.value })} />
       </label>
+      {deptSlot ?? (
       <label className="flex flex-col gap-1.5 text-sm font-medium">
         Department
         <Select value={dept ?? ALL} onValueChange={(v) => go({ dept: v === ALL ? null : v })}>
@@ -109,6 +113,7 @@ export function InsightsFilters({
           </SelectContent>
         </Select>
       </label>
+      )}
     </div>
   );
 }
