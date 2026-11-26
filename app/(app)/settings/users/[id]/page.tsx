@@ -55,7 +55,7 @@ async function Detail({ params }: { params: Promise<{ id: string }> }) {
         id={u.id}
         roles={o.roles}
         departments={o.departments}
-        initial={{ name: u.name, canSignIn: u.canSignIn, email: u.email, mobile: u.mobile, roleIds: u.roleIds, allDepartments: u.allDepartments, deptCodes: u.deptCodes }}
+        initial={{ name: u.name, canSignIn: u.canSignIn, email: u.email, mobile: u.mobile, roleIds: u.roleIds, allDepartments: u.allDepartments, deptCodes: u.deptCodes, maxMachines: u.maxMachines == null ? "" : String(u.maxMachines) }}
         status={{ deactivated: !!u.deactivatedAt, hasAccount: u.hasAccount, isSelf: me?.id === u.id }}
       />
       <section className="mt-6 rounded-2xl border bg-card p-4 sm:p-6">

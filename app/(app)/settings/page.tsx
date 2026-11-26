@@ -115,6 +115,7 @@ async function Form() {
         activityKeepMonths: s.activityKeepMonths,
         signInKeepDays: s.signInKeepDays,
         actualVsQuotedAlertPct: s.actualVsQuotedAlertPct,
+        maxMachinesPerPerson: s.maxMachinesPerPerson,
         readyWhatsappTemplate: s.readyWhatsappTemplate,
       }}
     />

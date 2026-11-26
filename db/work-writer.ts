@@ -14,15 +14,59 @@ import { jobBookings, jobs, jobTimeLogs, machines, teamMembers, tickets } from "
 
 type Conn = DB | Tx;
 
-/** Start refused because this operator is already running another job (the screen offers to pause it). */
-export class OtherJobRunningError extends UserFacingError {
+/** What a person is running right now (shown when a Start is refused, each with a Pause button). */
+export interface RunningJob {
+  jobId: string;
+  ticketNo: string;
+  machine: string;
+}
+
+/**
+ * Start refused because of what the person is already running: at their limit ("You're already
+ * running 4 machines (your limit).") or a machine that needs them to stay. Nothing is paused for them.
+ */
+export class CantStartError extends UserFacingError {
   constructor(
-    public otherJobId: string,
-    public otherTicketNo: string,
+    message: string,
+    public running: RunningJob[],
   ) {
-    super(`You're already running ${otherTicketNo}. Pause it and start this one?`);
-    this.name = "OtherJobRunningError";
+    super(message);
+    this.name = "CantStartError";
   }
+}
+
+const shortNo = (ticketNo: string) => ticketNo.split("/").pop() ?? ticketNo;
+const machineWord = (n: number) => `${n} machine${n === 1 ? "" : "s"}`;
+
+/**
+ * Someone may run several machines at once (within their departments):
+ * - up to their limit (Settings > Planning "Machines one person can run at once", or their own number);
+ * - day-and-night machines run on their own once started: they never count toward the limit;
+ * - a machine that "Needs the operator to stay" can't be run alongside anything else (both ways).
+ * Several jobs on the same machine count as one machine.
+ */
+export function checkCanStart(
+  starting: { machineId: string; machine: string; runsNonstop: boolean; operatorMustStay: boolean },
+  others: (RunningJob & { machineId: string | null; runsNonstop: boolean; operatorMustStay: boolean })[],
+  limit: number,
+) {
+  // Day-and-night jobs keep running on their own: they never hold the person at a machine or count.
+  const attended = others.filter((o) => !o.runsNonstop);
+  const stay = attended.find((o) => o.operatorMustStay);
+  if (stay) throw new CantStartError(`${stay.machine} needs you to stay at the machine while ${shortNo(stay.ticketNo)} is running. Pause or finish it first.`, attended);
+  if (starting.runsNonstop) return;
+  const elsewhere = attended.filter((o) => o.machineId !== starting.machineId);
+  if (starting.operatorMustStay && elsewhere.length)
+    throw new CantStartError(`${starting.machine} needs you to stay at the machine, and you're running ${elsewhere.map((o) => shortNo(o.ticketNo)).join(", ")}. Pause ${elsewhere.length === 1 ? "it" : "them"} first.`, elsewhere);
+  const machinesRunning = new Set(elsewhere.map((o) => o.machineId ?? o.jobId)).size;
+  if (machinesRunning >= limit) throw new CantStartError(`You're already running ${machineWord(machinesRunning)} (your limit).`, elsewhere);
+}
+
+/** The person's limit: their own number, or the Settings > Planning one. */
+async function machineLimit(conn: Conn, operatorId: string) {
+  const r = await conn.execute<{ n: number }>(sql`
+    select coalesce((select max_machines from app_users where team_member_id = ${operatorId}), (select max_machines_per_person from settings where id = 1), 4)::int as n`);
+  return Number(r.rows[0]?.n ?? 4);
 }
 
 async function lockJob(tx: Tx, jobId: string) {
@@ -71,8 +115,8 @@ export class NeedMachineError extends UserFacingError {
 }
 
 /**
- * Start (or Resume) a job. Only one running job per operator: if another is running, it is
- * refused (OtherJobRunningError) unless `pauseOther` is set, which pauses that one first.
+ * Start (or Resume) a job. Starting never pauses anything else: what the person may run at once
+ * is checked by checkCanStart (CantStartError lists what they're running, to pause by hand).
  * With no booking covering now, a machine must be given (NeedMachineError asks for it): a booking
  * starting now is made on it for the remaining time needed, with the normal clash rules, and the
  * job's later booking can be removed. Time logs always point to the booking they ran in.
@@ -80,7 +124,7 @@ export class NeedMachineError extends UserFacingError {
 export async function startJob(
   db: Conn,
   jobId: string,
-  opts: { operatorId: string | null; pauseOther?: boolean; machineId?: string | null; removeLaterBookingId?: string | null; now?: Date },
+  opts: { operatorId: string | null; machineId?: string | null; removeLaterBookingId?: string | null; now?: Date },
 ) {
   const now = opts.now ?? new Date();
   return db.transaction(async (tx) => {
@@ -88,19 +132,6 @@ export async function startJob(
     if (j.job.status === "RUNNING") throw new UserFacingError(`${j.ticketNo} is already running.`);
     if (j.job.status === "DONE" || j.job.status === "HANDED_OVER") throw new UserFacingError(`${j.ticketNo} is already done.`);
     const who = await operatorName(tx, opts.operatorId);
-    if (opts.operatorId) {
-      const [other] = await tx
-        .select({ jobId: jobTimeLogs.jobId, ticketNo: tickets.ticketNo })
-        .from(jobTimeLogs)
-        .innerJoin(jobs, eq(jobs.id, jobTimeLogs.jobId))
-        .innerJoin(tickets, eq(tickets.id, jobs.ticketId))
-        .where(and(eq(jobTimeLogs.operatorId, opts.operatorId), isNull(jobTimeLogs.endedAt), ne(jobTimeLogs.jobId, jobId)))
-        .limit(1);
-      if (other) {
-        if (!opts.pauseOther) throw new OtherJobRunningError(other.jobId, other.ticketNo);
-        await pauseInTx(tx, other.jobId, "Other", `Started ${j.ticketNo}`, now, who);
-      }
-    }
     const bookings = await tx
       .select({ id: jobBookings.id, machineId: jobBookings.machineId, startAt: jobBookings.startAt, endAt: jobBookings.endAt, hours: jobBookings.hours, machine: machines.name })
       .from(jobBookings)
@@ -134,6 +165,29 @@ export async function startJob(
       // The normal clash rules: refused (and not started) if the machine is booked by another job now.
       const r = await bookTime(tx, { jobId, machineId: opts.machineId, start: now, hours, operatorId: opts.operatorId, exactStart: true, note: "Booked when the work started", createdBy: who }, { now });
       current = { id: r.booking.id, machineId: r.booking.machineId, machine: r.machine };
+    }
+    const [mc] = await tx
+      .select({ name: machines.name, runsNonstop: machines.runsNonstop, operatorMustStay: machines.operatorMustStay, parallelJobs: machines.parallelJobs })
+      .from(machines)
+      .where(eq(machines.id, current.machineId));
+    // The machine's "Jobs at the same time" still holds.
+    const onMachine = await tx
+      .select({ jobId: jobTimeLogs.jobId })
+      .from(jobTimeLogs)
+      .where(and(eq(jobTimeLogs.machineId, current.machineId), isNull(jobTimeLogs.endedAt), ne(jobTimeLogs.jobId, jobId)));
+    const jobsOn = new Set(onMachine.map((r) => r.jobId)).size;
+    if (mc && jobsOn >= mc.parallelJobs)
+      throw new UserFacingError(`${mc.name} is already running ${jobsOn} job${jobsOn === 1 ? "" : "s"}, as many as it can run at the same time.`);
+    if (opts.operatorId && mc) {
+      const others = await tx
+        .select({ jobId: jobTimeLogs.jobId, ticketNo: tickets.ticketNo, machineId: jobTimeLogs.machineId, machine: sql<string>`coalesce(${machines.name}, 'No machine')`, runsNonstop: sql<boolean>`coalesce(${machines.runsNonstop}, false)`, operatorMustStay: sql<boolean>`coalesce(${machines.operatorMustStay}, false)` })
+        .from(jobTimeLogs)
+        .innerJoin(jobs, eq(jobs.id, jobTimeLogs.jobId))
+        .innerJoin(tickets, eq(tickets.id, jobs.ticketId))
+        .leftJoin(machines, eq(machines.id, jobTimeLogs.machineId))
+        .where(and(eq(jobTimeLogs.operatorId, opts.operatorId), isNull(jobTimeLogs.endedAt), ne(jobTimeLogs.jobId, jobId)))
+        .orderBy(asc(jobTimeLogs.startedAt));
+      checkCanStart({ machineId: current.machineId, machine: mc.name, runsNonstop: mc.runsNonstop, operatorMustStay: mc.operatorMustStay }, others, await machineLimit(tx, opts.operatorId));
     }
     const resume = j.job.status === "ON_HOLD";
     await tx.insert(jobTimeLogs).values({ jobId, bookingId: current.id, machineId: current.machineId, operatorId: opts.operatorId, startedAt: now });

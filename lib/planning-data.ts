@@ -20,6 +20,7 @@ import { isOverrun, quotedVsActual } from "@/lib/planning/work";
 import { chooseDept, deptIn, inScope, PLANNING_DEPT_COOKIE, planningScope, type DeptChoice, type DeptScope } from "@/lib/planning/dept-scope";
 import { cookies } from "next/headers";
 import { forbidden } from "next/navigation";
+import { alsoRunning } from "@/lib/planning/board";
 import { isOutOfUse, liveStatus, type LiveStatus } from "@/lib/planning/live-status";
 
 /**
@@ -695,6 +696,24 @@ export async function getDepartmentBoard(f: { dept: string | null; date: string 
       return { ...m, usePct: use.bookedPct };
     });
   const holidaysThisWeek = plan.holidays.filter((h) => h.date >= week.from && h.date < dayPlus(week.from, 7)).map((h) => ({ date: h.date, name: h.name }));
+  // Who is running what right now (several machines at once is normal): on the machines they may see.
+  const [logs, team, seeable] = await Promise.all([
+    runningLogs(db),
+    db.select({ id: teamMembers.id, name: teamMembers.name }).from(teamMembers),
+    db.select({ id: machines.id }).from(machines).where(deptIn(sql`${machines.deptCode}`, scope)),
+  ]);
+  const ok = new Set(seeable.map((m) => m.id));
+  const open = logs.filter((l) => l.operator_id && l.machine_id && ok.has(l.machine_id));
+  const nameOf = (id: string) => team.find((x) => x.id === id)?.name ?? "Someone";
+  const onBoard = new Set(machinesOut.map((m) => m.id));
+  const perPerson = new Map<string, Set<string>>();
+  for (const l of open) if (onBoard.has(l.machine_id!)) perPerson.set(l.operator_id!, (perPerson.get(l.operator_id!) ?? new Set()).add(l.machine_id!));
+  const bookings = t.bookings.map((b) => {
+    const mine = open.find((l) => l.job_id === b.jobId && l.machine_id === b.machineId && new Date(b.start) <= now && new Date(b.end) > now);
+    if (!mine) return b;
+    const others = open.filter((l) => l.operator_id === mine.operator_id && l.job_id !== b.jobId).map((l) => l.ticket_no);
+    return { ...b, alsoRunning: alsoRunning(nameOf(mine.operator_id!), [...new Set(others)]) };
+  });
   return {
     weekFrom: week.from,
     today: istDate(now),
@@ -703,7 +722,7 @@ export async function getDepartmentBoard(f: { dept: string | null; date: string 
     holidays: holidaysThisWeek,
     allHolidays: plan.holidays.map((h) => h.date),
     machines: machinesOut,
-    bookings: t.bookings,
+    bookings,
     blocks: t.blocks,
     toPlan: t.toPlan,
     options: t.options,
@@ -711,6 +730,7 @@ export async function getDepartmentBoard(f: { dept: string | null; date: string 
       running: machinesOut.filter((m) => m.live.kind === "running").length,
       free: machinesOut.filter((m) => m.live.kind === "free").length,
       weekPct: available > 0 ? (booked / available) * 100 : null,
+      people: [...perPerson].map(([id, ms]) => ({ name: nameOf(id), machines: ms.size })),
     },
   };
 }

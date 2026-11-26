@@ -89,7 +89,7 @@ export function DepartmentBoard({ data, choice, full24 }: { data: DepartmentBoar
       </div>
 
       <p className="text-sm font-medium" aria-live="polite">
-        {boardSummary(data.summary.running, data.summary.free, data.summary.weekPct)}
+        {boardSummary(data.summary.running, data.summary.free, data.summary.weekPct, data.summary.people)}
       </p>
 
       {!data.machines.length ? (

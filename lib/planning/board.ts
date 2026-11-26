@@ -111,6 +111,16 @@ export function bookedHoursByDay(segments: DaySegment[]): number[] {
 export const hoursText = (h: number) => `${h.toLocaleString("en-IN", { maximumFractionDigits: 1 })} h`;
 
 /** "Running now: 2 · Free now: 4 · This week: 62% booked". */
-export function boardSummary(running: number, free: number, weekPct: number | null): string {
-  return `Running now: ${running} · Free now: ${free} · This week: ${weekPct == null ? "-" : `${Math.round(weekPct)}%`} booked`;
+export function boardSummary(running: number, free: number, weekPct: number | null, people: { name: string; machines: number }[] = []): string {
+  // Who is running what: "Amit: 3 machines · Rohan: 1" (most first; the word only once).
+  const who = [...people]
+    .sort((a, b) => b.machines - a.machines || a.name.localeCompare(b.name))
+    .map((p, i) => `${p.name.split(" ")[0]}: ${p.machines}${i === 0 ? ` machine${p.machines === 1 ? "" : "s"}` : ""}`);
+  return [`Running now: ${running}`, `Free now: ${free}`, ...who, `This week: ${weekPct == null ? "-" : `${Math.round(weekPct)}%`} booked`].join(" · ");
+}
+
+/** "Amit is also running 0060, 0263" for a running block (null when they run only this one). */
+export function alsoRunning(name: string | null, others: string[]): string | null {
+  if (!name || !others.length) return null;
+  return `${name.split(" ")[0]} is also running ${others.map((t) => t.split("/").pop()).join(", ")}`;
 }

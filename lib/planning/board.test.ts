@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { bookedHoursByDay, boardSummary, daySegments, hourLabels, nonWorking, visibleRange, workingParts } from "./board";
+import { alsoRunning, bookedHoursByDay, boardSummary, daySegments, hourLabels, nonWorking, visibleRange, workingParts } from "./board";
 import { istAt, patternFromSettings } from "./hours";
 
 // Week of Monday 23 Nov 2026 (India time).
@@ -67,5 +67,8 @@ describe("Department board drawing rules", () => {
     ];
     expect(bookedHoursByDay(segs)).toEqual([0, 4, 0, 4, 0, 0, 0]);
     expect(boardSummary(2, 4, 61.6)).toBe("Running now: 2 · Free now: 4 · This week: 62% booked");
+    expect(boardSummary(3, 2, 40, [{ name: "Rohan Deshpande", machines: 1 }, { name: "Amit Patil", machines: 3 }])).toBe("Running now: 3 · Free now: 2 · Amit: 3 machines · Rohan: 1 · This week: 40% booked");
+    expect(alsoRunning("Amit Patil", ["ACDRI/TK/2026-27/0060", "ACDRI/TK/2026-27/0263"])).toBe("Amit is also running 0060, 0263");
+    expect(alsoRunning("Amit Patil", [])).toBeNull();
   });
 });

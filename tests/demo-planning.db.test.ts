@@ -81,6 +81,23 @@ describe.skipIf(skip)("planning demo data (database)", () => {
     for (const dept of new Set(ms.filter((m) => m.isActive && m.runsNonstop).map((m) => m.deptCode))) expect(depts.has(dept), dept).toBe(true);
     // In working hours, operator machines run too (a department whose only machine is busy with the operator's own job for today may have none).
     if (working) expect(depts.size).toBeGreaterThanOrEqual(3);
+    // Several machines at once: Amit on the 5-Axis, 3-Axis and Turn Mill; Priya with 2 chambers and the UTM.
+    const byWho = await db.execute<{ who: string; machine: string; nonstop: boolean; stay: boolean }>(sql`
+      select tm.name as who, m.name as machine, m.runs_nonstop as nonstop, m.operator_must_stay as stay
+      from job_time_logs l join machines m on m.id = l.machine_id join team_members tm on tm.id = l.operator_id where l.ended_at is null`);
+    const runs = (who: string) => byWho.rows.filter((r) => r.who === who);
+    const amitOn = ["3-Axis VMC", "5-Axis VMC (Non-Continuous)", "Turn Mill Centre"];
+    expect(runs("Amit Patil").every((r) => amitOn.includes(r.machine))).toBe(true);
+    expect(runs("Amit Patil").length).toBeGreaterThanOrEqual(working ? 3 : 2);
+    expect(runs("Priya Shah").filter((r) => r.nonstop).length).toBeGreaterThanOrEqual(2);
+    expect(runs("Priya Shah").some((r) => r.machine === "Universal Testing Machine (UTM)")).toBe(true);
+    // The demo keeps the rules: nobody runs a "must stay" machine alongside another attended one.
+    for (const who of new Set(byWho.rows.map((r) => r.who))) {
+      const attended = runs(who).filter((r) => !r.nonstop);
+      if (attended.some((r) => r.stay)) expect(attended, who).toHaveLength(1);
+    }
+    const mustStay = (await db.select().from(s.machines)).filter((m) => m.operatorMustStay).map((m) => m.name).sort();
+    expect(mustStay).toEqual(["Co-ordinate Measuring Machine (CMM)", "FTIR Spectrometer", "Impact Tester", "Multi Head Micro Hardness Tester", "Universal Testing Machine (UTM)"]);
     expect((await jobsWith(sql`j.status = 'RUNNING'`)).rows).toHaveLength(running.rows.length);
     const hold = (await jobsWith(sql`j.status = 'ON_HOLD'`)).rows;
     expect(hold.map((h) => h.hold_reason)).toEqual(["Waiting for customer drawings"]);

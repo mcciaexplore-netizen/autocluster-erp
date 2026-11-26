@@ -5,7 +5,7 @@ import { createMachine } from "@/db/machine-writer";
 import { addPurchaseOrder } from "@/db/po-writer";
 import * as s from "@/db/schema";
 import { changeQuotationStatus } from "@/db/ticket-writer";
-import { finishJob, handOverJob, NeedMachineError, OtherJobRunningError, pauseJob, startJob } from "@/db/work-writer";
+import { finishJob, handOverJob, NeedMachineError, pauseJob, startJob } from "@/db/work-writer";
 import { istAt } from "@/lib/planning/hours";
 import { actualHours, quotedVsActual } from "@/lib/planning/work";
 import { EMPTY_MACHINE_FORM } from "@/lib/validation/planning";
@@ -63,20 +63,6 @@ describe.skipIf(skip)("operators' work on jobs (database)", () => {
     expect((await db.select().from(s.jobs).where(eq(s.jobs.id, a.id)))[0]).toMatchObject({ status: "HANDED_OVER", handedOverTo: "Rohan Kulkarni (Sahyadri)" });
     const ev = await db.select().from(s.jobEvents).where(eq(s.jobEvents.jobId, a.id));
     expect(ev.map((e) => e.type)).toEqual(["OPENED", "BOOKED", "STARTED", "PAUSED", "RESUMED", "DONE", "HANDED_OVER"]);
-  });
-
-  it("one running job per operator: starting another is refused, or pauses the first when asked", async () => {
-    const { a, b, m, op } = await setup();
-    const m2 = await createMachine(db, { ...EMPTY_MACHINE_FORM, name: "Second VMC", deptCode: "PPF" });
-    await startJob(db, a.id, { operatorId: op.id, machineId: m.id, now: at("2026-11-30", "10:00") });
-    const err = await startJob(db, b.id, { operatorId: op.id, machineId: m2.id, now: at("2026-11-30", "11:00") }).catch((e) => e);
-    expect(err).toBeInstanceOf(OtherJobRunningError);
-    expect(err.message).toMatch(/You're already running ACDRI\/TK\/.* Pause it and start this one\?/);
-    await startJob(db, b.id, { operatorId: op.id, machineId: m2.id, pauseOther: true, now: at("2026-11-30", "11:00") });
-    const [ja, jb] = await Promise.all([db.select().from(s.jobs).where(eq(s.jobs.id, a.id)), db.select().from(s.jobs).where(eq(s.jobs.id, b.id))]);
-    expect(ja[0]).toMatchObject({ status: "ON_HOLD" });
-    expect(ja[0].holdReason).toMatch(/^Started ACDRI\/TK/);
-    expect(jb[0].status).toBe("RUNNING");
   });
 
   it("Start with no booking covering now: asks which machine, books from now for the time still needed, can remove the later booking; refused if another job is on that machine now", async () => {

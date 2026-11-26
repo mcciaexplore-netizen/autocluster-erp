@@ -5,7 +5,6 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, useSyncExternalStore, useTransition } from "react";
 import { toast } from "sonner";
-import { useConfirm } from "@/components/common/confirm";
 import { useCan, useMe } from "@/components/auth/permissions-provider";
 import { useFloor } from "@/components/floor/floor-context";
 import { Button } from "@/components/ui/button";
@@ -14,6 +13,8 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { finishJobAction, handOverAction, pauseJobAction, readySentAction, startJobAction, type NeedMachine } from "@/lib/actions/work";
+
+type RunningJob = { jobId: string; ticketNo: string; machine: string };
 import { Checkbox } from "@/components/ui/checkbox";
 import type { TodayCard, TodayData } from "@/lib/planning-data";
 import { formatHours, formatWhen, hhmm, istDate, istMinutes } from "@/lib/planning/hours";
@@ -61,6 +62,8 @@ const when = (c: TodayCard, today: string) => {
 type DoneFlow = { card: TodayCard; step: "form" | "materials" | "ready" };
 
 /** "Today" for operators: their jobs, with big Start / Pause / Resume / Done buttons. */
+type More = { machineId?: string | null; removeLaterBookingId?: string | null };
+
 export function TodayBoard({ data }: { data: TodayData }) {
   const can = useCan();
   const router = useRouter();
@@ -70,12 +73,15 @@ export function TodayBoard({ data }: { data: TodayData }) {
   // Everyone works as themselves. Managers and Admins can look at someone else's day (or everyone's).
   const mineId = self.teamMemberId && data.team.some((t) => t.id === self.teamMemberId) ? self.teamMemberId : "";
   const me = !self.mayRecordForOthers ? (self.teamMemberId ?? "") : stored === "all" ? "" : data.team.some((t) => t.id === stored) ? stored : mineId;
-  const [dialog, confirm] = useConfirm();
   const [pending, start] = useTransition();
-  const [pauseFor, setPauseFor] = useState<TodayCard | null>(null);
+  const [pauseFor, setPauseFor] = useState<{ jobId: string; ticketNo: string } | null>(null);
+  // Start refused (at the limit, or a machine that needs the person to stay): what they're running, each with Pause.
+  const [blocked, setBlocked] = useState<{ card: TodayCard; more: More; message: string; running: RunningJob[] } | null>(null);
+  // After pausing from that list, the Start is tried again.
+  const [retry, setRetry] = useState<{ card: TodayCard; more: More } | null>(null);
   const [done, setDone] = useState<DoneFlow | null>(null);
   const [handFor, setHandFor] = useState<TodayCard | null>(null);
-  const [askMachine, setAskMachine] = useState<{ card: TodayCard; info: NeedMachine; more: { pauseOther?: boolean } } | null>(null);
+  const [askMachine, setAskMachine] = useState<{ card: TodayCard; info: NeedMachine; more: More } | null>(null);
 
   const mine = data.cards.filter((c) => !me || c.operatorIds.includes(me));
   const unassigned = me ? data.cards.filter((c) => !c.operatorIds.length && ["PLANNED", "TO_PLAN"].includes(c.status)) : [];
@@ -84,12 +90,11 @@ export function TodayBoard({ data }: { data: TodayData }) {
   const onHold = mine.filter((c) => c.status === "ON_HOLD");
   const finished = mine.filter((c) => c.status === "DONE");
 
-  type More = { pauseOther?: boolean; machineId?: string | null; removeLaterBookingId?: string | null };
   const doStart = (c: TodayCard, more: More = {}) =>
     start(async () => {
       const r = await startJobAction(c.jobId, me || null, more);
       if (!r.ok) {
-        if (r.otherRunning && (await confirm({ title: "Another job is running", description: r.message, confirmLabel: `Pause ${r.otherRunning} and start` }))) return void doStart(c, { ...more, pauseOther: true });
+        if (r.running) return void setBlocked({ card: c, more, message: r.message, running: r.running });
         if (r.needMachine) return void setAskMachine({ card: c, info: r.needMachine, more });
         return void toast.error(r.message);
       }
@@ -213,7 +218,53 @@ export function TodayBoard({ data }: { data: TodayData }) {
       {unassigned.length ? <Section title="Today, no operator chosen" list={unassigned.filter((c) => c.start)} /> : null}
       <Section title="Done, not handed over yet" list={finished} />
 
-      <PauseDialog card={pauseFor} onClose={() => setPauseFor(null)} operatorId={me || null} />
+      <PauseDialog
+        card={pauseFor}
+        onClose={() => (setPauseFor(null), setRetry(null))}
+        onPaused={() => {
+          if (!retry) return false;
+          doStart(retry.card, retry.more);
+          return true;
+        }}
+        operatorId={me || null}
+      />
+      {blocked ? (
+        <Dialog open onOpenChange={(o) => !o && setBlocked(null)}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Can&apos;t start {blocked.card.ticketNo} yet</DialogTitle>
+              <DialogDescription>{blocked.message}</DialogDescription>
+            </DialogHeader>
+            <ul className="flex flex-col gap-2">
+              {blocked.running.map((r) => (
+                <li key={r.jobId} className="flex items-center justify-between gap-3 rounded-xl border p-3">
+                  <span className="min-w-0">
+                    <span className="block font-semibold tabular-nums">{r.ticketNo}</span>
+                    <span className="block text-sm text-muted-foreground">{r.machine}</span>
+                  </span>
+                  <Button
+                    variant="outline"
+                    className="h-11"
+                    onClick={() => {
+                      setRetry({ card: blocked.card, more: blocked.more });
+                      setBlocked(null);
+                      setPauseFor({ jobId: r.jobId, ticketNo: r.ticketNo });
+                    }}
+                  >
+                    <Pause aria-hidden /> Pause
+                  </Button>
+                </li>
+              ))}
+            </ul>
+            <p className="text-sm text-muted-foreground">Nothing is paused for you. Pause one, and {blocked.card.ticketNo} starts straight after.</p>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setBlocked(null)}>
+                Close
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      ) : null}
       {done ? <DoneDialog flow={done} setFlow={setDone} operatorId={me || null} template={data.readyTemplate} orgName={data.orgName} /> : null}
       <HandOverDialog card={handFor} onClose={() => setHandFor(null)} today={data.today} />
       {askMachine ? (
@@ -227,7 +278,6 @@ export function TodayBoard({ data }: { data: TodayData }) {
           }}
         />
       ) : null}
-      {dialog}
     </div>
   );
 }
@@ -286,7 +336,7 @@ function MachineDialog({ ask, onClose, onStart }: { ask: { card: TodayCard; info
   );
 }
 
-function PauseDialog({ card, onClose, operatorId }: { card: TodayCard | null; onClose: () => void; operatorId: string | null }) {
+function PauseDialog({ card, onClose, onPaused, operatorId }: { card: { jobId: string; ticketNo: string } | null; onClose: () => void; onPaused?: () => boolean; operatorId: string | null }) {
   const floor = useFloor();
   const router = useRouter();
   const [reason, setReason] = useState<string>("");
@@ -318,10 +368,11 @@ function PauseDialog({ card, onClose, operatorId }: { card: TodayCard | null; on
                 const r = await pauseJobAction(card!.jobId, reason, note || null, operatorId);
                 if (!r.ok) return void toast.error(r.message);
                 toast.success(`${card!.ticketNo} paused`);
-                floor?.finished();
-                onClose();
                 setReason("");
                 setNote("");
+                // Paused to make room for another Start: that Start runs now (and finishes the shared-device turn).
+                if (!onPaused?.()) floor?.finished();
+                onClose();
                 router.refresh();
               })
             }

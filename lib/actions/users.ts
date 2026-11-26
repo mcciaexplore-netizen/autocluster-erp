@@ -49,6 +49,7 @@ const userSchema = z.object({
   roleIds: z.array(z.number().int().positive()).max(50),
   allDepartments: z.boolean(),
   deptCodes: z.array(z.string().max(10)).max(20),
+  maxMachines: z.number().nullable().optional(),
 });
 
 /** Add or change a person. A temporary password, when one was made, is returned once and never stored. */

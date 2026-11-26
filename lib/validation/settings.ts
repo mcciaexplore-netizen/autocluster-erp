@@ -79,6 +79,7 @@ export const settingsSchema = z.object({
   signInKeepDays: z.number({ message: "Enter a number of days, e.g. 90." }).int({ message: "Use a whole number." }).min(7, { message: "Keep at least 7 days." }).max(730, { message: "Use 730 days or fewer." }),
   overrunWarningPct: z.number({ message: "Enter a percentage, e.g. 50." }).int({ message: "Use a whole number." }).min(1, { message: "Use 1 or more." }).max(500, { message: "Use 500 or less." }),
   actualVsQuotedAlertPct: pct("e.g. 10"),
+  maxMachinesPerPerson: z.number({ message: "Enter a number, e.g. 4." }).int({ message: "Use a whole number." }).min(1, { message: "Use 1 or more." }).max(20, { message: "Use 20 or fewer." }),
   readyWhatsappTemplate: z.string().trim().min(10, { message: "Please write the WhatsApp message." }).max(1500, { message: "Please keep the message under 1,500 characters." }),
 }).superRefine((v, ctx) => {
   const m = (t: string) => Number(t.slice(0, 2)) * 60 + Number(t.slice(3, 5));

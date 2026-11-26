@@ -23,6 +23,8 @@ export type GridBooking = {
   tentative: boolean;
   holdExpired: boolean;
   late: boolean;
+  /** A running job: "Amit is also running 0060, 0263". */
+  alsoRunning?: string | null;
 };
 export type GridBlock = { id: string; type: string; start: string; end: string; note: string | null };
 
@@ -207,7 +209,7 @@ function BookingBlock({ b, size, style, draggable, onDragEndAt }: { b: GridBooki
             const colW = e.currentTarget.parentElement?.getBoundingClientRect().width ?? 1;
             onDragEndAt(e.clientY - startAt.current.y, Math.round((e.clientX - startAt.current.x) / colW));
           }}
-          title={`${b.ticketNo} · ${b.company}\n${times}${b.operator ? ` · ${b.operator}` : ""}`}
+          title={`${b.ticketNo} · ${b.company}\n${times}${b.operator ? ` · ${b.operator}` : ""}${b.alsoRunning ? `\n${b.alsoRunning}` : ""}`}
           aria-label={`${b.ticketNo}, ${b.company}, ${times}`}
           className={cn("absolute z-[5] overflow-hidden rounded-sm border text-left leading-tight shadow-sm", bookingColour(b), b.late && "ring-2 ring-red-600", draggable && "cursor-grab")}
           style={style}
@@ -240,6 +242,7 @@ function BookingBlock({ b, size, style, draggable, onDragEndAt }: { b: GridBooki
             {b.late ? <span className="ml-1 font-medium text-red-700">· Late</span> : null}
           </dd>
         </dl>
+        {b.alsoRunning ? <p className="mt-2 rounded-lg bg-emerald-50 px-2 py-1 text-emerald-900">{b.alsoRunning}</p> : null}
         <Link href={`/planning/jobs?job=${b.jobId}`} className="mt-3 inline-block font-medium text-primary underline-offset-4 hover:underline">
           Open job
         </Link>

@@ -7,13 +7,13 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { db } from "@/db";
 import { UserFacingError } from "@/db/quote-writer";
-import { finishJob, handOverJob, holdJob, logReadyMessage, NeedMachineError, OtherJobRunningError, pauseJob, startJob } from "@/db/work-writer";
+import { finishJob, handOverJob, holdJob, logReadyMessage, NeedMachineError, CantStartError, pauseJob, type RunningJob, startJob } from "@/db/work-writer";
 import { allow } from "@/lib/auth/guard";
 import { doneByFor, logOnBehalf } from "@/lib/auth/done-by";
 import type { Permission } from "@/lib/auth/permissions";
 
 export type NeedMachine = { suggestedMachineId: string | null; machines: { id: string; name: string; deptCode: string; suitable: boolean }[]; hours: number; later: { bookingId: string; machine: string; start: string } | null };
-type Result<T> = { ok: true; data: T } | { ok: false; message: string; otherRunning?: string; needMachine?: NeedMachine };
+type Result<T> = { ok: true; data: T } | { ok: false; message: string; running?: RunningJob[]; needMachine?: NeedMachine };
 
 async function run<T>(perm: Permission | Permission[], fn: () => Promise<T>): Promise<Result<T>> {
   const g = await allow(perm);
@@ -23,7 +23,7 @@ async function run<T>(perm: Permission | Permission[], fn: () => Promise<T>): Pr
     revalidatePath("/", "layout");
     return { ok: true, data };
   } catch (e) {
-    if (e instanceof OtherJobRunningError) return { ok: false, message: e.message, otherRunning: e.otherTicketNo };
+    if (e instanceof CantStartError) return { ok: false, message: e.message, running: e.running };
     if (e instanceof NeedMachineError) return { ok: false, message: e.message, needMachine: { ...e.info, later: e.info.later ? { ...e.info.later, start: e.info.later.start.toISOString() } : null } };
     if (e instanceof UserFacingError) return { ok: false, message: e.message };
     if (e instanceof z.ZodError) return { ok: false, message: e.issues[0]?.message ?? "Some details need a second look." };
@@ -35,13 +35,12 @@ async function run<T>(perm: Permission | Permission[], fn: () => Promise<T>): Pr
 const id = z.string().uuid();
 const opt = id.nullable();
 
-export async function startJobAction(jobId: string, operatorId: string | null, more: { pauseOther?: boolean; machineId?: string | null; removeLaterBookingId?: string | null } = {}) {
+export async function startJobAction(jobId: string, operatorId: string | null, more: { machineId?: string | null; removeLaterBookingId?: string | null } = {}) {
   return run("planning.operate", async () => {
     await assertInScope("planning.operate", [await jobDept(id.parse(jobId))]);
     const who = await doneByFor(opt.parse(operatorId));
     const r = await startJob(db, id.parse(jobId), {
       operatorId: who.id,
-      pauseOther: !!more.pauseOther,
       machineId: more.machineId ? id.parse(more.machineId) : null,
       removeLaterBookingId: more.removeLaterBookingId ? id.parse(more.removeLaterBookingId) : null,
     });

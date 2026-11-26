@@ -514,6 +514,9 @@ export function SettingsForm({ initial, stages }: { initial: SettingsInput; stag
             <Field label="Took longer than quoted alert (%)" required error={e.actualVsQuotedAlertPct?.message} helper="Flag per-hour jobs that took this much longer than quoted, e.g. 10">
               {(p) => <Input {...p} type="number" min={1} max={100} step={1} inputMode="numeric" {...register("actualVsQuotedAlertPct", num)} />}
             </Field>
+            <Field label="Machines one person can run at once" required error={e.maxMachinesPerPerson?.message} helper="e.g. 4. Day-and-night machines don't count. A person's own number can be set on their user page.">
+              {(p) => <Input {...p} type="number" min={1} max={20} step={1} inputMode="numeric" {...register("maxMachinesPerPerson", num)} />}
+            </Field>
           </div>
           <p className="text-sm text-muted-foreground">
             In the &ldquo;ready&rdquo; message, these words are filled in for you:{" "}
