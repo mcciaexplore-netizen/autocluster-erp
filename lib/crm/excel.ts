@@ -29,7 +29,7 @@ function headerRow(ws: ExcelJS.Worksheet) {
 /** The template: the right columns, one example row, and a Lists sheet with the allowed values. */
 export async function importTemplate(lists: ImportLists): Promise<Uint8Array> {
   const wb = new ExcelJS.Workbook();
-  wb.creator = "AutoCluster ERP";
+  wb.creator = "ERPOne";
   const ws = wb.addWorksheet("Enquiries");
   ws.columns = IMPORT_COLUMNS.map((c) => ({ header: c.required ? `${c.header} *` : c.header, key: c.key, width: c.width }));
   headerRow(ws);
@@ -140,7 +140,7 @@ export async function readImportFile(bytes: Uint8Array): Promise<{ rows: { rowNo
 /** Problem rows with their original values and the problems listed, to fix and upload again. */
 export async function problemRowsWorkbook(rows: CheckedRow[]): Promise<Uint8Array> {
   const wb = new ExcelJS.Workbook();
-  wb.creator = "AutoCluster ERP";
+  wb.creator = "ERPOne";
   const ws = wb.addWorksheet("Enquiries");
   ws.columns = [
     ...IMPORT_COLUMNS.map((c) => ({ header: c.required ? `${c.header} *` : c.header, key: c.key, width: c.width })),
@@ -158,7 +158,7 @@ export async function problemRowsWorkbook(rows: CheckedRow[]): Promise<Uint8Arra
 /** "Download as Excel" from the list view: the rows shown, with the current filters and sort. */
 export async function exportLeadsWorkbook(leads: BoardLead[], stages: BoardStage[], title: string): Promise<Uint8Array> {
   const wb = new ExcelJS.Workbook();
-  wb.creator = "AutoCluster ERP";
+  wb.creator = "ERPOne";
   const ws = wb.addWorksheet("Enquiries");
   ws.columns = [
     { header: "Enquiry no.", key: "leadNo", width: 22 },

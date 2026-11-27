@@ -31,6 +31,14 @@ export async function getSettings() {
   return row;
 }
 
+/** The organisation using ERPOne (Settings > Organisation profile), shown under the product name. */
+export async function getOrgName() {
+  await connection();
+  await need();
+  const [row] = await db.select({ orgName: settings.orgName }).from(settings).where(eq(settings.id, 1));
+  return row?.orgName ?? "";
+}
+
 export async function getDepartments() {
   await connection();
   await need();

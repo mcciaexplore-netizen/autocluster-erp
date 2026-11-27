@@ -41,7 +41,7 @@ export async function samplePdf(title: string, rows: [string, string][]): Promis
   page.drawText(title, { x: 150, y: 330, size: 64, font: bold, color: rgb(0.85, 0.2, 0.2), opacity: 0.18, rotate: degrees(35) });
   page.drawRectangle({ x: 40, y: 760, width: 515, height: 50, color: rgb(0.12, 0.16, 0.27) });
   page.drawText(title, { x: 56, y: 778, size: 22, font: bold, color: rgb(1, 1, 1) });
-  page.drawText("Demo document for the AutoCluster ERP. Not a real document.", { x: 56, y: 735, size: 10, font, color: rgb(0.75, 0.1, 0.1) });
+  page.drawText("Demo document for ERPOne. Not a real document.", { x: 56, y: 735, size: 10, font, color: rgb(0.75, 0.1, 0.1) });
   let y = 695;
   for (const [k, v] of rows) {
     page.drawText(k, { x: 56, y, size: 11, font: bold, color: rgb(0.2, 0.2, 0.2) });

@@ -9,18 +9,30 @@ import { FloorBar } from "@/components/floor/floor-context";
 import { DemoChip } from "@/components/demo/try-as";
 import { TRY_AS_ROLES } from "@/db/demo-users";
 import { isDemoMode } from "@/lib/auth/demo-mode";
+import { LogoMark, Wordmark } from "@/components/brand/brand";
+import { getOrgName } from "@/lib/data";
 
+/** The product (ERPOne) with the organisation using it underneath, so the two stay clearly separate. */
 function Logo() {
   return (
-    <Link href="/" className="flex items-center gap-2.5 rounded-lg" aria-label="AutoCluster, go to Home">
-      <span aria-hidden className="grid size-10 place-items-center rounded-xl bg-primary font-title text-lg text-primary-foreground">
-        AC
-      </span>
-      <span className="leading-tight">
-        <span className="block text-base font-semibold text-primary">AutoCluster</span>
-        <span className="block text-xs text-muted-foreground">Pune</span>
+    <Link href="/" className="flex min-w-0 items-center gap-2.5 rounded-lg" aria-label="ERPOne, go to Home">
+      <LogoMark size={40} />
+      <span className="min-w-0 leading-tight">
+        <Wordmark className="block text-lg" />
+        <Suspense fallback={<span className="block h-4" />}>
+          <OrgName />
+        </Suspense>
       </span>
     </Link>
+  );
+}
+
+async function OrgName() {
+  const name = await getOrgName();
+  return (
+    <span className="block h-4 max-w-[9rem] truncate text-xs text-muted-foreground sm:max-w-[16rem] md:max-w-xs" title={name || undefined}>
+      {name}
+    </span>
   );
 }
 

@@ -8,13 +8,21 @@ const outfit = Outfit({ variable: "--font-outfit", subsets: ["latin"], display: 
 const dmSerif = DM_Serif_Display({ variable: "--font-dm-serif", subsets: ["latin"], weight: "400", display: "swap" });
 
 export const metadata: Metadata = {
-  title: { default: "AutoCluster", template: "%s | AutoCluster" },
-  description: "Customers and quotations for AutoCluster, Pune",
+  title: { default: "ERPOne", template: "%s · ERPOne" },
+  description: "ERPOne: enquiries, quotations, orders, planning and stock in one place.",
   robots: { index: false, follow: false },
-  applicationName: "ACDRI ERP",
+  applicationName: "ERPOne",
   // iPhone / iPad "Add to Home Screen"
-  appleWebApp: { capable: true, title: "ACDRI ERP", statusBarStyle: "default" },
-  icons: { apple: "/icons/apple-touch-icon.png" },
+  appleWebApp: { capable: true, title: "ERPOne", statusBarStyle: "default" },
+  // favicon.ico (16, 32, 48) is picked up from app/; the SVG is sharper where browsers support it.
+  icons: {
+    icon: [
+      { url: "/icons/favicon.svg", type: "image/svg+xml" },
+      { url: "/icons/favicon-32.png", sizes: "32x32", type: "image/png" },
+      { url: "/icons/favicon-16.png", sizes: "16x16", type: "image/png" },
+    ],
+    apple: { url: "/icons/apple-touch-icon.png", sizes: "180x180" },
+  },
 };
 
 /** The light theme colour for the browser bar and the installed app. */

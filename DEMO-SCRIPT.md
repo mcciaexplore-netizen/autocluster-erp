@@ -1,4 +1,4 @@
-# ACDRI ERP: demo script
+# ERPOne: demo script
 
 About 25 minutes. One story from enquiry to payment, then the shop floor, the store, the admin controls and the plan ahead. Every step says what to click and what everyone should see.
 

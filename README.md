@@ -1,4 +1,4 @@
-# AutoCluster ERP (demo)
+# ERPOne (demo)
 
 Five modules for front office, department coordinators, the stores and accounts:
 

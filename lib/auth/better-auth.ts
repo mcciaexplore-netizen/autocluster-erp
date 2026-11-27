@@ -20,7 +20,7 @@ export const MIN_PASSWORD = 10;
 
 export function createAuth(db: DB | Tx, opts: { nextCookies?: unknown } = {}) {
   return betterAuth({
-    appName: "AutoCluster ERP",
+    appName: "ERPOne",
     baseURL: {
       // Live, every Preview and local development.
       allowedHosts: ["*.vercel.app", "localhost:*", "127.0.0.1:*", ...(process.env.APP_HOSTS ?? "").split(",").filter(Boolean)],

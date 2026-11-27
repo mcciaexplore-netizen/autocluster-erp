@@ -56,6 +56,6 @@ export function proxy(request: NextRequest) {
 
 export const config = {
   // Everything except Next.js build files and the browser icon.
-  // The install files (manifest, icons) load before anyone signs in.
-  matcher: ["/((?!_next/static|_next/image|favicon.ico|manifest.webmanifest|icons/).*)"],
+  // The install files (manifest, icons) and the logo (brand/) load before anyone signs in.
+  matcher: ["/((?!_next/static|_next/image|favicon.ico|manifest.webmanifest|icons/|brand/).*)"],
 };

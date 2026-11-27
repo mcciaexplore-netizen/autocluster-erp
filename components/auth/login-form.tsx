@@ -39,7 +39,7 @@ export function LoginForm({ next }: { next: string }) {
           </button>
         </div>
         <p id="password-help" className="text-sm text-muted-foreground">
-          Ask the AutoCluster office if you don&apos;t have it.
+          Ask your admin if you don&apos;t have it.
         </p>
         <div id="password-error" aria-live="polite">
           {state.error ? (
