@@ -199,6 +199,7 @@ export async function loadReminder(ticketId: string): Promise<Result<Reminder & 
   const r = buildReminder({
     templates: { whatsapp: s.whatsappTemplate, emailSubject: s.emailSubjectTemplate, emailBody: s.emailBodyTemplate },
     company: contact.companyName,
+    orgName: s.orgName,
     contactName: contact.pocName,
     phone: contact.pocPhone,
     email: contact.pocEmail,

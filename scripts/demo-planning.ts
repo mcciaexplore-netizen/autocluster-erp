@@ -12,6 +12,7 @@
  *   the laser and the CMM.
  */
 import { stageDemoFile } from "./demo-files";
+import { invoicePrefixFor } from "./demo-company";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import type { DB, Tx } from "../db/client";
 import { bookTime } from "../db/booking-writer";
@@ -155,20 +156,11 @@ export async function loadPlanningDemo(conn: DB | Tx, opts: { log?: (m: string) 
   const day = (n: number) => dayPlus(today, n);
   const rnd = seeded(20261121);
 
-  // ---- Organisation profile, holidays --------------------------------------------------------
-  await db
-    .update(s.settings)
-    .set({
-      orgName: "Auto Cluster Development and Research Institute (ACDRI)",
-      orgAddress: "H-Block, Plot No. C-181, Chinchwad East, Mumbai Pune Road, Pune 411 019, Maharashtra",
-      orgPhone: "+91 20 6633 3700",
-      orgEmail: "customersupport@autoclusterpune.org",
-    })
-    .where(eq(s.settings.id, 1));
+  // ---- Holidays (the organisation profile comes from DEMO_COMPANY, see demo-company.ts) ---------
   const year = Number(today.slice(0, 4));
   const holidayRows = [year, year + 1].flatMap((y) => HOLIDAYS.map(([md, name]) => ({ date: `${y}-${md}`, name }))).filter((h) => h.date >= day(-70));
   await db.insert(s.holidays).values(holidayRows);
-  log(`  Organisation profile set to ACDRI; ${holidayRows.length} holidays`);
+  log(`  ${holidayRows.length} holidays`);
 
   const [set] = await db.select().from(s.settings).where(eq(s.settings.id, 1));
   const pattern = patternFromSettings(set, holidayRows.map((h) => h.date));
@@ -299,10 +291,11 @@ export async function loadPlanningDemo(conn: DB | Tx, opts: { log?: (m: string) 
   // ---- Past work, invoiced and paid (chamber tests without a materials list, and custom items) ----
   // Kept off the services that have a materials list, so the Inventory demo's numbers don't change.
   let invSeq = 601;
+  const invPrefix = invoicePrefixFor((await db.select({ p: s.settings.quotePrefix }).from(s.settings))[0].p);
   async function invoiceAndPay(ts: (typeof s.tickets.$inferSelect)[], customer: string, invDay: number, paidDay: number) {
     const total = ts.reduce((a, t) => a + toPaise(t.totalAmount), 0);
     const invDate = day(invDay);
-    const invoiceNumber = `MCCIA/${financialYear(new Date(`${invDate}T00:00:00`))}/0${invSeq++}`;
+    const invoiceNumber = `${invPrefix}/${financialYear(new Date(`${invDate}T00:00:00`))}/0${invSeq++}`;
     const fileName = `SAMPLE-INVOICE-${invoiceNumber.replaceAll("/", "-")}.pdf`;
     const bytes = await samplePdf("SAMPLE TAX INVOICE", [
       ["Invoice no.", invoiceNumber],

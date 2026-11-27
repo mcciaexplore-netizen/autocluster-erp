@@ -31,7 +31,7 @@ describe.skipIf(skip)("CRM defaults and lists (database)", () => {
     expect(await db.select().from(s.crmTags)).toHaveLength(DEFAULT_TAGS.length);
     const [set] = await db.select().from(s.settings);
     expect(set.quoteCreatedMoveToStageId).toBe(stages[2].id);
-    expect(set.leadPrefix).toBe("ACDRI/EN");
+    expect(set.leadPrefix).toBe("DMC/EN");
   });
 
   it("adding the defaults again changes nothing (safe to run on live)", async () => {

@@ -38,7 +38,7 @@ The website is **https://autocluster-erp.vercel.app**. Names in **bold** are but
    - **Company name**, **Contact person** and a 10-digit **Mobile**
 
    Click **Save enquiry**. A message says **Enquiry … added**.
-5. Click **Quotations**, then open **ACDRI/QT/2026-27/0042** (Sahyadri Auto Components, status Sent).
+5. Click **Quotations**, then open **DMC/QT/2026-27/0042** (Sahyadri Auto Components, status Sent).
 6. In **Status**, choose **Accepted**, then confirm **Yes, mark Accepted**.
    - A message says the status changed to Accepted and a ticket opened.
    - The page now shows **Locked: tickets opened** with the new ticket number. Note it for step 2.
@@ -48,7 +48,7 @@ The website is **https://autocluster-erp.vercel.app**. Names in **bold** are but
 ## 2. Accounts: PO, invoice and payment (Vikram Shah)
 
 1. Click the amber chip **Demo: signed in as Sales…** (top right) and choose **Accounts**.
-2. Click **Orders & Billing**. In the search box, type the **ticket number** you noted in step 1 (e.g. ACDRI/TK/2026-27/0249). Only that card stays on the board.
+2. Click **Orders & Billing**. In the search box, type the **ticket number** you noted in step 1 (e.g. DMC/TK/2026-27/0249). Only that card stays on the board.
 3. The ticket is in **Waiting for PO**. On its card, click **Add PO** and fill in:
    - **PO number**: e.g. "SAC/PO/2026/0501"
    - **PO date**: today

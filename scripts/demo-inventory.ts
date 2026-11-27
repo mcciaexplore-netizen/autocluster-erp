@@ -13,6 +13,7 @@
  * Runs before the story quotations, so those keep the last numbers.
  */
 import { stageDemoFile } from "./demo-files";
+import { invoicePrefixFor } from "./demo-company";
 import Decimal from "decimal.js";
 import { eq, inArray, sql } from "drizzle-orm";
 import type { DB, Tx } from "../db/client";
@@ -494,6 +495,7 @@ export async function loadInventoryDemo(conn: DB | Tx, custIds: Record<string, s
   const billSeq: Record<Sup, number> = { DRP: 140, PMS: 2210, LCS: 870, PTM: 515 };
   const tickets = new Map<number, string[]>();
   let invSeq = 301;
+  const invPrefix = invoicePrefixFor((await db.select({ p: s.settings.quotePrefix }).from(s.settings))[0].p);
   let poSeq = 1100;
 
   async function invoiceFile(fileName: string, rows: [string, string][]) {
@@ -541,7 +543,7 @@ export async function loadInventoryDemo(conn: DB | Tx, custIds: Record<string, s
       const poDate = addDays(d, 1);
       await addPurchaseOrder(db, { ticketIds: ids, poNumber: `PO/${poSeq++}`, poDate, poAmountPaise: taxable, fileId: null, notes: null }, today);
       const invDate = addDays(d, 8);
-      const invoiceNumber = `MCCIA/${financialYear(new Date(`${invDate}T00:00:00`))}/0${invSeq++}`;
+      const invoiceNumber = `${invPrefix}/${financialYear(new Date(`${invDate}T00:00:00`))}/0${invSeq++}`;
       const fileId = await invoiceFile(`SAMPLE-INVOICE-${invoiceNumber.replaceAll("/", "-")}.pdf`, [
         ["Invoice no.", invoiceNumber],
         ["Invoice date", formatDate(invDate)],

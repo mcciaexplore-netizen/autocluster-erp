@@ -31,7 +31,7 @@ describe.skipIf(skip)("demo data (database)", () => {
     // the 2 Billing tickets share one PO
     expect(new Set(ts.filter((t) => t.stage === "BILLING").map((t) => t.poId)).size).toBe(1);
     // the MSME member SLA quotation is left as Sent, for the "mark it Accepted" demo step
-    const [sla] = await db.select().from(s.quotations).where(eq(s.quotations.quoteNo, "ACDRI/QT/2026-27/0001"));
+    const [sla] = await db.select().from(s.quotations).where(eq(s.quotations.quoteNo, "DMC/QT/2026-27/0001"));
     expect(sla.status).toBe("SENT");
     expect(toPaise(sla.grandTotal)).toBe(8_496_00);
   });

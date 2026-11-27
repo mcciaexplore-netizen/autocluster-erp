@@ -35,8 +35,8 @@ export async function getSettings() {
 export async function getOrgName() {
   await connection();
   await need();
-  const [row] = await db.select({ orgName: settings.orgName }).from(settings).where(eq(settings.id, 1));
-  return row?.orgName ?? "";
+  const [row] = await db.select({ orgName: settings.orgName, showOrgName: settings.showOrgName }).from(settings).where(eq(settings.id, 1));
+  return { name: row?.orgName ?? "", show: row?.showOrgName ?? true };
 }
 
 export async function getDepartments() {

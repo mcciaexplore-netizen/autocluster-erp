@@ -46,20 +46,20 @@ describe.skipIf(skip)("stock count (database)", () => {
 
   it("freezes quantities batch by batch, and completing makes one Stock count adjustment and locks the count", async () => {
     const c = await startCount(db, { doneBy: x.team.id }, opts);
-    expect(c.countNo).toBe("ACDRI/CNT/2026-27/0001");
+    expect(c.countNo).toBe("DMC/CNT/2026-27/0001");
     const ls = await lines(c.id);
     // resin is counted per batch; gloves as one line
     expect(ls.map((l) => [l.batchNo, l.systemQty])).toEqual(expect.arrayContaining([["A1", "1000.000"], ["A2", "1000.000"], [null, "150.000"]]));
     expect(ls).toHaveLength(3);
 
     // a count that shares items with an open one is refused, naming the count and the items
-    await expect(startCount(db, {}, opts)).rejects.toThrow("Count ACDRI/CNT/2026-27/0001 is open and already includes Nitrile gloves, SLA resin, imported (grey). Complete or discard it first, or count a different category or department.");
+    await expect(startCount(db, {}, opts)).rejects.toThrow("Count DMC/CNT/2026-27/0001 is open and already includes Nitrile gloves, SLA resin, imported (grey). Complete or discard it first, or count a different category or department.");
     // ...but a count of other items can run at the same time
     const [cons] = await db.select().from(s.invCategories).where(eq(s.invCategories.name, "Consumable"));
     const [pcs] = await db.select().from(s.invUnits).where(eq(s.invUnits.name, "pcs"));
     await db.insert(s.invItems).values({ code: "ITM-9002", name: "Wipes", categoryId: cons.id, unitId: pcs.id });
     const other = await startCount(db, { categoryId: cons.id }, opts);
-    expect(other.countNo).toBe("ACDRI/CNT/2026-27/0002");
+    expect(other.countNo).toBe("DMC/CNT/2026-27/0002");
     await discardCount(db, other.id);
 
     const a1 = ls.find((l) => l.batchNo === "A1")!;
@@ -71,10 +71,10 @@ describe.skipIf(skip)("stock count (database)", () => {
     await expect(saveCountLine(db, gl.id, "-1")).rejects.toThrow(/0 or more/);
 
     const r = await completeCount(db, c.id, { doneBy: x.team.id, today: TODAY });
-    expect(r).toMatchObject({ changes: 2, adjustment: { docNo: "ACDRI/ADJ/2026-27/0001" } });
+    expect(r).toMatchObject({ changes: 2, adjustment: { docNo: "DMC/ADJ/2026-27/0001" } });
 
     const [doc] = await db.select().from(s.invDocuments).where(eq(s.invDocuments.id, r.adjustment!.id));
-    expect(doc).toMatchObject({ type: "ADJ", note: "Stock count 20/11/2026 (ACDRI/CNT/2026-27/0001)", docDate: TODAY });
+    expect(doc).toMatchObject({ type: "ADJ", note: "Stock count 20/11/2026 (DMC/CNT/2026-27/0001)", docDate: TODAY });
     const mvs = await db.select().from(s.invMovements).where(eq(s.invMovements.documentId, doc.id)).orderBy(asc(s.invMovements.id));
     expect(mvs).toHaveLength(2);
     expect(mvs.map((m) => [m.itemId, m.batchId, m.qtyIn, m.qtyOut, m.value])).toEqual(expect.arrayContaining([
@@ -93,7 +93,7 @@ describe.skipIf(skip)("stock count (database)", () => {
     await expect(completeCount(db, c.id, opts)).rejects.toThrow(/already complete/);
     await expect(discardCount(db, c.id)).rejects.toThrow(/can't be discarded/);
     // a new count can start now
-    await expect(startCount(db, {}, opts)).resolves.toMatchObject({ countNo: "ACDRI/CNT/2026-27/0003" });
+    await expect(startCount(db, {}, opts)).resolves.toMatchObject({ countNo: "DMC/CNT/2026-27/0003" });
   });
 
   it("stock that moves during the count is allowed for: counted is compared with the frozen quantity ± movements since", async () => {

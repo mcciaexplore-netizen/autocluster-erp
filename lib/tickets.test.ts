@@ -152,11 +152,11 @@ describe("PO amount check and reminder text", () => {
   });
   it("fills the WhatsApp template", () => {
     const text = fillTemplate(DEFAULT_WHATSAPP_TEMPLATE, {
-      company: "Sahyadri", contact_name: "Rohan Kulkarni", invoice_no: "INV-123", invoice_date: "19 Nov 2026",
+      company: "Sahyadri", org_name: "Demo Manufacturing Co., Pune", contact_name: "Rohan Kulkarni", invoice_no: "INV-123", invoice_date: "19 Nov 2026",
       amount_due: "8,496.00", due_date: "19 Dec 2026", days_overdue: "0",
     });
     expect(text).toBe(
-      "Dear Rohan Kulkarni, this is a gentle reminder from AutoCluster, Pune. Invoice INV-123 dated 19 Nov 2026 for ₹8,496.00 is due on 19 Dec 2026. Kindly arrange the payment. Thank you.",
+      "Dear Rohan Kulkarni, this is a gentle reminder from Demo Manufacturing Co., Pune. Invoice INV-123 dated 19 Nov 2026 for ₹8,496.00 is due on 19 Dec 2026. Kindly arrange the payment. Thank you.",
     );
   });
 });

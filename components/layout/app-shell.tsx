@@ -19,7 +19,7 @@ function Logo() {
       <LogoMark size={40} />
       <span className="min-w-0 leading-tight">
         <Wordmark className="block text-lg" />
-        <Suspense fallback={<span className="block h-4" />}>
+        <Suspense fallback={null}>
           <OrgName />
         </Suspense>
       </span>
@@ -28,7 +28,9 @@ function Logo() {
 }
 
 async function OrgName() {
-  const name = await getOrgName();
+  const { name, show } = await getOrgName();
+  // Settings > "Show company name under the logo" off: only ERPOne shows.
+  if (!show || !name) return null;
   return (
     <span className="block h-4 max-w-[9rem] truncate text-xs text-muted-foreground sm:max-w-[16rem] md:max-w-xs" title={name || undefined}>
       {name}

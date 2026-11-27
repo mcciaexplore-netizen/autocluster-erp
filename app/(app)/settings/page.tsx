@@ -71,6 +71,7 @@ async function Form() {
       stages={stages.map((st) => ({ id: st.id, name: st.name, type: st.type }))}
       initial={{
         orgName: s.orgName,
+        showOrgName: s.showOrgName,
         orgAddress: s.orgAddress,
         orgGstin: s.orgGstin,
         orgPhone: s.orgPhone,

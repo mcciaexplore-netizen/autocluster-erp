@@ -53,7 +53,7 @@ describe.skipIf(skip)("import items from Excel (database)", () => {
     const good = checked.filter((c) => !c.problems.length);
     const r = await importItems(db, good.map((c) => ({ rowNo: c.rowNo, input: c.input, addsTo: c.addsTo, opening: c.opening })), "items.xlsx", { today: "2026-11-20" });
     expect(r.items.map((i) => i.name)).toEqual(["PA12 powder", "Isopropyl alcohol", "Masking tape"]);
-    expect(r.openingDoc?.docNo).toBe("ACDRI/ADJ/2026-27/0001");
+    expect(r.openingDoc?.docNo).toBe("DMC/ADJ/2026-27/0001");
     const mvs = await db.select().from(s.invMovements).orderBy(asc(s.invMovements.id));
     expect(mvs.map((m) => [m.qtyIn, m.unitCost, m.value, m.isOpening])).toEqual([
       ["35.500", "4200.0000", 149_100_00, true],

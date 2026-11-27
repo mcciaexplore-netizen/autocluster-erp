@@ -72,6 +72,7 @@ describe.skipIf(skip)("nightly clean-up (database)", () => {
     process.env.CRON_SECRET = SECRET;
     expect((await GET(cron())).status).toBe(401);
     expect((await GET(cron("Bearer wrong-secret-wrong-secret-xx"))).status).toBe(401);
+    await db.delete(s.signInAttempts); // the earlier test's attempts are dated from a fixed day, so by now they may be old too
     const old = new Date(monthsBefore(new Date(), 24).getTime() - 86_400_000);
     await db.insert(s.activityLog).values([1, 2, 3].map((i) => ({ area: "CRM", action: "note", summary: `old ${i}`, createdAt: old })));
     const res = await GET(cron(`Bearer ${SECRET}`));

@@ -1,27 +1,28 @@
 /**
  * Payment reminder templates. Editable in Settings.
- * Placeholders: {company} {contact_name} {invoice_no} {invoice_date} {amount_due} {due_date} {days_overdue}
+ * Placeholders: {company} (the customer) {org_name} (your organisation, from Settings) {contact_name} {invoice_no} {invoice_date} {amount_due} {due_date} {days_overdue}
  */
 export const DEFAULT_WHATSAPP_TEMPLATE =
-  "Dear {contact_name}, this is a gentle reminder from AutoCluster, Pune. Invoice {invoice_no} dated {invoice_date} for ₹{amount_due} is due on {due_date}. Kindly arrange the payment. Thank you.";
+  "Dear {contact_name}, this is a gentle reminder from {org_name}. Invoice {invoice_no} dated {invoice_date} for ₹{amount_due} is due on {due_date}. Kindly arrange the payment. Thank you.";
 
-export const DEFAULT_EMAIL_SUBJECT_TEMPLATE = "Payment reminder: Invoice {invoice_no} from AutoCluster, Pune";
+export const DEFAULT_EMAIL_SUBJECT_TEMPLATE = "Payment reminder: Invoice {invoice_no} from {org_name}";
 
 export const DEFAULT_EMAIL_BODY_TEMPLATE = `Dear {contact_name},
 
-This is a gentle reminder that Invoice {invoice_no} dated {invoice_date} for ₹{amount_due} from AutoCluster, Pune is due on {due_date}.
+This is a gentle reminder that Invoice {invoice_no} dated {invoice_date} for ₹{amount_due} from {org_name} is due on {due_date}.
 
 Kindly arrange the payment at the earliest. If it has already been made, please share the payment reference so we can update our records.
 
 Thank you.
 
 Accounts Team
-AutoCluster, Pune`;
+{org_name}`;
 
-export const TEMPLATE_PLACEHOLDERS = ["{company}", "{contact_name}", "{invoice_no}", "{invoice_date}", "{amount_due}", "{due_date}", "{days_overdue}"] as const;
+export const TEMPLATE_PLACEHOLDERS = ["{company}", "{org_name}", "{contact_name}", "{invoice_no}", "{invoice_date}", "{amount_due}", "{due_date}", "{days_overdue}"] as const;
 
 export type TemplateValues = {
   company: string;
+  org_name: string;
   contact_name: string;
   invoice_no: string;
   invoice_date: string;

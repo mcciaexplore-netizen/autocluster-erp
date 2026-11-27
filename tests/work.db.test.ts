@@ -84,7 +84,7 @@ describe.skipIf(skip)("operators' work on jobs (database)", () => {
     expect(log.bookingId).toBe(live[0].id); // the log counts against the booking it ran in
     // b on the same machine right now: refused plainly, and not started
     const err = await startJob(db, b.id, { operatorId: null, machineId: m.id, now: at("2026-11-30", "11:00") }).catch((e) => e);
-    expect(err.message).toMatch(/5-Axis VMC \(Non-Continuous\) is already booked for ACDRI\/TK\/.* from Mon 30 Nov, 10:00 to 16:30\./);
+    expect(err.message).toMatch(/5-Axis VMC \(Non-Continuous\) is already booked for DMC\/TK\/.* from Mon 30 Nov, 10:00 to 16:30\./);
     expect((await db.select().from(s.jobs).where(eq(s.jobs.id, b.id)))[0].status).not.toBe("RUNNING");
   });
 });

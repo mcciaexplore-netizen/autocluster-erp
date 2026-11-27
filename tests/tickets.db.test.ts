@@ -60,7 +60,7 @@ describe.skipIf(skip)("tickets (database)", () => {
     // 10 x 2 new + 1 from the demo quotation's backfill-free seed (none yet)
     const nos = all.map((t) => t.no);
     expect(new Set(nos).size).toBe(nos.length);
-    expect(nos.filter((n) => n.startsWith("ACDRI/TK/2026-27/")).length).toBe(20);
+    expect(nos.filter((n) => n.startsWith("DMC/TK/2026-27/")).length).toBe(20);
   });
 
   it("un-accepting cancels tickets still waiting for a PO, and re-accepting reopens the same tickets", async () => {

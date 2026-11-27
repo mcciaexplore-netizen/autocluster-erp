@@ -29,7 +29,7 @@ describe.skipIf(skip)("enquiries (database)", () => {
     const made = await Promise.all(Array.from({ length: 10 }, (_, i) => createLead(db, { ...base, title: `Enquiry ${i}` })));
     const nos = made.map((l) => l.leadNo);
     expect(new Set(nos).size).toBe(10);
-    expect([...nos].sort()).toEqual(Array.from({ length: 10 }, (_, i) => `ACDRI/EN/2026-27/${String(i + 1).padStart(4, "0")}`));
+    expect([...nos].sort()).toEqual(Array.from({ length: 10 }, (_, i) => `DMC/EN/2026-27/${String(i + 1).padStart(4, "0")}`));
   });
 
   it("a new enquiry starts in the first open stage (source 'Other' if none given) with a Created entry", async () => {

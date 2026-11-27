@@ -121,7 +121,7 @@ export async function itemHistoryWorkbook(item: { name: string; code: string; un
   return new Uint8Array(await wb.xlsx.writeBuffer());
 }
 
-/** The order list for a supplier, with ACDRI's details on top. */
+/** The order list for a supplier, with the organisation's details on top. */
 export async function orderListWorkbook(data: OrderListData): Promise<Uint8Array> {
   const wb = new ExcelJS.Workbook();
   wb.creator = data.org.name;

@@ -3,6 +3,11 @@
  * Kept free of Next.js imports so it runs as a plain script.
  */
 import { sql } from "drizzle-orm";
+import { DEFAULT_EMAIL_BODY_TEMPLATE, DEFAULT_EMAIL_SUBJECT_TEMPLATE, DEFAULT_WHATSAPP_TEMPLATE } from "../lib/reminder-templates";
+import { DEFAULT_LEAD_EMAIL_BODY_TEMPLATE, DEFAULT_LEAD_EMAIL_SUBJECT_TEMPLATE, DEFAULT_LEAD_WHATSAPP_TEMPLATE } from "../lib/crm/templates";
+import { DEFAULT_ORDER_EMAIL_BODY_TEMPLATE, DEFAULT_ORDER_EMAIL_SUBJECT_TEMPLATE, DEFAULT_ORDER_WHATSAPP_TEMPLATE } from "../lib/inventory/templates";
+import { DEFAULT_READY_WHATSAPP_TEMPLATE } from "../lib/planning/templates";
+import { COMPANY_PROFILES, demoCompany, type DemoCompany } from "./demo-company";
 import { config } from "dotenv";
 import { createDb, createPool, type DB, type Tx } from "../db/client";
 import * as s from "../db/schema";
@@ -188,23 +193,31 @@ const CUSTOMERS = [
 ];
 
 /** `orders` also adds the Orders & Billing demo (tickets, POs, invoices, payments, sample PDFs). */
-export async function loadDemoData(db: DB | Tx, opts: { quiet?: boolean; orders?: DemoOrdersOptions; crm?: boolean; inventory?: boolean; planning?: boolean; now?: Date } = {}) {
+export async function loadDemoData(db: DB | Tx, opts: { quiet?: boolean; orders?: DemoOrdersOptions; crm?: boolean; inventory?: boolean; planning?: boolean; now?: Date; company?: DemoCompany } = {}) {
   const console = opts.quiet ? { log: () => {} } : globalThis.console;
   console.log("Adding settings, departments and the rate card...");
+  const company = opts.company ?? demoCompany();
+  console.log(`Company: ${COMPANY_PROFILES[company].orgName} (DEMO_COMPANY=${company})`);
   await db.insert(s.settings).values({
     id: 1,
-    orgName: "AutoCluster",
-    orgAddress: "Automotive Cluster Development & Research Institute, H-Block, Plot No. 1, MIDC Pimpri, Pune 411018, Maharashtra",
-    orgGstin: "27AAACA1234B1ZC",
-    orgPhone: "020 2712 0000",
-    orgEmail: "info@autocluster.example",
+    ...COMPANY_PROFILES[company],
     memberDiscountPct: "10",
     applyDiscountToNonMsme: true,
     gstPct: "18",
     homeStateCode: "27",
     quoteValidityDays: 30,
-    quotePrefix: "ACDRI/QT",
     defaultTerms: DEFAULT_TERMS,
+    // Written out (not left to the column defaults), so every database gets today's wording with {org_name}.
+    whatsappTemplate: DEFAULT_WHATSAPP_TEMPLATE,
+    emailSubjectTemplate: DEFAULT_EMAIL_SUBJECT_TEMPLATE,
+    emailBodyTemplate: DEFAULT_EMAIL_BODY_TEMPLATE,
+    leadWhatsappTemplate: DEFAULT_LEAD_WHATSAPP_TEMPLATE,
+    leadEmailSubjectTemplate: DEFAULT_LEAD_EMAIL_SUBJECT_TEMPLATE,
+    leadEmailBodyTemplate: DEFAULT_LEAD_EMAIL_BODY_TEMPLATE,
+    invOrderWhatsappTemplate: DEFAULT_ORDER_WHATSAPP_TEMPLATE,
+    invOrderEmailSubjectTemplate: DEFAULT_ORDER_EMAIL_SUBJECT_TEMPLATE,
+    invOrderEmailBodyTemplate: DEFAULT_ORDER_EMAIL_BODY_TEMPLATE,
+    readyWhatsappTemplate: DEFAULT_READY_WHATSAPP_TEMPLATE,
   });
   await ensureCrmDefaults(db);
   await ensureInventoryDefaults(db);
