@@ -14,7 +14,7 @@ export function billingFileName(doc: BillingDocument): string {
 
 export async function billingWorkbook(doc: BillingDocument): Promise<Uint8Array> {
   const wb = new ExcelJS.Workbook();
-  wb.creator = "AutoCluster ERP";
+  wb.creator = "ERPOne";
   wb.created = new Date();
   const ws = wb.addWorksheet("Billing details", { pageSetup: { orientation: "landscape", fitToPage: true, fitToWidth: 1, fitToHeight: 0 } });
 

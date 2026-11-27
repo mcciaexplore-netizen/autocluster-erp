@@ -45,24 +45,24 @@ const ORDER_SAMPLE = {
   supplier: "Deccan Resins & Polymers",
   contact_name: "Mr. Kale",
   items: "1. SLA resin, imported (grey): 3 bottles (3,000 ml)\n2. IPA for cleaning: 2 cans (10 L)",
-  org_name: "AutoCluster",
   date: "20 Nov 2026",
 };
 const LEAD_SAMPLE = { contact_name: "Rohan Kulkarni", company: "Sahyadri Auto Components Pvt Ltd", enquiry_title: "3D printing of 20 prototype parts" };
 const DONT_MOVE = "none";
-const READY_SAMPLE = { contact_name: "Rohan Kulkarni", company: "Sahyadri Auto Components Pvt Ltd", job_no: "ACDRI/TK/2026-27/0051", service: "SLA - imported resin", org_name: "ACDRI" };
+const READY_SAMPLE = { contact_name: "Rohan Kulkarni", company: "Sahyadri Auto Components Pvt Ltd", service: "SLA - imported resin" };
 const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
-const SAMPLE_VALUES: TemplateValues = {
+const SAMPLE_VALUES: Omit<TemplateValues, "org_name"> = {
   company: "Sahyadri Auto Components Pvt Ltd",
   contact_name: "Rohan Kulkarni",
-  invoice_no: "MCCIA/2026-27/0456",
+  invoice_no: "INV/2026-27/0456",
   invoice_date: "10 Nov 2026",
   amount_due: "8,496",
   due_date: "10 Dec 2026",
   days_overdue: "0",
 };
 import { settingsSchema, type SettingsInput } from "@/lib/validation/settings";
+import { orgInitials } from "@/lib/org";
 
 export function SettingsForm({ initial, stages }: { initial: SettingsInput; stages: { id: string; name: string; type: "OPEN" | "WON" | "LOST" }[] }) {
   const router = useRouter();
@@ -86,20 +86,24 @@ export function SettingsForm({ initial, stages }: { initial: SettingsInput; stag
   )(ev);
 
   const num = { valueAsNumber: true } as const;
-  const prefix = useWatch({ control, name: "quotePrefix" }) || "ACDRI/QT";
-  const ticketPrefix = useWatch({ control, name: "ticketPrefix" }) || "ACDRI/TK";
+  const prefix = useWatch({ control, name: "quotePrefix" }) || "QT";
+  const ticketPrefix = useWatch({ control, name: "ticketPrefix" }) || "TK";
   const whatsapp = useWatch({ control, name: "whatsappTemplate" });
-  const leadPrefix = useWatch({ control, name: "leadPrefix" }) || "ACDRI/EN";
+  const leadPrefix = useWatch({ control, name: "leadPrefix" }) || "EN";
   const leadWhatsapp = useWatch({ control, name: "leadWhatsappTemplate" });
   const wonStage = stages.find((st) => st.type === "WON")?.name ?? "Won";
-  const invIn = useWatch({ control, name: "invInPrefix" }) || "ACDRI/IN";
-  const invOut = useWatch({ control, name: "invOutPrefix" }) || "ACDRI/OUT";
-  const invAdj = useWatch({ control, name: "invAdjPrefix" }) || "ACDRI/ADJ";
+  const invIn = useWatch({ control, name: "invInPrefix" }) || "IN";
+  const invOut = useWatch({ control, name: "invOutPrefix" }) || "OUT";
+  const invAdj = useWatch({ control, name: "invAdjPrefix" }) || "ADJ";
   const invItem = useWatch({ control, name: "invItemPrefix" }) || "ITM";
   const orderWa = useWatch({ control, name: "invOrderWhatsappTemplate" });
   const readyWa = useWatch({ control, name: "readyWhatsappTemplate" });
   const pct = useWatch({ control, name: "memberDiscountPct" });
   const applyNonMsme = useWatch({ control, name: "applyDiscountToNonMsme" });
+  const orgName = useWatch({ control, name: "orgName" }) || "Your organisation";
+  const showOrg = useWatch({ control, name: "showOrgName" });
+  // The previews use this organisation's own name and numbers.
+  const sampleJob = `${ticketPrefix}/2026-27/0051`;
 
   return (
     <form onSubmit={onSubmit} noValidate className="flex flex-col gap-6">
@@ -108,6 +112,20 @@ export function SettingsForm({ initial, stages }: { initial: SettingsInput; stag
           <Field label="Organisation name" required error={e.orgName?.message} className="md:col-span-2">
             {(p) => <Input {...p} {...register("orgName")} />}
           </Field>
+          <div className="flex flex-col gap-1.5 md:col-span-2">
+            <span className="text-base font-medium">Show company name under the logo</span>
+            <label className="flex min-h-11 items-center gap-3">
+              <Controller
+                control={control}
+                name="showOrgName"
+                render={({ field }) => <Switch checked={field.value} onCheckedChange={field.onChange} aria-label="Show company name under the logo" />}
+              />
+              <span>{showOrg ? "Yes" : "No"}</span>
+            </label>
+            <p className="text-sm text-muted-foreground">
+              {showOrg ? `The top bar shows ERPOne with "${orgName}" underneath.` : "The top bar shows only the ERPOne logo and name. Quotations and PDFs still show your organisation."}
+            </p>
+          </div>
           <Field label="Address" required error={e.orgAddress?.message} className="md:col-span-2">
             {(p) => <Textarea {...p} rows={2} {...register("orgAddress")} />}
           </Field>
@@ -124,11 +142,11 @@ export function SettingsForm({ initial, stages }: { initial: SettingsInput; stag
           <Field label="Phone" required error={e.orgPhone?.message} helper="e.g. 020 2712 0000">
             {(p) => <Input {...p} type="tel" {...register("orgPhone")} />}
           </Field>
-          <Field label="Email" required error={e.orgEmail?.message} className="md:col-span-2" helper="e.g. info@autocluster.org">
+          <Field label="Email" required error={e.orgEmail?.message} className="md:col-span-2" helper="e.g. info@yourcompany.in">
             {(p) => <Input {...p} type="email" {...register("orgEmail")} />}
           </Field>
           <div className="flex min-w-0 flex-wrap items-center gap-4 rounded-xl border border-dashed p-4 md:col-span-2">
-            <span className="grid size-14 place-items-center rounded-xl bg-primary font-title text-xl text-primary-foreground">AC</span>
+            <span className="grid size-14 place-items-center rounded-xl bg-primary font-title text-xl text-primary-foreground">{orgInitials(orgName)}</span>
             <div className="min-w-40 flex-1">
               <p className="font-medium">Logo</p>
               <p className="text-sm text-muted-foreground">A placeholder is used for the demo. Logo upload will come later.</p>
@@ -257,7 +275,7 @@ export function SettingsForm({ initial, stages }: { initial: SettingsInput; stag
             error={e.whatsappTemplate?.message}
             helper={
               <>
-                Preview: <span className="text-foreground">{fillTemplate(whatsapp ?? "", SAMPLE_VALUES)}</span>{" "}
+                Preview: <span className="text-foreground">{fillTemplate(whatsapp ?? "", { ...SAMPLE_VALUES, org_name: orgName })}</span>{" "}
                 <button type="button" className="font-medium text-primary underline-offset-4 hover:underline" onClick={() => setValue("whatsappTemplate", DEFAULT_WHATSAPP_TEMPLATE, { shouldDirty: true, shouldValidate: true })}>
                   Use the standard wording
                 </button>
@@ -315,7 +333,7 @@ export function SettingsForm({ initial, stages }: { initial: SettingsInput; stag
             error={e.leadWhatsappTemplate?.message}
             helper={
               <>
-                Preview: <span className="text-foreground">{fillLeadTemplate(leadWhatsapp ?? "", LEAD_SAMPLE)}</span>{" "}
+                Preview: <span className="text-foreground">{fillLeadTemplate(leadWhatsapp ?? "", { ...LEAD_SAMPLE, org_name: orgName })}</span>{" "}
                 <button type="button" className="font-medium text-primary underline-offset-4 hover:underline" onClick={() => setValue("leadWhatsappTemplate", DEFAULT_LEAD_WHATSAPP_TEMPLATE, { shouldDirty: true, shouldValidate: true })}>
                   Use the standard wording
                 </button>
@@ -428,7 +446,7 @@ export function SettingsForm({ initial, stages }: { initial: SettingsInput; stag
             error={e.invOrderWhatsappTemplate?.message}
             helper={
               <>
-                Preview: <span className="whitespace-pre-line text-foreground">{fillOrderTemplate(orderWa ?? "", ORDER_SAMPLE)}</span>{" "}
+                Preview: <span className="whitespace-pre-line text-foreground">{fillOrderTemplate(orderWa ?? "", { ...ORDER_SAMPLE, org_name: orgName })}</span>{" "}
                 <button type="button" className="font-medium text-primary underline-offset-4 hover:underline" onClick={() => setValue("invOrderWhatsappTemplate", DEFAULT_ORDER_WHATSAPP_TEMPLATE, { shouldDirty: true, shouldValidate: true })}>
                   Use the standard wording
                 </button>
@@ -532,7 +550,7 @@ export function SettingsForm({ initial, stages }: { initial: SettingsInput; stag
             error={e.readyWhatsappTemplate?.message}
             helper={
               <>
-                Preview: <span className="whitespace-pre-line text-foreground">{fillReadyTemplate(readyWa ?? "", READY_SAMPLE)}</span>{" "}
+                Preview: <span className="whitespace-pre-line text-foreground">{fillReadyTemplate(readyWa ?? "", { ...READY_SAMPLE, job_no: sampleJob, org_name: orgName })}</span>{" "}
                 <button type="button" className="font-medium text-primary underline-offset-4 hover:underline" onClick={() => setValue("readyWhatsappTemplate", DEFAULT_READY_WHATSAPP_TEMPLATE, { shouldDirty: true, shouldValidate: true })}>
                   Use the standard wording
                 </button>

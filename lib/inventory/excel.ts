@@ -31,7 +31,7 @@ export async function movementsWorkbook(
   note: string,
 ): Promise<Uint8Array> {
   const wb = new ExcelJS.Workbook();
-  wb.creator = "AutoCluster ERP";
+  wb.creator = "ERPOne";
   const ws = wb.addWorksheet("Stock in and out");
   ws.columns = [
     { header: "Date", key: "date", width: 12, style: { numFmt: "dd/mm/yyyy" } },
@@ -83,7 +83,7 @@ export async function movementsWorkbook(
 /** One item's stock history with the running balance, oldest first. */
 export async function itemHistoryWorkbook(item: { name: string; code: string; unit: string }, rows: ItemHistoryRow[]): Promise<Uint8Array> {
   const wb = new ExcelJS.Workbook();
-  wb.creator = "AutoCluster ERP";
+  wb.creator = "ERPOne";
   const ws = wb.addWorksheet("Stock history");
   ws.columns = [
     { header: "Date", key: "date", width: 12, style: { numFmt: "dd/mm/yyyy" } },
@@ -121,7 +121,7 @@ export async function itemHistoryWorkbook(item: { name: string; code: string; un
   return new Uint8Array(await wb.xlsx.writeBuffer());
 }
 
-/** The order list for a supplier, with ACDRI's details on top. */
+/** The order list for a supplier, with the organisation's details on top. */
 export async function orderListWorkbook(data: OrderListData): Promise<Uint8Array> {
   const wb = new ExcelJS.Workbook();
   wb.creator = data.org.name;
@@ -176,7 +176,7 @@ function importHeader(ws: ExcelJS.Worksheet) {
 /** The template: the right columns, one example row, a "How to fill" sheet and a "Lists" sheet. */
 export async function itemImportTemplate(lists: Pick<ItemImportLists, "categories" | "units" | "suppliers" | "departments">): Promise<Uint8Array> {
   const wb = new ExcelJS.Workbook();
-  wb.creator = "AutoCluster ERP";
+  wb.creator = "ERPOne";
   const ws = wb.addWorksheet("Items");
   ws.columns = ITEM_IMPORT_COLUMNS.map((c) => ({ header: c.required ? `${c.header} *` : c.header, key: c.key, width: c.width }));
   importHeader(ws);
@@ -283,7 +283,7 @@ export async function readItemImportFile(bytes: Uint8Array): Promise<{ rows: { r
 /** Problem rows with their original values and the problems listed, to fix and upload again. */
 export async function itemProblemRowsWorkbook(rows: CheckedItemRow[]): Promise<Uint8Array> {
   const wb = new ExcelJS.Workbook();
-  wb.creator = "AutoCluster ERP";
+  wb.creator = "ERPOne";
   const ws = wb.addWorksheet("Items");
   ws.columns = [
     ...ITEM_IMPORT_COLUMNS.map((c) => ({ header: c.required ? `${c.header} *` : c.header, key: c.key, width: c.width })),
@@ -304,7 +304,7 @@ export async function itemProblemRowsWorkbook(rows: CheckedItemRow[]): Promise<U
 export async function insightTableWorkbook(t: InsightTable, note: string): Promise<Uint8Array> {
   const FMT: Record<NonNullable<Col["fmt"]>, string> = { money: MONEY, pct: "0.0%", qty: QTY, rate: RATE, date: "dd/mm/yyyy", int: "#,##0" };
   const wb = new ExcelJS.Workbook();
-  wb.creator = "AutoCluster ERP";
+  wb.creator = "ERPOne";
   const ws = wb.addWorksheet(t.title.slice(0, 31));
   ws.addRow([t.title]).font = { bold: true, size: 13 };
   ws.addRow([note]).font = { color: { argb: "FF6B7280" } };

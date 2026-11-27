@@ -28,10 +28,10 @@ describe.skipIf(skip)("stock engine (database)", () => {
   it("average cost: 1,000 ml at ₹4 + 1,000 ml at ₹5 = ₹4.50; using 500 ml is valued ₹2,250, leaving 1,500 ml at ₹4.50", async () => {
     await receiveStock(db, { supplierId: x.supplier.id, lines: [{ itemId: x.resin.id, qty: "1000", rate: "4", batchNo: "A1", expiryDate: "2027-06-30" }] }, opts);
     const r2 = await receiveStock(db, { supplierId: x.supplier.id, supplierBillNo: "DRP/889", lines: [{ itemId: x.resin.id, qty: "1000", rate: "5", batchNo: "A2", expiryDate: "2027-08-31" }] }, opts);
-    expect(r2.docNo).toBe("ACDRI/IN/2026-27/0002");
+    expect(r2.docNo).toBe("DMC/IN/2026-27/0002");
     expect(await item(db, x.resin.id)).toMatchObject({ qtyOnHand: "2000.000", avgCost: "4.5000", lastPurchaseRate: "5.0000" });
     const u = await issueStock(db, { purposeId: x.purpose("Trial run"), lines: [{ itemId: x.resin.id, qty: "500" }] }, opts);
-    expect(u).toMatchObject({ docNo: "ACDRI/OUT/2026-27/0001", valuePaise: 2_250_00 });
+    expect(u).toMatchObject({ docNo: "DMC/OUT/2026-27/0001", valuePaise: 2_250_00 });
     expect(await item(db, x.resin.id)).toMatchObject({ qtyOnHand: "1500.000", avgCost: "4.5000" });
     const [si] = await db.select().from(s.invSupplierItems).where(eq(s.invSupplierItems.itemId, x.resin.id));
     expect(si).toMatchObject({ lastRate: "5.0000", lastRateDate: TODAY });
@@ -105,7 +105,7 @@ describe.skipIf(skip)("stock engine (database)", () => {
     const before = await item(db, x.gloves.id);
     const r = await receiveStock(db, { supplierId: x.supplier.id, lines: [{ itemId: x.gloves.id, qty: "1000", rate: "5" }] }, opts);
     const rev = await reverseDocument(db, r.id, "Wrong rate entered", opts);
-    expect(rev).toMatchObject({ docNo: "ACDRI/IN/2026-27/0003", reversed: "ACDRI/IN/2026-27/0002" });
+    expect(rev).toMatchObject({ docNo: "DMC/IN/2026-27/0003", reversed: "DMC/IN/2026-27/0002" });
     const after = await item(db, x.gloves.id);
     expect({ q: after.qtyOnHand, a: after.avgCost }).toEqual({ q: before.qtyOnHand, a: before.avgCost });
     await expect(reverseDocument(db, r.id, "Again", opts)).rejects.toThrow(/already been reversed/);

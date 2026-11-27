@@ -1,4 +1,5 @@
 import { Document, Page, StyleSheet, Text, View } from "@react-pdf/renderer";
+import { orgInitials } from "@/lib/org";
 import { formatDate } from "@/lib/format";
 import type { OrderListData } from "@/lib/inventory-data";
 import { formatRate } from "@/lib/inventory/numbers";
@@ -23,7 +24,7 @@ const s = StyleSheet.create({
 });
 const COLS = { sr: "7%", item: "45%", qty: "30%", rate: "18%" };
 
-/** The order list sent to a supplier: items and quantities, with ACDRI's details. */
+/** The order list sent to a supplier: items and quantities, with the organisation's details. */
 export function OrderListPdf({ data }: { data: OrderListData }) {
   registerFonts();
   const { org, supplier, items, today } = data;
@@ -32,7 +33,7 @@ export function OrderListPdf({ data }: { data: OrderListData }) {
       <Page size="A4" style={s.page}>
         <View style={s.header}>
           <View style={{ flexDirection: "row", gap: 8, width: "62%" }}>
-            <Text style={s.logo}>AC</Text>
+            <Text style={s.logo}>{orgInitials(org.name)}</Text>
             <View style={{ flex: 1 }}>
               <Text style={s.orgName}>{org.name}</Text>
               <Text style={s.small}>{org.address}</Text>

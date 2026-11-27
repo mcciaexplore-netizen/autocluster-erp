@@ -1,4 +1,4 @@
-# AutoCluster ERP (demo)
+# ERPOne (demo)
 
 Five modules for front office, department coordinators, the stores and accounts:
 
@@ -61,6 +61,7 @@ npm run dev
 | `DEMO_PASSWORD` | Password for the sign-in screen. Leave it empty to turn the sign-in screen off (handy locally). |
 | `AUTH_SECRET` | Long random text that signs the sign-in cookie. At least 32 characters. Make one with the command below. |
 | `DEMO_MODE` | `true` on the demo site (and locally): demo users, "Try it as..." and `db:reset` / `db:seed`. Anything else is real use: individual sign-in only, and resets refuse to run. |
+| `DEMO_COMPANY` | Which company the demo data shows, for `db:reset` / `db:seed`. `generic` (default): "Demo Manufacturing Co., Pune", numbers like DMC/QT/…, and the company line under the ERPOne logo hidden. `acdri`: the AutoCluster (ACDRI) profile and ACDRI/ numbers. Machines, rate card and stories are the same. Example: `DEMO_COMPANY=acdri npm run db:reset`. |
 | `CRON_SECRET` | Vercel only: long random text that lets Vercel's nightly clean-up (`/api/cron/clean-up`) run. Make one with the command below. |
 | `BLOB_READ_WRITE_TOKEN` | Vercel Blob store's read-write token (Vercel > Storage > your Blob store). Needed to upload and view PO copies and tax invoices, and for the sample PDFs in the demo data. |
 
@@ -90,11 +91,11 @@ The demo data fills the Orders & Billing board with every situation:
 The CRM demo has 3 team members (Priya Shah, Rohan Deshpande, Amit Patil) and 12 enquiries:
 - 3 **New**, 3 **Contacted**, 2 **Negotiation**, 2 **Won**, 2 **Lost** ("Price too high" and "No response"), using every source and priority.
 - Activities: 2 overdue, 2 due today, 3 upcoming; 2 open enquiries have nothing planned.
-- The Western Drive enquiry in **Negotiation** is linked to quotation ACDRI/QT/…/0043 (Sent). Mark that quotation **Accepted** to see the enquiry move to **Won** and its tickets open on the Orders & Billing board.
+- The Western Drive enquiry in **Negotiation** is linked to quotation DMC/QT/…/0043 (Sent). Mark that quotation **Accepted** to see the enquiry move to **Won** and its tickets open on the Orders & Billing board.
 - One Won enquiry is linked to Sahyadri and its accepted (Paid) quotation; the other was converted into a new customer, Pune Precision Moulds.
 - Enquiries linked to a quotation show the quotation amount before GST as their expected value.
 
-Sample PDFs marked "SAMPLE PO" / "SAMPLE TAX INVOICE" are uploaded to Blob. The MSME member SLA quotation (ACDRI/QT/…/0042, Sahyadri) is left as **Sent**, so the demo can start by marking it Accepted.
+Sample PDFs marked "SAMPLE PO" / "SAMPLE TAX INVOICE" are uploaded to Blob. The MSME member SLA quotation (DMC/QT/…/0042, Sahyadri) is left as **Sent**, so the demo can start by marking it Accepted.
 
 The Inventory demo adds 6 months of history before the story quotations (that's why they are now 0042 and 0043; `db:reset` takes about a minute):
 - 4 suppliers, 25 items across RPT, PPF, ENV and RPL, and materials lists for 15 rate-card services.
@@ -239,12 +240,12 @@ Then commit the updated `package.json` and `package-lock.json`. No project-wide 
 All money is calculated in whole **paise** (₹1 = 100 paise) with `decimal.js` for quantity x rate, so there is no floating-point rounding. The database stores money as `numeric(14,2)`.
 
 ### How tickets are numbered and valued
-- **Numbering:** tickets are numbered like `ACDRI/TK/2026-27/0001`, with the prefix set in Settings, using the same safe counter as quotations.
+- **Numbering:** tickets are numbered like `DMC/TK/2026-27/0001`, with the prefix set in Settings, using the same safe counter as quotations.
 - **Value:** each ticket carries its share of the quotation, including list amount, member discount, taxable value and GST. The last ticket also takes any GST rounding paise and the round off. So the tickets of a quotation always add up exactly to its grand total.
 - **Locking:** once a quotation has tickets it is locked. To change it, use **Duplicate as revised quotation**.
 
 ### How quotation numbers work
-Format `ACDRI/QT/2026-27/0001`. The financial year runs April to March. A counter row per financial year is incremented inside the same transaction that saves the quotation, so two people saving at once never get the same number, and numbers are never reused. (Tested with 10 saves at the same moment.)
+Format `DMC/QT/2026-27/0001`. The financial year runs April to March. A counter row per financial year is incremented inside the same transaction that saves the quotation, so two people saving at once never get the same number, and numbers are never reused. (Tested with 10 saves at the same moment.)
 
 ---
 
@@ -313,7 +314,7 @@ Inventory (Module 5), confirmed during the build:
 | Choosing a customer in the builder fills their details | ✅ |
 | Quantity inputs change with how the service is charged | ✅ |
 | Totals update live; CGST + SGST in Maharashtra, IGST elsewhere | ✅ |
-| Unique numbers in the `ACDRI/QT/2026-27/0001` format | ✅ |
+| Unique numbers in the `DMC/QT/2026-27/0001` format | ✅ |
 | One-click A4 PDF | ✅ |
 | Editing a rate or a customer does not change saved quotations | ✅ |
 | Works on a phone screen | ✅ (tables become cards; bottom navigation) |

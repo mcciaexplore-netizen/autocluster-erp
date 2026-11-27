@@ -10,7 +10,7 @@ const dt = (d: Date | null) => (d ? `${istDate(d).split("-").reverse().join("/")
 /** The jobs list as shown (with its filters). */
 export async function jobsWorkbook(rows: JobRow[], note: string): Promise<Uint8Array> {
   const wb = new ExcelJS.Workbook();
-  wb.creator = "AutoCluster ERP";
+  wb.creator = "ERPOne";
   const ws = wb.addWorksheet("Jobs");
   ws.addRow(["Jobs"]).font = { bold: true, size: 13 };
   ws.addRow([note]).font = { color: { argb: "FF6B7280" } };

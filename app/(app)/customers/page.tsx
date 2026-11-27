@@ -23,7 +23,7 @@ export default function CustomersPage({ searchParams }: PageProps<"/customers">)
     <>
       <PageHeader
         title="Customers"
-        description="Companies that use AutoCluster services."
+        description="The companies you work for."
         actions={
           <Can perm="customers.edit">
             <Button asChild size="lg">

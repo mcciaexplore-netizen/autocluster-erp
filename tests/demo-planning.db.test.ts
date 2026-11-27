@@ -32,7 +32,7 @@ describe.skipIf(skip)("planning demo data (database)", () => {
       sql`select j.id, j.status, j.priority, j.promised_date::text, j.hold_reason from jobs j join tickets t on t.id = j.ticket_id where ${where}`,
     );
 
-  it("33 machines in 5 departments, the ACDRI profile and holidays", async () => {
+  it("33 machines in 5 departments, the generic company profile (DEMO_COMPANY default) and holidays", async () => {
     const ms = await db.select().from(s.machines);
     expect(ms).toHaveLength(33);
     expect(new Set(ms.map((m) => m.deptCode)).size).toBe(5);
@@ -40,8 +40,7 @@ describe.skipIf(skip)("planning demo data (database)", () => {
     expect(ms.find((m) => m.name === "HDT & VICAT Softening Temperature Tester")?.parallelJobs).toBe(3);
     expect(ms.filter((m) => m.deptCode === "ENV").every((m) => m.runsNonstop && m.nablAccredited)).toBe(true);
     const [set] = await db.select().from(s.settings);
-    expect(set.orgName).toBe("Auto Cluster Development and Research Institute (ACDRI)");
-    expect(set.orgEmail).toBe("customersupport@autoclusterpune.org");
+    expect(set).toMatchObject({ orgName: "Demo Manufacturing Co., Pune", showOrgName: false, quotePrefix: "DMC/QT", ticketPrefix: "DMC/TK", leadPrefix: "DMC/EN", invInPrefix: "DMC/IN", invOutPrefix: "DMC/OUT", invAdjPrefix: "DMC/ADJ" });
     expect((await db.select().from(s.holidays)).length).toBeGreaterThan(3);
   });
 
@@ -148,5 +147,17 @@ describe.skipIf(skip)("planning demo data (database)", () => {
       select b.id from job_bookings b join machine_blocks k on k.machine_id = b.machine_id
       where b.cancelled_at is null and b.start_at < k.end_at and k.start_at < b.end_at`);
     expect(overBlocks.rows).toHaveLength(0);
+  });
+
+  it("generic demo: no ACDRI / AutoCluster / Auto Cluster anywhere in the data", async () => {
+    const cols = await db.execute<{ table_name: string; column_name: string }>(
+      sql`select table_name, column_name from information_schema.columns where table_schema = 'public' and data_type in ('text', 'character varying', 'jsonb', 'json', 'ARRAY')`,
+    );
+    const hits: string[] = [];
+    for (const c of cols.rows) {
+      const r = await db.execute<{ n: number }>(sql.raw(`select count(*)::int as n from "${c.table_name}" where "${c.column_name}"::text ~* '(acdri|auto ?cluster)'`));
+      if (r.rows[0].n) hits.push(`${c.table_name}.${c.column_name}: ${r.rows[0].n}`);
+    }
+    expect(hits).toEqual([]);
   });
 });

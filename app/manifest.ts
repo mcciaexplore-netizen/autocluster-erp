@@ -4,14 +4,14 @@ import type { MetadataRoute } from "next";
 export default function manifest(): MetadataRoute.Manifest {
   return {
     id: "/",
-    name: "ACDRI ERP",
-    short_name: "ACDRI ERP",
-    description: "AutoCluster (ACDRI), Pune: enquiries, quotations, orders, planning and stock.",
+    name: "ERPOne",
+    short_name: "ERPOne",
+    description: "ERPOne: enquiries, quotations, orders, planning and stock in one place.",
     start_url: "/?source=home-screen",
     scope: "/",
     display: "standalone",
     display_override: ["fullscreen", "standalone"],
-    background_color: "#F7F8FA",
+    background_color: "#F7F8FA", // the splash screen while the installed app opens: the icon on the page colour
     theme_color: "#FFFFFF",
     icons: [
       { src: "/icons/icon-192.png", sizes: "192x192", type: "image/png", purpose: "any" },

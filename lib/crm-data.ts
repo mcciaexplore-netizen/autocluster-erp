@@ -237,6 +237,7 @@ export async function getLeadDetail(id: string) {
   const contact: LeadContactLinks = leadContactLinks(
     { contactName: l.contactName, companyName: l.companyName, title: l.title, phone: l.phone, email: l.email },
     { whatsapp: s?.leadWhatsappTemplate ?? "", emailSubject: s?.leadEmailSubjectTemplate ?? "", emailBody: s?.leadEmailBodyTemplate ?? "" },
+    s?.orgName ?? "",
   );
   const c = customer[0];
   return {

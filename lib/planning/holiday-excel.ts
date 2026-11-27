@@ -6,7 +6,7 @@ import { parseImportDate } from "@/lib/crm/import";
 
 export async function holidaysTemplate(): Promise<Uint8Array> {
   const wb = new ExcelJS.Workbook();
-  wb.creator = "AutoCluster ERP";
+  wb.creator = "ERPOne";
   const ws = wb.addWorksheet("Holidays");
   ws.columns = [
     { header: "Date", key: "date", width: 14 },

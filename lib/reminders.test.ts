@@ -15,6 +15,7 @@ describe("payment reminders", () => {
     const r = buildReminder({
       templates: { whatsapp: DEFAULT_WHATSAPP_TEMPLATE, emailSubject: DEFAULT_EMAIL_SUBJECT_TEMPLATE, emailBody: DEFAULT_EMAIL_BODY_TEMPLATE },
       company: "Sahyadri",
+      orgName: "Demo Manufacturing Co., Pune",
       contactName: "Rohan Kulkarni",
       phone: "9822012345",
       email: "rohan@example.com",
@@ -25,7 +26,7 @@ describe("payment reminders", () => {
       today: "2026-11-19",
     });
     expect(r.message).toBe(
-      "Dear Rohan Kulkarni, this is a gentle reminder from AutoCluster, Pune. Invoice INV-1 dated 10 Nov 2026 for ₹8,496 is due on 10 Dec 2026. Kindly arrange the payment. Thank you.",
+      "Dear Rohan Kulkarni, this is a gentle reminder from Demo Manufacturing Co., Pune. Invoice INV-1 dated 10 Nov 2026 for ₹8,496 is due on 10 Dec 2026. Kindly arrange the payment. Thank you.",
     );
     expect(r.whatsappUrl).toMatch(/^https:\/\/wa\.me\/919822012345\?text=Dear%20Rohan/);
     expect(r.mailtoUrl).toMatch(/^mailto:rohan@example\.com\?subject=Payment%20reminder/);

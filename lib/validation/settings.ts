@@ -20,6 +20,7 @@ export const settingsSchema = z.object({
   orgPhone: z.string().trim().min(6, { message: "Please enter a phone number." }),
   orgEmail: z.string().trim().email({ message: "This email address doesn't look right, e.g. info@company.com." }),
   memberDiscountPct: z.number({ message: "Enter a number, e.g. 10." }).min(0, { message: "Use 0 or more." }).max(100, { message: "Use 100 or less." }),
+  showOrgName: z.boolean(),
   applyDiscountToNonMsme: z.boolean(),
   gstPct: z.number({ message: "Enter a number, e.g. 18." }).min(0, { message: "Use 0 or more." }).max(100, { message: "Use 100 or less." }),
   homeStateCode: z.string().refine((v) => !!stateByCode(v), { message: "Please choose a state." }),
@@ -27,16 +28,16 @@ export const settingsSchema = z.object({
   quotePrefix: z
     .string()
     .trim()
-    .min(1, { message: "Please enter a prefix, e.g. ACDRI/QT." })
-    .max(30, { message: "Keep the prefix short, e.g. ACDRI/QT." })
-    .regex(/^[A-Za-z0-9/_-]+$/, { message: "Use letters, numbers, / - or _ only, e.g. ACDRI/QT." }),
+    .min(1, { message: "Please enter a prefix, e.g. QT." })
+    .max(30, { message: "Keep the prefix short, e.g. QT." })
+    .regex(/^[A-Za-z0-9/_-]+$/, { message: "Use letters, numbers, / - or _ only, e.g. QT." }),
   defaultTerms: z.string().trim().min(1, { message: "Please enter the terms." }).max(6000),
   ticketPrefix: z
     .string()
     .trim()
-    .min(1, { message: "Please enter a prefix, e.g. ACDRI/TK." })
-    .max(30, { message: "Keep the prefix short, e.g. ACDRI/TK." })
-    .regex(/^[A-Za-z0-9/_-]+$/, { message: "Use letters, numbers, / - or _ only, e.g. ACDRI/TK." }),
+    .min(1, { message: "Please enter a prefix, e.g. TK." })
+    .max(30, { message: "Keep the prefix short, e.g. TK." })
+    .regex(/^[A-Za-z0-9/_-]+$/, { message: "Use letters, numbers, / - or _ only, e.g. TK." }),
   defaultCreditDays: z.number({ message: "Enter a number of days, e.g. 30." }).int({ message: "Use whole days." }).min(0, { message: "Use 0 or more." }).max(365, { message: "Use 365 days or less." }),
   whatsappTemplate: z.string().trim().min(10, { message: "Please write the WhatsApp message." }).max(1000, { message: "Please keep the message under 1,000 characters." }),
   emailSubjectTemplate: z.string().trim().min(3, { message: "Please write the email subject." }).max(200, { message: "Please keep the subject under 200 characters." }),
@@ -45,16 +46,16 @@ export const settingsSchema = z.object({
   leadPrefix: z
     .string()
     .trim()
-    .min(1, { message: "Please enter a prefix, e.g. ACDRI/EN." })
-    .max(30, { message: "Keep the prefix short, e.g. ACDRI/EN." })
-    .regex(/^[A-Za-z0-9/_-]+$/, { message: "Use letters, numbers, / - or _ only, e.g. ACDRI/EN." }),
+    .min(1, { message: "Please enter a prefix, e.g. EN." })
+    .max(30, { message: "Keep the prefix short, e.g. EN." })
+    .regex(/^[A-Za-z0-9/_-]+$/, { message: "Use letters, numbers, / - or _ only, e.g. EN." }),
   leadWhatsappTemplate: z.string().trim().min(10, { message: "Please write the WhatsApp message." }).max(1000, { message: "Please keep the message under 1,000 characters." }),
   leadEmailSubjectTemplate: z.string().trim().min(3, { message: "Please write the email subject." }).max(200, { message: "Please keep the subject under 200 characters." }),
   leadEmailBodyTemplate: z.string().trim().min(10, { message: "Please write the email message." }).max(4000, { message: "Please keep the message under 4,000 characters." }),
   // Inventory
-  invInPrefix: prefix("ACDRI/IN"),
-  invOutPrefix: prefix("ACDRI/OUT"),
-  invAdjPrefix: prefix("ACDRI/ADJ"),
+  invInPrefix: prefix("IN"),
+  invOutPrefix: prefix("OUT"),
+  invAdjPrefix: prefix("ADJ"),
   invItemPrefix: prefix("ITM"),
   invExpiryWarningDays: days("e.g. 30", 1, 365),
   invAvgUseDays: days("e.g. 90", 7, 730),

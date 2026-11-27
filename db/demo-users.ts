@@ -14,7 +14,7 @@ import { createSignInUser, ensureAppUsersForTeam } from "./user-writer";
 
 /** Shown on the demo shop-floor screen only (DEMO_MODE=true). */
 export const DEMO_PIN = "2580";
-export const DEMO_EMAIL_DOMAIN = "demo.acdri.example";
+export const DEMO_EMAIL_DOMAIN = "demo.erpone.example";
 
 export interface DemoUser {
   name: string;

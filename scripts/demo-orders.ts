@@ -7,6 +7,7 @@
  * Sample PDFs ("SAMPLE PO", "SAMPLE TAX INVOICE") are made with pdf-lib and uploaded to Blob.
  */
 import { stageDemoFile } from "./demo-files";
+import { invoicePrefixFor } from "./demo-company";
 import { inArray, sql } from "drizzle-orm";
 import { PDFDocument, rgb, StandardFonts, degrees } from "pdf-lib";
 import type { DB, Tx } from "../db/client";
@@ -41,7 +42,7 @@ export async function samplePdf(title: string, rows: [string, string][]): Promis
   page.drawText(title, { x: 150, y: 330, size: 64, font: bold, color: rgb(0.85, 0.2, 0.2), opacity: 0.18, rotate: degrees(35) });
   page.drawRectangle({ x: 40, y: 760, width: 515, height: 50, color: rgb(0.12, 0.16, 0.27) });
   page.drawText(title, { x: 56, y: 778, size: 22, font: bold, color: rgb(1, 1, 1) });
-  page.drawText("Demo document for the AutoCluster ERP. Not a real document.", { x: 56, y: 735, size: 10, font, color: rgb(0.75, 0.1, 0.1) });
+  page.drawText("Demo document for ERPOne. Not a real document.", { x: 56, y: 735, size: 10, font, color: rgb(0.75, 0.1, 0.1) });
   let y = 695;
   for (const [k, v] of rows) {
     page.drawText(k, { x: 56, y, size: 11, font: bold, color: rgb(0.2, 0.2, 0.2) });
@@ -58,6 +59,8 @@ export async function loadDemoOrders(conn: DB | Tx, custIds: Record<string, stri
   const day = (n: number) => addDays(today, n);
   const svcRows = await db.select().from(s.services);
   const svc = (name: string) => svcRows.find((x) => x.name === name)!;
+  const [{ orgName, quotePrefix }] = await db.select({ orgName: s.settings.orgName, quotePrefix: s.settings.quotePrefix }).from(s.settings);
+  const invPrefix = invoicePrefixFor(quotePrefix);
   if (!process.env.BLOB_READ_WRITE_TOKEN) log("  Note: BLOB_READ_WRITE_TOKEN is not set, so the sample PDFs are recorded but not uploaded.");
 
   async function file(kind: "PO" | "INVOICE", fileName: string, title: string, rows: [string, string][]) {
@@ -94,7 +97,7 @@ export async function loadDemoOrders(conn: DB | Tx, custIds: Record<string, stri
       ["Purchase order no.", poNumber],
       ["PO date", formatDate(poDate)],
       ["From", customer],
-      ["To", "AutoCluster, Pune"],
+      ["To", orgName],
       ["Against quotation", quoteNo],
       ["Services", ts.map((t) => `${t.snapshot.description} (${t.snapshot.quantityText})`).join("\n")],
       ["PO amount (before GST)", rs(sum(ts, "taxableValue"))],
@@ -132,7 +135,7 @@ export async function loadDemoOrders(conn: DB | Tx, custIds: Record<string, stri
     return `${start}-${String((start + 1) % 100).padStart(2, "0")}`;
   };
   let invSeq = 451;
-  const invNo = (date: string) => `MCCIA/${fy(date)}/0${invSeq++}`;
+  const invNo = (date: string) => `${invPrefix}/${fy(date)}/0${invSeq++}`;
 
   // 1) Waiting for PO: one quotation with 2 services, no PO yet.
   log("  Waiting for PO: Deccan Polymers (2 services)");

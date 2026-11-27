@@ -107,7 +107,7 @@ export function Sketch({ kind }: { kind: SketchKind }) {
         return (
           <div className="grid items-center gap-3 sm:grid-cols-[1fr_auto_1fr]">
             <Box className="flex flex-col gap-2">
-              <Head>ACDRI ERP</Head>
+              <Head>ERPOne</Head>
               <Bar w="w-3/4" />
               <Bar w="w-1/2" />
               <Bar w="w-2/3" />

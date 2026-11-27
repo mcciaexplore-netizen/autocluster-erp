@@ -1,4 +1,5 @@
 import { Document, Font, Page, StyleSheet, Text, View } from "@react-pdf/renderer";
+import { orgInitials } from "@/lib/org";
 import { formatDate } from "@/lib/format";
 import { formatINR } from "@/lib/pricing";
 import type { QuoteView } from "@/lib/quote-view";
@@ -86,7 +87,7 @@ export function QuotationPdf({ view }: { view: QuoteView }) {
         {/* Header */}
         <View style={s.header}>
           <View style={{ flexDirection: "row", gap: 8, width: "62%" }}>
-            <Text style={s.logo}>AC</Text>
+            <Text style={s.logo}>{orgInitials(view.org.name)}</Text>
             <View style={{ flex: 1 }}>
               <Text style={s.orgName}>{view.org.name}</Text>
               <Text style={s.small}>{view.org.address}</Text>

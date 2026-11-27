@@ -50,11 +50,11 @@ describe.skipIf(skip)("inventory demo data (database)", () => {
   it("the story quotations come last: Sahyadri SLA (QT 0042) and Western Drive (QT 0043) are Sent", async () => {
     const qs = await db.select().from(s.quotations).where(eq(s.quotations.status, "SENT"));
     const by = (name: string) => qs.find((q) => q.customerSnapshot.companyName.startsWith(name))!;
-    expect(by("Sahyadri").quoteNo).toBe("ACDRI/QT/2026-27/0042");
+    expect(by("Sahyadri").quoteNo).toBe("DMC/QT/2026-27/0042");
     expect(toPaise(by("Sahyadri").grandTotal)).toBe(8_496_00);
-    expect(by("Western").quoteNo).toBe("ACDRI/QT/2026-27/0043");
+    expect(by("Western").quoteNo).toBe("DMC/QT/2026-27/0043");
     const [link] = await db.select({ q: s.quotations.quoteNo }).from(s.quotations).innerJoin(s.leads, eq(s.leads.id, s.quotations.leadId)).where(eq(s.quotations.status, "SENT"));
-    expect(link.q).toBe("ACDRI/QT/2026-27/0043");
+    expect(link.q).toBe("DMC/QT/2026-27/0043");
   });
 
   it("situations: 3 below the reorder level, 1 out of stock, 2 ordered (one late)", async () => {

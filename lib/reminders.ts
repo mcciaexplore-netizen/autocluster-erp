@@ -24,6 +24,8 @@ export function whatsappNumber(phone: string): string | null {
 export interface ReminderInput {
   templates: { whatsapp: string; emailSubject: string; emailBody: string };
   company: string;
+  /** Your organisation (Settings > Organisation profile), for {org_name}. */
+  orgName: string;
   contactName: string;
   phone: string;
   email: string;
@@ -47,6 +49,7 @@ export interface Reminder {
 export function buildReminder(r: ReminderInput): Reminder {
   const values: TemplateValues = {
     company: r.company,
+    org_name: r.orgName,
     contact_name: r.contactName,
     invoice_no: r.invoiceNo,
     invoice_date: formatDate(r.invoiceDate),

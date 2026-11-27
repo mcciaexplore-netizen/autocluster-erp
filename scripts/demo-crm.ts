@@ -13,9 +13,9 @@ import { addDays, todayInIndia } from "../lib/tickets";
 import { toPaise } from "../lib/pricing";
 
 export const DEMO_TEAM = [
-  { name: "Priya Shah", phone: "9822100011", email: "priya.shah@autocluster.example" },
-  { name: "Rohan Deshpande", phone: "9822100022", email: "rohan.deshpande@autocluster.example" },
-  { name: "Amit Patil", phone: "9822100033", email: "amit.patil@autocluster.example" },
+  { name: "Priya Shah", phone: "9822100011", email: "priya.shah@staff.example" },
+  { name: "Rohan Deshpande", phone: "9822100022", email: "rohan.deshpande@staff.example" },
+  { name: "Amit Patil", phone: "9822100033", email: "amit.patil@staff.example" },
 ];
 
 type Stage = "New" | "Contacted" | "Negotiation" | "Won" | "Lost";
@@ -103,7 +103,7 @@ const LEADS: DemoLead[] = [
     key: "kalyani", stage: "Negotiation", source: "Exhibition / Event", priority: 3, title: "Prototype dashboard parts in SLA",
     company: "Kalyani Tooling Pvt Ltd", contact: "Neha Patil", designation: "Purchase Manager", phone: "9822012399", email: "neha@kalyanitooling.example",
     city: "Pune", category: "TIER2", member: true, depts: ["RPT"], services: ["SLA - imported resin", "Origin 1 SLA"], value: 2_40_000, closeIn: 15,
-    who: "Amit Patil", tags: ["Urgent"], createdDaysAgo: 18, stageDaysAgo: 4, notes: "Met at the AutoCluster open house. 40 parts, 3 iterations expected.",
+    who: "Amit Patil", tags: ["Urgent"], createdDaysAgo: 18, stageDaysAgo: 4, notes: "Met at our open house. 40 parts, 3 iterations expected.",
     activity: { type: "SITE_VISIT", in: 4, time: "11:00", note: "Visit their design centre with sample parts", who: "Amit Patil" },
   },
   {

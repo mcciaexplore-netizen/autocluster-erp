@@ -7,6 +7,7 @@
  * States: signed out; signed in as each demo role (the same kind of session "Try it as" makes); a
  * shared shop-floor device with nobody signed in; a PIN session on it; an Admin on it.
  *
+ * PAGES_FORBID="acdri|auto ?cluster" also fails on any page containing those words (e.g. for a generic demo).
  * PAGES_STATES="shared device" checks only the states whose names contain that text (comma-separated).
  *
  * Runs against the local demo database only (DEMO_MODE=true, a localhost DATABASE_URL). It starts its
@@ -27,6 +28,7 @@ import { DEVICE_COOKIE, FLOOR_COOKIE, floorExpiry, hashToken, newDeviceToken, si
 import { scriptDb } from "./demo-data";
 
 const PORT = Number(process.env.PAGES_PORT ?? 3107);
+const FORBID = process.env.PAGES_FORBID ? new RegExp(process.env.PAGES_FORBID, "i") : null;
 const ERROR_LINE = /(^|\s)(Error:|⨯|Unhandled|TypeError|ReferenceError)|unstable value|while prerendering|Hydration failed/;
 
 /** Every page in app/, as a URL pattern ("/crm/enquiries/[id]"). Route groups like (app) don't count. */
@@ -170,6 +172,10 @@ async function main() {
         // The friendly page is drawn in the browser when the refusal comes after streaming starts: look for Next's marker too.
         const refused = /You don(&#x27;|')t have access to/.test(body) || body.includes("NEXT_HTTP_ERROR_FALLBACK;403");
         if (refused && area !== "/" && body.includes(`href="${area}"`) && !/\/(new|edit|import)(\/|$)|\/insights/.test(u)) problems.push(`${st.name}: ${u} showed "no access" although their menu offers ${area}`);
+        // PAGES_FORBID="acdri|auto ?cluster": words that must not appear anywhere in a page (its HTML and the data streamed with it).
+        // (The dev server's debug info carries this project's folder path; production pages don't, so it is left out.)
+        const hit = FORBID ? body.replaceAll(path.resolve(".."), "").match(FORBID) : null;
+        if (hit) problems.push(`${st.name}: ${u} contains "${hit[0]}" (…${body.slice(Math.max(0, hit.index! - 60), hit.index! + 60).replace(/\s+/g, " ")}…)`);
         if (logged.length) problems.push(`${st.name}: ${u} printed in the server console:\n      ${logged.slice(0, 3).map((l) => l.trim().slice(0, 220)).join("\n      ")}`);
       }
       console.log(`  ${st.name}: ${urls.length} pages opened`);

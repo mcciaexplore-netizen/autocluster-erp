@@ -14,8 +14,9 @@ export interface LeadContactLinks {
 export function leadContactLinks(
   lead: { contactName: string; companyName: string; title: string; phone: string | null; email: string | null },
   templates: { whatsapp: string; emailSubject: string; emailBody: string },
+  orgName = "",
 ): LeadContactLinks {
-  const values = { contact_name: lead.contactName, company: lead.companyName, enquiry_title: lead.title };
+  const values = { contact_name: lead.contactName, company: lead.companyName, enquiry_title: lead.title, org_name: orgName };
   const message = fillLeadTemplate(templates.whatsapp, values);
   const subject = fillLeadTemplate(templates.emailSubject, values);
   const body = fillLeadTemplate(templates.emailBody, values);

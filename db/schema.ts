@@ -259,6 +259,8 @@ export const settings = pgTable("settings", {
   orgPhone: text("org_phone").notNull(),
   orgEmail: text("org_email").notNull(),
   logoUrl: text("logo_url"),
+  /** "Show company name under the logo": off for general demos, so only ERPOne shows in the header. */
+  showOrgName: boolean("show_org_name").notNull().default(true),
   memberDiscountPct: numeric("member_discount_pct", { precision: 5, scale: 2 }).notNull().default("10"),
   applyDiscountToNonMsme: boolean("apply_discount_to_non_msme").notNull().default(true),
   gstPct: numeric("gst_pct", { precision: 5, scale: 2 }).notNull().default("18"),

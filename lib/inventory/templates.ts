@@ -4,16 +4,16 @@
  */
 export const DEFAULT_ORDER_WHATSAPP_TEMPLATE = `Dear {contact_name},
 
-Please send the following items to ACDRI AutoCluster, Pune:
+Please send the following items to {org_name}:
 {items}
 
 Kindly confirm the rates and delivery date. Thank you.`;
 
-export const DEFAULT_ORDER_EMAIL_SUBJECT_TEMPLATE = "Order from ACDRI AutoCluster, Pune ({date})";
+export const DEFAULT_ORDER_EMAIL_SUBJECT_TEMPLATE = "Order from {org_name} ({date})";
 
 export const DEFAULT_ORDER_EMAIL_BODY_TEMPLATE = `Dear {contact_name},
 
-Please supply the following items to ACDRI AutoCluster, Pune:
+Please supply the following items to {org_name}:
 
 {items}
 
