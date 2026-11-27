@@ -93,10 +93,10 @@ On the phone or tablet (or a second browser window):
    - **Name of this device**: "PPF shop floor tablet"
    - Tap **PPF**
    - Tap **Mark as shared shop-floor device**
-3. Open the account menu and choose **Sign out**.
-   - The tablet now shows **Who's working?** with the operators' names.
+3. Open the account menu and choose **Sign out**, then open the website address again.
+   - The tablet now shows **Who's working?** with the operators' names (Amit Patil, Ravi Contract).
    - The demo note says every operator's PIN is **2580**.
-4. Tap **Amit Patil**, type **2580** and tap **Go**. Amit's jobs for today appear.
+4. Tap **Amit Patil**, type **2580** and tap **Go**. Amit's jobs appear: **Running (3)**, one on each of three PPF machines.
 5. Tap **Start** on his job. The tablet signs him out straight away and shows the names again.
 
 **Point to make:** one tablet for the whole shop floor, no passwords to type, and everything is recorded under the person who did it. To stop sharing the tablet afterwards, sign in as Admin, open **Profile** and tap **Stop sharing this device**.
