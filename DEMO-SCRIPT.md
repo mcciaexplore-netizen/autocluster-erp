@@ -4,6 +4,8 @@ About 25 minutes. One story from enquiry to payment, then the shop floor, the st
 
 The website is **https://autocluster-erp.vercel.app**. Names in **bold** are buttons, links or headings exactly as they appear on screen.
 
+The demo company is **Demo Manufacturing Co., Pune**, with numbers like DMC/QT/… (quotations), DMC/TK/… (tickets) and DMC/EN/… (enquiries). The top bar shows only the **ERPOne** logo and name.
+
 ---
 
 ## Before the demo (the same morning)
@@ -11,12 +13,13 @@ The website is **https://autocluster-erp.vercel.app**. Names in **bold** are but
 1. **Reset the demo data**, so jobs are booked for today and nothing from earlier tries is left over. On the Mac, in the project folder:
 
    ```zsh
-   BLOB_FOLDER=live node --env-file=.env.local.neon node_modules/tsx/dist/cli.mjs scripts/reset.ts
+   DEMO_COMPANY=generic BLOB_FOLDER=live node --env-file=.env.local.neon node_modules/tsx/dist/cli.mjs scripts/reset.ts
    ```
 
    - Type `RESET` when asked.
    - It takes about 5 to 8 minutes, and **the website pauses until it finishes**. Don't reset while anyone is using the site.
    - It ends with "Done. The database now holds clean demo data."
+   - To show AutoCluster itself instead, use `DEMO_COMPANY=acdri`: the same data with the ACDRI name and ACDRI/… numbers (the numbers in this script then start with ACDRI/ instead of DMC/).
 2. **Have the demo password ready.** It's the outer password screen everyone sees first.
 3. **Have any small PDF on the laptop** (e.g. a page saved as PDF). Step 2 needs it as the "tax invoice file".
 4. **Have a phone or tablet ready** for step 4, the shop-floor tablet. A second browser window also works.
@@ -38,17 +41,17 @@ The website is **https://autocluster-erp.vercel.app**. Names in **bold** are but
    - **Company name**, **Contact person** and a 10-digit **Mobile**
 
    Click **Save enquiry**. A message says **Enquiry … added**.
-5. Click **Quotations**, then open **DMC/QT/2026-27/0042** (Sahyadri Auto Components, status Sent).
+5. Click **Quotations**, then open **DMC/QT/2026-27/0042** (Sahyadri Auto Components Pvt Ltd, status Sent, ₹8,496).
 6. In **Status**, choose **Accepted**, then confirm **Yes, mark Accepted**.
    - A message says the status changed to Accepted and a ticket opened.
-   - The page now shows **Locked: tickets opened** with the new ticket number. Note it for step 2.
+   - The page now shows **Locked: tickets opened** with the new ticket number (DMC/TK/2026-27/0302 after a fresh reset). Note it for step 2.
 
 **Point to make:** an accepted quotation turns straight into work. Nobody re-types anything.
 
 ## 2. Accounts: PO, invoice and payment (Vikram Shah)
 
 1. Click the amber chip **Demo: signed in as Sales…** (top right) and choose **Accounts**.
-2. Click **Orders & Billing**. In the search box, type the **ticket number** you noted in step 1 (e.g. DMC/TK/2026-27/0249). Only that card stays on the board.
+2. Click **Orders & Billing**. In the search box, type the **ticket number** you noted in step 1 (e.g. DMC/TK/2026-27/0302). Only that card stays on the board.
 3. The ticket is in **Waiting for PO**. On its card, click **Add PO** and fill in:
    - **PO number**: e.g. "SAC/PO/2026/0501"
    - **PO date**: today
@@ -56,7 +59,7 @@ The website is **https://autocluster-erp.vercel.app**. Names in **bold** are but
 
    Click **Save PO and move to Billing**. The card moves to **Billing**.
 4. On the same card, click **Upload tax invoice** and fill in:
-   - **Invoice number**: e.g. "MCCIA/2026-27/0501"
+   - **Invoice number**: e.g. "DMC/INV/2026-27/0501"
    - **Invoice date**: today
    - **Invoice amount incl. GST**: click **Use selected services' total**
    - **Tax invoice file**: choose your PDF, and wait until it shows as uploaded
@@ -128,7 +131,8 @@ Back on the laptop:
    - **Settings**, then **Users**, then **Add user**.
    - Fill in a **Full name**, keep **Can sign in** on, and give an **Email**, a role (e.g. **Operator**) and a department.
    - Click **Add user**. The **Temporary password** appears once, with **Copy**: "Share this privately… It won't be shown again."
-4. **See the record:** open **Settings**, then **Activity log**. Everything from this demo is listed, newest first, with who did it, when, and a link to the record. Sign-ins show the IP address.
+4. **Your company in the top bar (optional):** open **Settings**. Under **Organisation profile**, switch on **Show company name under the logo** and click **Save settings**. The top bar now shows "Demo Manufacturing Co., Pune" under ERPOne. Switch it off again and save.
+5. **See the record:** open **Settings**, then **Activity log**. Everything from this demo is listed, newest first, with who did it, when, and a link to the record. Sign-ins show the IP address.
 
 **Point to make:** the Admin decides who can do what, changes apply at once, and everything is on the record.
 
